@@ -29,7 +29,7 @@ odlišné: účtenky/objednávky, položky, slevy, historie, aktualizace a způs
 | Databáze  | PostgreSQL v Dockeru, perzistentní volume                                                                                            |
 | Úlohy     | Doporučené **Celery worker + Celery Beat**, Redis broker, stav běhů v PostgreSQL                                            |
 | Cache      | Cache agregací volitelná až podle měření; **Redis**. Dragonfly pouze při prokázaném přínosu                          |
-| Deployment | Docker Compose: HTTPS reverse proxy, API, frontend, Celery worker, jeden Beat, PostgreSQL, Redis broker; cache volitelná             |
+| Deployment | Docker Compose: API, frontend, Celery worker, jeden Beat, PostgreSQL, Redis broker; HTTPS a směrování přes existující Nginx na VPS |
 
 Python 3.15 je vydaný; kompatibilitu všech závislostí, ovladače PostgreSQL,
 Playwrightu, Celery a vývojových nástrojů ověří implementační spike a CI před migrací.
@@ -173,9 +173,12 @@ fallback `en`; uživatel může přepnout na češtinu a volba se uloží.
 
 ## Provoz, přihlášení a kontrola N+1
 
-- Vlastní účet aplikace oddělit od účtů obchodů. Doporučení: uzavřená registrace,
-  založení správcem/pozvánka; způsob autentizace (lokální/OIDC) ještě rozhodnout.
+- Vlastní účet aplikace oddělit od účtů obchodů. Zvoleno: lokální účet s heslem,
+  uzavřená registrace a založení správcem přes lokální CLI.
   Browser session přes HttpOnly/Secure/SameSite cookies, ochrana CSRF a rate limit loginu.
+- Samostatný proxy kontejner nepřidávat. Existující Nginx na VPS ukončuje HTTPS
+  a směruje `/api/` na API, ostatní cesty na statický frontend pod stejným originem.
+  Porty API a frontendu publikovat pouze na loopbacku; DB a Redis nezveřejňovat.
 - Tokeny poskytovatelů šifrovat aplikačně v DB; hlavní klíč mimo DB
   přes Docker secret. HTTPS, redakce logů, oddělená interní síť DB/cache.
 - Vyřešit interaktivní propojení účtu v Dockeru: současný lokální Chrome a
@@ -190,9 +193,8 @@ fallback `en`; uživatel může přepnout na češtinu a volba se uloží.
 
 ## Otevřené volby a pořadí
 
-1. Přihlášení aplikace: lokální účet, nebo existující OIDC poskytovatel?
-2. Bezpečný způsob interaktivního propojení Lidl účtů v Dockeru.
-3. Výchozí interval synchronizací, rozsah pravidelné obnovy starších detailů
+1. Bezpečný způsob interaktivního propojení Lidl účtů v Dockeru.
+2. Výchozí interval synchronizací, rozsah pravidelné obnovy starších detailů
    a praktické limity poskytovatelů; nastavení po připojeních v DB.
 
 Postup: rozhodnout otevřené základy → ověřit Python 3.15 a login v Dockeru →

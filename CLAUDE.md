@@ -14,6 +14,7 @@
 - in python prefer dict.get(value, fallback) over dict[""]
 - fix the cause, not the symptom if possible. Or at least tell me
 - follow ruff best practices. Always check newly written code with ruff check and fix issues.
+- write only important stuff to README so it is not bloated (project structure, deployment, project guidelines etc)
 
 ## Workflow
 
@@ -45,8 +46,6 @@
 
 - Use full table names only.
 - Never use SQL aliases.
-- Never create django or alembic migrations.
-- Never access or touch production database (cjf_prod)
 - Always check select/prefetch related is used where apropriate
 - Avoid N + 1 issue
 
