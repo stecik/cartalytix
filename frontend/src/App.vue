@@ -6,6 +6,8 @@ import { useRoute, useRouter } from "vue-router";
 import { useRegisterSW } from "virtual:pwa-register/vue";
 import { clearSession, sessionOptions, signOut } from "./auth";
 import AppIcon from "./components/AppIcon.vue";
+import AppSelect from "./components/AppSelect.vue";
+import { useUserSettings } from "./settings";
 
 interface InstallPrompt extends Event {
   prompt: () => Promise<void>;
@@ -35,7 +37,26 @@ const links = [
   { to: "/", name: "overview" },
   { to: "/receipts", name: "receipts" },
   { to: "/connections", name: "connections" },
+  { to: "/settings", name: "settings" },
 ] as const;
+const settings = useUserSettings();
+watch(
+  () => session.data.value?.locale,
+  (value) => {
+    if ((value === "en" || value === "cs") && value !== locale.value) locale.value = value;
+  },
+  { immediate: true },
+);
+
+const languages = computed(() => [
+  { value: "en", label: t("english") },
+  { value: "cs", label: t("czech") },
+]);
+
+function changeLanguage(value: string): void {
+  if (session.data.value && !isLogin.value) settings.mutate({ locale: value });
+  else locale.value = value;
+}
 const online = ref(navigator.onLine);
 const installPrompt = ref<InstallPrompt | null>(null);
 const { needRefresh, updateServiceWorker } = useRegisterSW();
@@ -99,9 +120,6 @@ watch(
 <AppIcon :name="link.name" />{{ t(link.name) }}
 </RouterLink>
       </nav>
-      <div class="sidebar-bottom">
-        <span class="privacy-mark" aria-hidden="true">◒</span><span>{{ t("privateData") }}</span>
-      </div>
     </aside>
     <div class="app-main">
       <header class="topbar">
@@ -119,10 +137,7 @@ watch(
           >
             <AppIcon name="download" /><span>{{ t("install") }}</span>
           </button>
-          <label class="language-select"><span class="sr-only">{{ t("language") }}</span><select v-model="locale" :aria-label="t('language')">
-              <option value="en">{{ t("english") }}</option>
-              <option value="cs">{{ t("czech") }}</option>
-            </select></label>
+          <AppSelect class="language-select" compact :model-value="locale" :options="languages" :label="t('language')" @update:model-value="changeLanguage" />
           <button
             v-if="!isLogin"
             class="text-button logout-button"

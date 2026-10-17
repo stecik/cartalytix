@@ -52,6 +52,14 @@ export default defineConfig({
       },
     }),
   ],
-  server: { proxy: { "/api": "http://127.0.0.1:8000" } },
+  server: {
+    proxy: {
+      "/api": {
+        target: process.env.API_PROXY_TARGET ?? "http://127.0.0.1:8000",
+        timeout: 180_000,
+        proxyTimeout: 180_000,
+      },
+    },
+  },
   test: { environment: "jsdom", clearMocks: true, restoreMocks: true },
 });

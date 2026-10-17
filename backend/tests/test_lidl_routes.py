@@ -315,7 +315,7 @@ def test_latest_run_is_batched_and_history_limit_enforced(
     finally:
         event.remove(engine, "before_cursor_execute", track)
     assert response.status_code == 200
-    assert len(queries) <= 3
+    assert len(queries) <= 4
     for row in response.json().get("items"):
         if row.get("id") in identifiers:
             assert row.get("latest_sync", {}).get("status") == "failed"

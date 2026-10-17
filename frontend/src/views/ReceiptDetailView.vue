@@ -4,8 +4,12 @@ import { useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { ApiError, request } from "../api";
-import type { ReceiptDetail, ReceiptDiscount } from "../api";
+import type { ReceiptDetail, ReceiptDiscount, User } from "../api";
 import QueryState from "../components/QueryState.vue";
+import SegmentedToggle from "../components/SegmentedToggle.vue";
+import { sessionOptions } from "../auth";
+import { providerLogos } from "../providerLogos";
+import { useUserSettings } from "../settings";
 
 const route = useRoute();
 const { t, locale } = useI18n();
@@ -14,6 +18,17 @@ const receipt = useQuery({
   queryKey: computed(() => ["receipts", "detail", receiptId.value]),
   queryFn: ({ signal }) => request<ReceiptDetail>(`/receipts/${encodeURIComponent(receiptId.value)}`, { signal }),
 });
+const session = useQuery(sessionOptions);
+const settings = useUserSettings();
+const receiptView = computed({
+  get: (): User["receipt_view"] => session.data.value?.receipt_view ?? "rendered",
+  set: (value: User["receipt_view"]) => settings.mutate({ receipt_view: value }),
+});
+const rendered = computed(() => receiptView.value === "rendered");
+const views = computed(() => [
+  { value: "rendered" as const, label: t("receiptViewRendered") },
+  { value: "detailed" as const, label: t("receiptViewDetailed") },
+]);
 const notFound = computed(() => receipt.error.value instanceof ApiError && receipt.error.value.status === 404);
 const language = computed(() => locale.value === "cs" ? "cs-CZ" : "en-GB");
 const amountFormatter = computed(() => receipt.data.value ? new Intl.NumberFormat(language.value, {
@@ -35,6 +50,10 @@ const discounts = computed(() => {
   }
   return grouped;
 });
+
+function negated(value: string): string {
+  return String(-Number(value));
+}
 
 function money(value: string, unitPrice = false): string {
   const formatter = unitPrice ? unitPriceFormatter.value : amountFormatter.value;
@@ -65,6 +84,34 @@ function date(value: string): string {
     <QueryState v-else :pending="receipt.isPending.value" :failed="receipt.isError.value" @retry="receipt.refetch()">
       <template v-if="receipt.data.value">
         <p v-if="receipt.data.value.quality_issues.length" role="status" class="receipt-quality">{{ t("receiptQualityWarning") }}</p>
+        <SegmentedToggle v-model="receiptView" class="receipt-view-toggle" :options="views" :label="t('receiptDisplay')" />
+        <div v-if="rendered" class="receipt-paper-wrap">
+          <article class="receipt-paper" :aria-label="t('receiptViewRendered')">
+            <header class="receipt-paper-header">
+              <img v-if="providerLogos[receipt.data.value.provider]" :src="providerLogos[receipt.data.value.provider]" width="52" height="52" alt="" />
+              <h2>{{ receipt.data.value.merchant }}</h2>
+              <time :datetime="receipt.data.value.purchased_at">{{ date(receipt.data.value.purchased_at) }}</time>
+            </header>
+            <p v-if="!receipt.data.value.items.length" class="receipt-paper-empty">{{ t("noReceiptItems") }}</p>
+            <ol v-else class="receipt-paper-items">
+              <li v-for="item in receipt.data.value.items" :key="item.id">
+                <div class="receipt-paper-line"><span>{{ item.name }}</span><span>{{ money(item.original_amount ?? item.total_amount) }}</span></div>
+                <div v-if="item.unit_price !== null && (item.is_weight || Number(item.quantity) !== 1)" class="receipt-paper-sub">{{ quantity(item.quantity, item.unit) }} × {{ money(item.unit_price, true) }}</div>
+                <div v-for="discount in discounts.get(item.id)" :key="discount.id" class="receipt-paper-line receipt-paper-sub"><span>{{ discount.name || t("discount") }}</span><span>{{ money(negated(discount.amount)) }}</span></div>
+              </li>
+            </ol>
+            <div v-if="discounts.get(null)?.length || Number(receipt.data.value.rounding_amount) !== 0" class="receipt-paper-block">
+              <div v-for="discount in discounts.get(null)" :key="discount.id" class="receipt-paper-line"><span>{{ discount.name || t("discount") }}</span><span>{{ money(negated(discount.amount)) }}</span></div>
+              <div v-if="Number(receipt.data.value.rounding_amount) !== 0" class="receipt-paper-line"><span>{{ t("rounding") }}</span><span>{{ money(receipt.data.value.rounding_amount) }}</span></div>
+            </div>
+            <div class="receipt-paper-total"><span>{{ t("receiptTotal") }}</span><strong>{{ money(receipt.data.value.total_amount) }}</strong></div>
+            <footer class="receipt-paper-footer">
+              <span>{{ receipt.data.value.provider }}</span>
+              <span>{{ t("receiptNumber") }} {{ receipt.data.value.external_id }}</span>
+            </footer>
+          </article>
+        </div>
+        <template v-else>
         <section class="receipt-items" :aria-label="t('receiptItems')">
           <div class="section-heading"><h2>{{ t("receiptItems") }}</h2></div>
           <p v-if="!receipt.data.value.items.length" class="section-note">{{ t("noReceiptItems") }}</p>
@@ -96,6 +143,7 @@ function date(value: string): string {
           <div v-if="Number(receipt.data.value.rounding_amount) !== 0" class="receipt-rounding"><dt>{{ t("rounding") }}</dt><dd>{{ money(receipt.data.value.rounding_amount) }}</dd></div>
           <div><dt>{{ t("receiptTotal") }}</dt><dd>{{ money(receipt.data.value.total_amount) }}</dd></div>
         </dl>
+        </template>
       </template>
     </QueryState>
   </div>
@@ -121,5 +169,26 @@ function date(value: string): string {
 .receipt-total > div { display: flex; justify-content: space-between; align-items: baseline; gap: 20px; font-size: 24px; font-weight: 600; }
 .receipt-total dd { margin: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .receipt-total > .receipt-rounding { font-size: 12px; font-weight: 400; margin-bottom: 20px; color: var(--muted); }
+.receipt-view-toggle { margin: 0 auto 28px; }
+.receipt-paper-wrap { filter: drop-shadow(0 3px 10px #17311f24); max-width: 400px; margin: 8px auto 48px; }
+.receipt-paper { --tooth: 7px; background: #fffef8; color: #2b2d27; padding: 38px 28px; font-family: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, monospace; font-size: 13px; line-height: 1.55;
+  mask: conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / calc(2 * var(--tooth)) 51% repeat-x,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / calc(2 * var(--tooth)) 51% repeat-x; }
+.receipt-paper-header { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding-bottom: 18px; border-bottom: 1px dashed #b7baae; }
+.receipt-paper-header img { width: 52px; height: 52px; object-fit: contain; margin-bottom: 6px; }
+.receipt-paper-header h2 { font-family: inherit; font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+.receipt-paper-header time { font-size: 12px; color: #6d7068; }
+.receipt-paper-items { list-style: none; margin: 0; padding: 14px 0; }
+.receipt-paper-items > li + li { margin-top: 8px; }
+.receipt-paper-line { display: flex; justify-content: space-between; gap: 16px; }
+.receipt-paper-line > span:first-child { overflow-wrap: anywhere; }
+.receipt-paper-line > span:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.receipt-paper-sub { padding-left: 14px; font-size: 12px; color: #6d7068; }
+.receipt-paper-block { padding: 12px 0; border-top: 1px dashed #b7baae; }
+.receipt-paper-empty { padding: 18px 0; text-align: center; color: #6d7068; }
+.receipt-paper-total { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 14px 0; border-top: 3px double #2b2d27; border-bottom: 1px dashed #b7baae; font-size: 17px; font-weight: 700; text-transform: uppercase; }
+.receipt-paper-total strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.receipt-paper-footer { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 16px; font-size: 11px; color: #6d7068; text-transform: uppercase; letter-spacing: 0.5px; }
+@media (max-width: 390px) { .receipt-paper { padding: 32px 18px; font-size: 12px; } }
 .receipt-quality { background: #f0ebdb; color: #77623d; font-size: 13px; padding: 18px; margin-bottom: 24px; line-height: 1.7; }
 </style>

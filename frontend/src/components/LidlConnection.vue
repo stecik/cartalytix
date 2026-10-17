@@ -1,79 +1,104 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { ApiError, request } from "../api";
 import type { Connection, SyncRun } from "../api";
 import QueryState from "./QueryState.vue";
 import LidlLoginForm from "./LidlLoginForm.vue";
-import lidlLogo from "../assets/lidl-logo.svg";
+import AppIcon from "./AppIcon.vue";
+import AppDialog from "./AppDialog.vue";
 
-const props = defineProps<{ connection: Connection }>();
+const props = withDefaults(defineProps<{ connection: Connection; initialLinking?: boolean }>(), { initialLinking: false });
 const { t, locale } = useI18n();
 const client = useQueryClient();
-const editing = ref(false);
-const historyOpen = ref(false);
-const linking = ref(false);
-const name = ref("");
-const interval = ref<number | null>(null);
+const expanded = ref(props.initialLinking);
+const tab = ref<"sync" | "history" | "manage">("sync");
+const tabs = ["sync", "history", "manage"] as const;
+const linking = ref(props.initialLinking);
+const name = ref(props.connection.name);
+const interval = ref(props.connection.sync_interval_minutes ?? 1440);
+const confirm = ref<"clear-data" | "remove" | null>(null);
+const pauseSync = ref(true);
+const notice = ref("");
 const active = computed(() => props.connection.latest_sync?.status === "pending" || props.connection.latest_sync?.status === "running");
-const statusKey = computed(() => ({
-  connected: "connectionConnected", not_connected: "connectionNotConnected",
+const running = computed(() => props.connection.latest_sync?.status === "running");
+const linkedAccount = computed(() => ["connected", "error"].includes(props.connection.status));
+const statusKey = computed(() => active.value ? `syncStatus_${props.connection.latest_sync?.status}` : ({
+  connected: "connectionConnected", not_connected: "connectionNotConnected", disconnected: "connectionDisconnected",
   reauth_required: "connectionReauth", error: "connectionError",
 })[props.connection.status] ?? "connectionError");
+const statusTone = computed(() => active.value ? "working" : props.connection.status === "connected" ? "connected" : ["error", "reauth_required"].includes(props.connection.status) ? "attention" : "");
+watch(() => props.connection.name, (value) => { name.value = value; });
+watch(() => props.connection.sync_interval_minutes, (value) => { if (value !== null) interval.value = value; });
+const endpoint = computed(() => `/providers/lidl/connections/${props.connection.id}`);
 
 function updateConnection(connection: Connection): void {
   client.setQueryData<{ items: Connection[] }>(["connections"], (previous) => previous ? {
     items: previous.items.map((item) => item.id === connection.id ? connection : item),
   } : previous);
 }
-
-function linked(connection: Connection): void {
-  updateConnection(connection);
-  linking.value = false;
+function linked(connection: Connection): void { updateConnection(connection); linking.value = false; }
+async function refreshData(): Promise<void> {
+  await Promise.all([
+    client.invalidateQueries({ queryKey: ["overview"] }),
+    client.invalidateQueries({ queryKey: ["overview-stats"] }),
+    client.invalidateQueries({ queryKey: ["receipts"] }),
+  ]);
 }
-
 const save = useMutation({
-  mutationFn: () => request<Connection>(`/providers/lidl/connections/${props.connection.id}`, {
-    method: "PATCH", body: JSON.stringify({ name: name.value.trim(), sync_interval_minutes: interval.value }),
-  }),
-  onSuccess: (connection) => { updateConnection(connection); editing.value = false; },
+  mutationFn: (values: { name?: string; sync_interval_minutes?: number | null }) => request<Connection>(endpoint.value, { method: "PATCH", body: JSON.stringify(values) }),
+  onSuccess: (connection) => { updateConnection(connection); notice.value = "settingsSaved"; },
 });
 const sync = useMutation({
-  mutationFn: () => request<SyncRun>(`/providers/lidl/connections/${props.connection.id}/sync`, {
-    method: "POST", body: JSON.stringify({ refresh_existing: false }),
-  }),
-  onSuccess: async (run) => {
-    updateConnection({ ...props.connection, latest_sync: run });
-    await client.invalidateQueries({ queryKey: ["connection-runs", props.connection.id] });
+  mutationFn: () => request<SyncRun>(`${endpoint.value}/sync`, { method: "POST", body: JSON.stringify({ refresh_existing: false }) }),
+  onSuccess: async (run) => { updateConnection({ ...props.connection, latest_sync: run }); await client.invalidateQueries({ queryKey: ["connection-runs", props.connection.id] }); },
+  onError: () => { void client.invalidateQueries({ queryKey: ["connections"] }); },
+});
+const manage = useMutation({
+  mutationFn: (action: "disconnect" | "clear-data" | "remove") => action === "remove"
+    ? request<void>(endpoint.value, { method: "DELETE" }).then(() => null)
+    : request<Connection>(`${endpoint.value}/${action}`, { method: "POST", ...(action === "clear-data" ? { body: JSON.stringify({ pause_sync: pauseSync.value }) } : {}) }),
+  onSuccess: async (connection, action) => {
+    confirm.value = null;
+    linking.value = false;
+    if (connection) updateConnection(connection);
+    else client.setQueryData<{ items: Connection[] }>(["connections"], (previous) => previous ? { items: previous.items.filter((item) => item.id !== props.connection.id) } : previous);
+    notice.value = action === "disconnect" ? "accountDisconnected" : "connectionDataDeleted";
+    if (action !== "disconnect") await refreshData();
+    if (action === "remove") client.removeQueries({ queryKey: ["connection-runs", props.connection.id] });
+    else await client.invalidateQueries({ queryKey: ["connection-runs", props.connection.id] });
   },
   onError: () => { void client.invalidateQueries({ queryKey: ["connections"] }); },
 });
+const busy = computed(() => manage.isPending.value || save.isPending.value || sync.isPending.value);
+const managementDisabled = computed(() => running.value || linking.value || busy.value);
+const historyOpen = computed(() => expanded.value && tab.value === "history");
 const history = useQuery({
   queryKey: computed(() => ["connection-runs", props.connection.id]),
-  queryFn: ({ signal }) => request<{ items: SyncRun[] }>(`/providers/lidl/connections/${props.connection.id}/runs?limit=10`, { signal }),
+  queryFn: ({ signal }) => request<{ items: SyncRun[] }>(`${endpoint.value}/runs?limit=20`, { signal }),
   enabled: historyOpen,
   refetchInterval: () => historyOpen.value && active.value ? 3000 : false,
 });
-
-function edit(): void {
-  name.value = props.connection.name;
-  interval.value = props.connection.sync_interval_minutes;
-  save.reset();
-  editing.value = true;
+function ask(action: "clear-data" | "remove"): void {
+  manage.reset(); pauseSync.value = true; confirm.value = action; notice.value = "";
 }
-
+function connect(): void { linking.value = true; notice.value = ""; }
+async function tabKey(event: KeyboardEvent): Promise<void> {
+  const position = tabs.indexOf(tab.value);
+  const target = event.key === "ArrowRight" ? tabs[(position + 1) % tabs.length] : event.key === "ArrowLeft" ? tabs[(position + tabs.length - 1) % tabs.length] : event.key === "Home" ? tabs[0] : event.key === "End" ? tabs[2] : undefined;
+  if (!target) return;
+  event.preventDefault(); tab.value = target;
+  await nextTick(); document.getElementById(`tab-${target}-${props.connection.id}`)?.focus();
+}
 function date(value: string | null): string {
   if (!value) return t("neverSynced");
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return t("unknownDate");
-  return new Intl.DateTimeFormat(locale.value === "cs" ? "cs-CZ" : "en-GB", {
-    dateStyle: "medium", timeStyle: "short",
-  }).format(parsed);
+  return new Intl.DateTimeFormat(locale.value === "cs" ? "cs-CZ" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(parsed);
 }
-
 function errorKey(code: string | null | undefined): string {
-  if (code === "reauth_required" || code === "connection_not_linked" || code === "authentication_failed" || code === "auth_required") return "syncAuthFailed";
+  if (["reauth_required", "connection_not_linked", "authentication_failed", "auth_required"].includes(code ?? "")) return "syncAuthFailed";
   if (code === "connection_busy") return "syncAlreadyRunning";
   if (["api_error", "network_error", "provider_unavailable", "provider_response_invalid", "rate_limited"].includes(code ?? "")) return "syncProviderFailed";
   if (["credentials_unavailable", "credential_key_unavailable", "credential_decryption_failed"].includes(code ?? "")) return "syncCredentialFailed";
@@ -81,87 +106,122 @@ function errorKey(code: string | null | undefined): string {
   if (code === "history_incomplete") return "syncIncompleteHistory";
   if (code === "quality_error") return "syncInvalidReceipt";
   if (code === "connection_not_found") return "connectionNotFound";
+  if (code === "connection_disconnected") return "accountDisconnected";
+  if (code === "data_cleared") return "connectionDataDeleted";
   return "syncFailed";
 }
-
-function schedule(value: number | null): string {
-  return value === null ? t("manualOnly") : t("everyMinutes", { count: value });
-}
+const actionError = computed(() => {
+  const error = manage.error.value ?? save.error.value ?? sync.error.value;
+  if (!error) return "";
+  if (error instanceof ApiError && error.code === "connection_busy") return "connectionBusy";
+  if (manage.isError.value) return "connectionActionFailed";
+  if (save.isError.value) return "connectionSaveFailed";
+  return errorKey(error instanceof ApiError ? error.code : null);
+});
 </script>
 
 <template>
   <article class="connection-account">
-    <div class="connection-heading">
-      <div class="connection-identity">
-        <img :src="lidlLogo" class="store-logo" width="44" height="44" alt="" aria-hidden="true" />
-        <div><h3>{{ connection.name }}</h3><p class="section-note">{{ connection.provider }} · {{ connection.country }}</p></div>
+    <div class="account-row">
+      <button class="account-toggle" :aria-expanded="expanded" :aria-controls="`account-${connection.id}`" @click="expanded = !expanded">
+        <span class="account-identity"><strong>{{ connection.name }}</strong><small>{{ t('receiptCount', connection.receipt_count) }} · {{ connection.country }}</small></span>
+        <span class="account-status" :class="statusTone"><i />{{ t(statusKey) }}</span>
+        <span class="account-fresh"><span class="sr-only">{{ t('lastSuccessfulSync') }}: </span>{{ date(connection.last_synced_at) }}</span>
+        <AppIcon name="chevron" :class="{ rotated: expanded }" />
+      </button>
+      <button class="remove-account" data-action="remove" :disabled="managementDisabled" :aria-label="t('removeNamedConnection', { name: connection.name })" :title="t('removeConnection')" @click="ask('remove')"><AppIcon name="trash" /></button>
+    </div>
+    <div v-show="expanded" :id="`account-${connection.id}`" class="account-panel">
+      <div class="account-tabs" role="tablist" :aria-label="t('connectionSettings')" @keydown="tabKey">
+        <button v-for="item in tabs" :id="`tab-${item}-${connection.id}`" :key="item" type="button" role="tab" :data-tab="item" :aria-selected="tab === item" :aria-controls="`panel-${item}-${connection.id}`" :tabindex="tab === item ? 0 : -1" @click="tab = item">{{ t(item === 'sync' ? 'synchronization' : item === 'history' ? 'history' : 'manageConnection') }}</button>
       </div>
-      <span class="status-label">{{ t(statusKey) }}</span>
-    </div>
-    <dl class="connection-facts">
-      <div><dt>{{ t("lastSuccessfulSync") }}</dt><dd>{{ date(connection.last_synced_at) }}</dd></div>
-      <div><dt>{{ t("syncSchedule") }}</dt><dd>{{ schedule(connection.sync_interval_minutes) }}</dd></div>
-      <div v-if="connection.next_sync_at"><dt>{{ t("nextSync") }}</dt><dd>{{ date(connection.next_sync_at) }}</dd></div>
-    </dl>
-    <div v-if="connection.latest_sync" class="sync-progress" role="status" :aria-live="active ? 'polite' : 'off'">
-      <strong>{{ t(`syncStatus_${connection.latest_sync.status}`) }}</strong>
-      <p>{{ t("syncCounts", { seen: connection.latest_sync.receipts_seen, imported: connection.latest_sync.receipts_imported, skipped: connection.latest_sync.receipts_skipped, pages: connection.latest_sync.pages_count }) }}</p>
-      <p v-if="connection.latest_sync.status === 'failed'" class="form-alert">{{ t(errorKey(connection.latest_sync.error_code)) }}</p>
-    </div>
-    <p v-if="sync.isError.value" role="alert" class="form-alert">{{ t(errorKey(sync.error.value instanceof ApiError ? sync.error.value.code : null)) }}</p>
-    <div class="connection-actions">
-      <button v-if="!linking" class="button secondary" :disabled="active" :aria-expanded="linking" @click="linking = true">{{ t(connection.status === 'not_connected' ? "linkAccount" : "reconnectAccount") }}</button>
-      <button class="button primary" :disabled="!['connected', 'error'].includes(connection.status) || active || linking || sync.isPending.value" @click="sync.mutate()">{{ t(active || sync.isPending.value ? "syncing" : "syncNow") }}</button>
-      <button class="button secondary" @click="edit">{{ t("connectionSettings") }}</button>
-      <button class="button secondary" :aria-expanded="historyOpen" @click="historyOpen = !historyOpen">{{ t("syncHistory") }}</button>
-    </div>
-    <LidlLoginForm v-if="linking" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
-    <form v-if="editing" class="connection-form" :aria-busy="save.isPending.value" @submit.prevent="name.trim() && save.mutate()">
-      <label :for="`name-${connection.id}`">{{ t("connectionName") }}</label>
-      <input :id="`name-${connection.id}`" v-model="name" maxlength="120" required :disabled="save.isPending.value" />
-      <label :for="`interval-${connection.id}`">{{ t("syncSchedule") }}</label>
-      <select :id="`interval-${connection.id}`" v-model="interval" :disabled="save.isPending.value">
-        <option :value="null">{{ t("manualOnly") }}</option>
-        <option :value="60">{{ t("everyHour") }}</option>
-        <option :value="360">{{ t("everySixHours") }}</option>
-        <option :value="1440">{{ t("everyDay") }}</option>
-        <option v-if="interval !== null && ![60, 360, 1440].includes(interval)" :value="interval">{{ schedule(interval) }}</option>
-      </select>
-      <p v-if="save.isError.value" class="form-alert" role="alert">{{ t("connectionSaveFailed") }}</p>
-      <div class="connection-actions">
-        <button type="submit" class="button primary" :disabled="!name.trim() || save.isPending.value">{{ t(save.isPending.value ? "saving" : "save") }}</button>
-        <button type="button" class="button secondary" :disabled="save.isPending.value" @click="editing = false">{{ t("cancel") }}</button>
-      </div>
-    </form>
-    <div v-if="historyOpen" class="sync-history">
-      <QueryState :pending="history.isPending.value" :failed="history.isError.value" @retry="history.refetch()">
-        <p v-if="!history.data.value?.items.length" class="section-note">{{ t("noSyncHistory") }}</p>
-        <ol v-else class="sync-history-list">
-          <li v-for="run in history.data.value?.items" :key="run.id">
-            <time :datetime="run.created_at">{{ date(run.created_at) }}</time>
-            <strong>{{ t(`syncStatus_${run.status}`) }}</strong>
-            <p>{{ t("syncCounts", { seen: run.receipts_seen, imported: run.receipts_imported, skipped: run.receipts_skipped, pages: run.pages_count }) }}</p>
-            <p v-if="run.status === 'failed'" class="form-alert">{{ t(errorKey(run.error_code)) }}</p>
+      <p v-if="actionError && !confirm" role="alert" class="form-alert">{{ t(actionError) }}</p>
+      <p v-if="notice" class="account-notice" role="status">{{ t(notice) }}</p>
+      <LidlLoginForm v-if="linking" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
+      <section v-show="tab === 'sync'" :id="`panel-sync-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-sync-${connection.id}`" tabindex="0">
+        <div v-if="!linkedAccount && !linking" class="reconnect-note"><p>{{ t(connection.status === 'not_connected' ? 'connectToImport' : 'reconnectToImport') }}</p><button class="button secondary" :disabled="active || busy" @click="connect">{{ t(connection.status === 'not_connected' ? 'linkAccount' : 'reconnectAccount') }}</button></div>
+        <div class="account-setting">
+          <div><strong>{{ t('automaticSync') }}</strong><p>{{ t('automaticSyncHelp') }}</p></div>
+          <label class="sync-switch"><input type="checkbox" role="switch" :checked="connection.sync_interval_minutes !== null" :disabled="!linkedAccount || active || busy || linking" :aria-label="t('automaticSync')" @change="save.mutate({ sync_interval_minutes: ($event.target as HTMLInputElement).checked ? interval : null })" /><span>{{ t(connection.sync_interval_minutes === null ? 'off' : 'on') }}</span></label>
+        </div>
+        <div v-if="connection.sync_interval_minutes !== null" class="account-setting interval-setting">
+          <label :for="`interval-${connection.id}`">{{ t('syncFrequency') }}</label>
+          <select :id="`interval-${connection.id}`" v-model="interval" :disabled="!linkedAccount || active || busy || linking" @change="save.mutate({ sync_interval_minutes: interval })">
+            <option :value="60">{{ t('everyHour') }}</option><option :value="360">{{ t('everySixHours') }}</option><option :value="1440">{{ t('everyDay') }}</option>
+            <option v-if="![60, 360, 1440].includes(interval)" :value="interval">{{ t('everyMinutes', { count: interval }) }}</option>
+          </select>
+        </div>
+        <p v-if="connection.sync_interval_minutes !== null && connection.next_sync_at" class="account-next">{{ t('nextSync') }}: {{ date(connection.next_sync_at) }}</p>
+        <div class="account-setting manual-setting"><div><strong>{{ t('manualSync') }}</strong><p>{{ t('manualSyncHelp') }}</p></div><button class="button primary" :disabled="!linkedAccount || active || busy || linking" @click="sync.mutate()">{{ t(active || sync.isPending.value ? 'syncing' : 'syncNow') }}</button></div>
+        <div v-if="connection.latest_sync" class="sync-progress" role="status" :aria-live="active ? 'polite' : 'off'"><strong>{{ t(`syncStatus_${connection.latest_sync.status}`) }}</strong><p>{{ t('syncCounts', { seen: connection.latest_sync.receipts_seen, imported: connection.latest_sync.receipts_imported, skipped: connection.latest_sync.receipts_skipped, pages: connection.latest_sync.pages_count }) }}</p><p v-if="connection.latest_sync.status === 'failed'" class="sync-error">{{ t(errorKey(connection.latest_sync.error_code)) }}</p></div>
+      </section>
+      <section v-if="tab === 'history'" :id="`panel-history-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-history-${connection.id}`" tabindex="0">
+        <QueryState :pending="history.isPending.value" :failed="history.isError.value" @retry="history.refetch()">
+          <p v-if="!history.data.value?.items.length" class="section-note">{{ t('noSyncHistory') }}</p>
+          <ol v-else class="sync-history-list">
+<li v-for="run in history.data.value?.items" :key="run.id">
+            <div class="history-result"><time :datetime="run.created_at">{{ date(run.created_at) }}</time><strong>{{ t(`syncStatus_${run.status}`) }}</strong><small v-if="run.finished_at">{{ t('syncFinished') }}: {{ date(run.finished_at) }}</small></div>
+            <div class="history-counts"><span>{{ t('importedCount', { count: run.receipts_imported }) }}</span><span>{{ t('skippedCount', { count: run.receipts_skipped }) }}</span></div>
+            <p v-if="run.status === 'failed'" class="sync-error">{{ t(errorKey(run.error_code)) }}</p>
           </li>
-        </ol>
-      </QueryState>
+</ol>
+          <p v-if="history.data.value?.items.length === 20" class="section-note">{{ t('latestSyncRuns', { count: 20 }) }}</p>
+        </QueryState>
+      </section>
+      <section v-if="tab === 'manage'" :id="`panel-manage-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-manage-${connection.id}`" tabindex="0">
+        <form class="rename-form" @submit.prevent="name.trim() && save.mutate({ name: name.trim() })"><label :for="`name-${connection.id}`">{{ t('connectionName') }}</label><div><input :id="`name-${connection.id}`" v-model="name" maxlength="120" required :disabled="busy" /><button type="submit" class="button secondary" :disabled="!name.trim() || name.trim() === connection.name || busy">{{ t('save') }}</button></div></form>
+        <div class="account-setting"><div><strong>{{ t('storeAuthorization') }}</strong><p>{{ t('reconnectHelp') }}</p></div><button v-if="!linking" class="button secondary" :disabled="active || busy" @click="connect">{{ t(['not_connected', 'disconnected'].includes(connection.status) ? 'linkAccount' : 'reconnectAccount') }}</button></div>
+        <div class="account-setting"><div><strong>{{ t('disconnectAccount') }}</strong><p>{{ t('disconnectHelp') }}</p></div><button class="button secondary" data-action="disconnect" :disabled="managementDisabled || ['not_connected', 'disconnected'].includes(connection.status)" @click="manage.mutate('disconnect')">{{ t('disconnect') }}</button></div>
+        <div class="account-setting"><div><strong>{{ t('deleteConnectionData') }}</strong><p>{{ t('clearDataHelp') }}</p></div><button class="button secondary danger-text" data-action="clear-data" :disabled="managementDisabled" @click="ask('clear-data')">{{ t('deleteData') }}</button></div>
+        <p v-if="running" class="section-note">{{ t('waitForSync') }}</p>
+      </section>
     </div>
+    <AppDialog v-if="confirm" :title="t(confirm === 'remove' ? 'removeConnection' : 'deleteConnectionData')" :busy="manage.isPending.value" @close="confirm = null">
+      <p>{{ t(confirm === 'remove' ? 'removeConnectionWarning' : 'clearDataWarning', { name: connection.name }) }}</p>
+      <p class="deletion-count">{{ t('receiptCount', connection.receipt_count) }} · {{ connection.name }}</p>
+      <template v-if="confirm === 'clear-data'"><label class="pause-checkbox"><input v-model="pauseSync" type="checkbox" :disabled="manage.isPending.value" />{{ t('pauseAutomaticSync') }}</label><p>{{ t('reimportWarning') }}</p></template>
+      <p v-if="actionError" role="alert" class="form-alert">{{ t(actionError) }}</p>
+      <div class="dialog-actions"><button class="button secondary" data-action="cancel" :disabled="manage.isPending.value" @click="confirm = null">{{ t('cancel') }}</button><button class="button danger" data-action="confirm" :disabled="manage.isPending.value || running" @click="manage.mutate(confirm)">{{ t(manage.isPending.value ? 'deleting' : confirm === 'remove' ? 'removeConnection' : 'deleteData') }}</button></div>
+    </AppDialog>
   </article>
 </template>
 
 <style scoped>
-.connection-account { width: 100%; min-width: 0; }
-.connection-heading { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.connection-identity { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.connection-identity > div { min-width: 0; overflow-wrap: anywhere; }
-.connection-heading h3 { font-size: 16px; font-weight: 600; }
-.connection-facts { display: flex; flex-wrap: wrap; gap: 18px 36px; margin: 22px 0; font-size: 12px; }
-.connection-facts dt { color: var(--muted); margin-bottom: 7px; }
-.connection-facts dd { margin: 0; }
-.sync-progress { border-left: 2px solid #879b85; padding: 4px 14px; margin: 20px 0; font-size: 12px; }
-.sync-progress p { margin-top: 8px; line-height: 1.7; color: var(--muted); }
-.sync-history { margin-top: 20px; }
-.sync-history-list { list-style: none; padding: 0; }
-.sync-history-list li { display: block; padding: 16px 0; font-size: 12px; line-height: 1.8; }
-.sync-history-list time { color: var(--muted); margin-right: 16px; }
+.connection-account { min-width: 0; }
+.account-row { display: grid; grid-template-columns: minmax(0, 1fr) 36px; gap: 8px; align-items: center; }
+.account-toggle { display: grid; grid-template-columns: minmax(130px, 1.25fr) minmax(105px, 1fr) minmax(100px, 1fr) 20px; gap: 16px; align-items: center; border: 0; background: transparent; padding: 22px 0; text-align: left; color: inherit; width: 100%; min-width: 0; border-radius: 4px; }
+.account-toggle:hover { background: #eaf0e740; }
+.account-identity { min-width: 0; overflow-wrap: anywhere; }
+.account-identity strong { display: block; font-size: 14px; font-weight: 600; }
+.account-identity small { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; }
+.account-status { display: flex; align-items: center; gap: 7px; font-size: 12px; min-width: 0; }
+.account-status i { width: 6px; height: 6px; border-radius: 50%; background: #8b938b; flex-shrink: 0; }
+.account-status.connected { color: #24734f; }.account-status.connected i { background: #24734f; }
+.account-status.attention { color: #90651b; }.account-status.attention i { background: #90651b; }
+.account-status.working { color: #2b6250; }.account-status.working i { background: #2b6250; animation: pulse 1s infinite alternate; }
+.account-fresh { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.account-toggle > svg { width: 20px; height: 20px; transition: transform .16s; color: var(--muted); }.account-toggle > svg.rotated { transform: rotate(180deg); }
+.remove-account { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; color: #7a847b; background: transparent; border: 0; border-radius: 5px; }.remove-account svg { width: 18px; height: 18px; }.remove-account:hover:enabled { color: #a33434; background: #f4e9e4; }
+.account-panel { padding: 0 44px 26px 0; animation: arrive .16s ease-out; }
+.account-tabs { display: flex; gap: 26px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.account-tabs button { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 13px; padding: 12px 0; white-space: nowrap; }
+.account-tabs button[aria-selected=true] { border-bottom-color: var(--green); color: var(--green); font-weight: 600; }
+.account-setting { display: flex; gap: 18px; align-items: center; justify-content: space-between; padding: 18px 0; }
+.account-setting + .account-setting { border-top: 1px solid var(--line); }
+.account-setting > div { min-width: 0; }.account-setting strong { font-size: 13px; font-weight: 550; }.account-setting p { color: var(--muted); font-size: 12px; line-height: 1.7; margin-top: 4px; }
+.account-setting .button { flex-shrink: 0; font-size: 12px; min-height: 38px; padding: 9px 13px; }
+.sync-switch { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--muted); flex-shrink: 0; }
+.sync-switch input { appearance: none; border: 0; border-radius: 15px; width: 34px; height: 20px; background: #d1d9ce; position: relative; padding: 0; margin: 0; cursor: pointer; transition: background .15s; }
+.sync-switch input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform .15s; }.sync-switch input:checked { background: var(--green); }.sync-switch input:checked::after { transform: translateX(14px); }.sync-switch input:disabled { opacity: .5; cursor: not-allowed; }
+.interval-setting > label { font-size: 13px; }.interval-setting select { min-height: 38px; max-width: 100%; padding: 8px 28px 8px 10px; border: 1px solid #cfd5c7; border-radius: 5px; background: #fbfcf9; font-size: 12px; }
+.account-next { color: var(--muted); font-size: 12px; line-height: 1.7; margin: -2px 0 16px; }
+.manual-setting { border-top: 1px solid var(--line); }
+.reconnect-note { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px; margin: 16px 0; background: #eaf0e7; border-radius: 5px; font-size: 12px; line-height: 1.7; }.reconnect-note .button { flex-shrink: 0; min-height: 36px; padding: 8px 12px; font-size: 12px; }
+.sync-progress { border-left: 2px solid #879b85; padding: 5px 14px; margin: 16px 0 0; font-size: 12px; }.sync-progress > strong { font-weight: 550; }.sync-progress p { margin-top: 7px; line-height: 1.8; color: var(--muted); }.sync-error, .sync-progress .sync-error { color: #8f3e2f; font-size: 12px; line-height: 1.7; }
+.account-notice { color: #24734f; font-size: 12px; margin: 18px 0; }
+.sync-history-list { list-style: none; margin: 0; padding: 0; }.sync-history-list li { padding: 17px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; font-size: 12px; }.history-result { display: flex; flex-direction: column; gap: 5px; }.history-result strong { font-weight: 500; }.history-result time, .history-result small { color: var(--muted); }.history-result small { font-size: 11px; }.history-counts { display: flex; align-items: start; gap: 16px; font-variant-numeric: tabular-nums; color: var(--muted); }.sync-history-list .sync-error { grid-column: 1 / -1; }
+.rename-form { margin: 18px 0 4px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }.rename-form label { margin: 0 0 10px; }.rename-form > div { display: flex; gap: 10px; }.rename-form input { min-width: 0; height: 40px; flex: 1; font-size: 13px; }.rename-form .button { flex-shrink: 0; min-height: 40px; font-size: 12px; }.danger-text { color: #a33434; }
+@media (max-width: 1000px) { .account-toggle { grid-template-columns: minmax(110px, 1fr) minmax(100px, .9fr) 20px; gap: 12px; }.account-fresh { grid-column: 1 / 3; grid-row: 2; }.account-toggle > svg { grid-column: 3; grid-row: 1 / 3; }.account-toggle { padding: 18px 0; row-gap: 7px; } }
+@media (max-width: 600px) { .account-panel { padding-right: 0; }.account-tabs { gap: 22px; }.account-setting { gap: 14px; }.account-setting > div { flex: 1; }.reconnect-note { align-items: flex-start; flex-direction: column; }.account-setting p { max-width: 260px; }.account-fresh { font-size: 11px; }.account-toggle { grid-template-columns: minmax(0, 1fr) 20px; row-gap: 7px; }.account-status { grid-column: 1; grid-row: 2; }.account-fresh { grid-column: 1; grid-row: 3; }.account-toggle > svg { grid-column: 2; grid-row: 1 / 4; }.history-counts { flex-direction: column; gap: 5px; }.account-setting:has(.danger-text) { align-items: flex-start; }.account-setting:has(.danger-text) .button { margin-top: 1px; } }
+@media (max-width: 390px) { .account-tabs { gap: 18px; }.account-tabs button { font-size: 12px; }.account-setting { flex-wrap: wrap; }.account-setting > div { flex-basis: 145px; }.rename-form > div { flex-wrap: wrap; }.rename-form input { flex-basis: 100%; }.history-counts { gap: 7px; }.account-toggle { padding-right: 4px; } }
 </style>

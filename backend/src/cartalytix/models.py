@@ -3,6 +3,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    DDL,
     JSON,
     Boolean,
     DateTime,
@@ -14,9 +15,12 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from cartalytix.search import SEARCH_FUNCTION_DDL
 
 
 def utcnow() -> datetime:
@@ -27,12 +31,23 @@ class Base(DeclarativeBase):
     pass
 
 
+for statement in (
+    "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+    "CREATE EXTENSION IF NOT EXISTS unaccent",
+    SEARCH_FUNCTION_DDL,
+):
+    event.listen(Base.metadata, "before_create", DDL(statement).execute_if(dialect="postgresql"))
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     email: Mapped[str] = mapped_column(String(254), unique=True)
     password_hash: Mapped[str] = mapped_column(String(256))
     locale: Mapped[str] = mapped_column(String(2), default="en")
+    receipt_view: Mapped[str] = mapped_column(
+        String(16), default="rendered", server_default="rendered"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     connections: Mapped[list[ProviderConnection]] = relationship(lazy="raise")
 
@@ -107,6 +122,11 @@ class Receipt(Base):
     __table_args__ = (
         UniqueConstraint("connection_id", "external_id"),
         Index("ix_receipts_connection_purchased", "connection_id", "purchased_at"),
+        Index(
+            "ix_receipts_merchant_search",
+            text("cartalytix_search_text(merchant) gin_trgm_ops"),
+            postgresql_using="gin",
+        ).ddl_if(dialect="postgresql"),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     connection_id: Mapped[UUID] = mapped_column(ForeignKey("provider_connections.id"))
@@ -131,7 +151,14 @@ class Receipt(Base):
 
 class ReceiptItem(Base):
     __tablename__ = "receipt_items"
-    __table_args__ = (UniqueConstraint("receipt_id", "position"),)
+    __table_args__ = (
+        UniqueConstraint("receipt_id", "position"),
+        Index(
+            "ix_receipt_items_name_search",
+            text("cartalytix_search_text(name) gin_trgm_ops"),
+            postgresql_using="gin",
+        ).ddl_if(dialect="postgresql"),
+    )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     receipt_id: Mapped[UUID] = mapped_column(ForeignKey("receipts.id"), index=True)
     position: Mapped[int] = mapped_column(Integer)

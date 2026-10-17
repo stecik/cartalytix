@@ -1,7 +1,8 @@
 export interface User {
   id: string;
   email: string;
-  locale?: string;
+  locale: string;
+  receipt_view: "rendered" | "detailed";
 }
 
 export interface Receipt {
@@ -53,6 +54,54 @@ export interface Overview {
   latest_receipts: Receipt[];
 }
 
+export interface Suggestion {
+  kind: "item" | "merchant";
+  text: string;
+  receipt_count: number;
+}
+
+export type StatsPeriod = "12m" | "year" | "all";
+
+export interface CurrencyStats {
+  currency: string;
+  amount: string;
+  receipt_count: number;
+  average: string;
+  previous_amount: string | null;
+  previous_receipt_count: number | null;
+  discount_amount: string;
+}
+
+export interface MonthStats {
+  month: string;
+  amount: string;
+  receipt_count: number;
+}
+
+export interface MerchantStats {
+  merchant: string;
+  amount: string;
+  receipt_count: number;
+}
+
+export interface ItemStats {
+  name: string;
+  receipt_count: number;
+  amount: string;
+}
+
+export interface Stats {
+  period: StatsPeriod;
+  month: string | null;
+  currency: string | null;
+  totals: CurrencyStats[];
+  months: MonthStats[];
+  merchants: MerchantStats[];
+  frequent_items: ItemStats[];
+  top_spend_items: ItemStats[];
+  weekly_hours: number[][];
+}
+
 export interface Provider {
   code: string;
   name: string;
@@ -69,6 +118,7 @@ export interface Connection {
   last_synced_at: string | null;
   next_sync_at: string | null;
   latest_sync: SyncRun | null;
+  receipt_count: number;
 }
 
 export interface SyncRun {

@@ -1,12 +1,12 @@
 """Owner-scoped Lidl connections, refresh handoff and durable sync submission."""
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, cast
+from typing import Annotated, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from redis.exceptions import RedisError
-from sqlalchemy import Engine, func, select, tuple_
+from sqlalchemy import Engine, delete, func, select, tuple_
 from sqlalchemy.orm import Session
 
 from cartalytix.credentials import CredentialError, TokenCipher
@@ -15,7 +15,9 @@ from cartalytix.models import ProviderConnection, Receipt, SyncRun, User
 from cartalytix.providers.lidl.client import LidlError, exchange_refresh
 from cartalytix.providers.lidl.login_protocol import LoginError
 from cartalytix.providers.lidl.login_sessions import LoginOutcome, LoginSessions
+from cartalytix.providers.lidl.management import clear_purchases, stop_pending_runs
 from cartalytix.schemas import (
+    ClearConnectionDataInput,
     ConnectionOutput,
     LidlAuthorizeInput,
     LidlConnectionInput,
@@ -66,9 +68,19 @@ def connection_outputs(
     for run in runs:
         if run.connection_id not in latest:
             latest[run.connection_id] = SyncRunOutput.model_validate(run)
+    counts = dict(
+        db.execute(
+            select(Receipt.connection_id, func.count(Receipt.id))
+            .where(Receipt.connection_id.in_(identifiers))
+            .group_by(Receipt.connection_id)
+        ).all()
+    )
     return [
         ConnectionOutput.model_validate(connection).model_copy(
-            update={"latest_sync": latest.get(connection.id)}
+            update={
+                "latest_sync": latest.get(connection.id),
+                "receipt_count": counts.get(connection.id, 0),
+            }
         )
         for connection in connections
     ]
@@ -123,6 +135,90 @@ def update_connection(
     return connection_outputs(db, [connection])[0]
 
 
+def _manage_connection(
+    identifier: UUID,
+    action: Literal["disconnect", "clear", "remove"],
+    request: Request,
+    owner_id: UUID,
+    db: Session,
+    *,
+    pause_sync: bool = True,
+) -> ConnectionOutput | None:
+    _connection(db, identifier, owner_id)
+    db.rollback()
+    engine = cast(Engine, request.app.state.engine)
+    with connection_lock(engine, identifier) as acquired:
+        if not acquired:
+            raise HTTPException(409, "connection_busy")
+        # The row lock also serializes scheduling/enqueueing against lifecycle changes.
+        connection = db.scalar(
+            select(ProviderConnection)
+            .where(
+                ProviderConnection.id == identifier,
+                ProviderConnection.owner_id == owner_id,
+                ProviderConnection.provider == "lidl",
+            )
+            .with_for_update()
+        )
+        if connection is None:
+            raise HTTPException(404, "connection_not_found")
+        if action in {"disconnect", "remove"}:
+            sessions = cast(LoginSessions, request.app.state.lidl_logins)
+            try:
+                sessions.cancel_connection(owner_id, identifier)
+            except LoginError as error:
+                raise _login_error(error) from None
+        if action == "remove":
+            clear_purchases(db, identifier)
+            db.execute(delete(SyncRun).where(SyncRun.connection_id == identifier))
+            db.execute(delete(ProviderConnection).where(ProviderConnection.id == identifier))
+            db.commit()
+            return None
+        if action == "disconnect":
+            connection.encrypted_refresh_token = None
+            # Keep the identity binding while its purchase history remains stored.
+            connection.status = "disconnected"
+        else:
+            clear_purchases(db, identifier)
+        if pause_sync or action == "disconnect":
+            connection.sync_interval_minutes = None
+            connection.next_sync_at = None
+        stop_pending_runs(
+            db, identifier, "connection_disconnected" if action == "disconnect" else "data_cleared"
+        )
+        db.commit()
+        return connection_outputs(db, [connection])[0]
+
+
+@router.post("/connections/{identifier}/disconnect", response_model=ConnectionOutput)
+def disconnect_connection(
+    identifier: UUID, request: Request, owner: Owner, db: Db
+) -> ConnectionOutput:
+    result = _manage_connection(identifier, "disconnect", request, owner.id, db)
+    assert result is not None
+    return result
+
+
+@router.post("/connections/{identifier}/clear-data", response_model=ConnectionOutput)
+def clear_connection_data(
+    identifier: UUID,
+    payload: ClearConnectionDataInput,
+    request: Request,
+    owner: Owner,
+    db: Db,
+) -> ConnectionOutput:
+    result = _manage_connection(
+        identifier, "clear", request, owner.id, db, pause_sync=payload.pause_sync
+    )
+    assert result is not None
+    return result
+
+
+@router.delete("/connections/{identifier}", status_code=204)
+def remove_connection(identifier: UUID, request: Request, owner: Owner, db: Db) -> None:
+    _manage_connection(identifier, "remove", request, owner.id, db)
+
+
 def _authorize(
     identifier: UUID, refresh_token: str, request: Request, owner_id: UUID, db: Session
 ) -> ConnectionOutput:
@@ -141,39 +237,47 @@ def _authorize(
     with connection_lock(engine, identifier) as acquired:
         if not acquired:
             raise HTTPException(409, "connection_busy")
-        with Session(engine) as snapshot:
-            connection = _connection(snapshot, identifier, owner_id)
-            old_subject = connection.account_subject or None
-            if (
-                old_subject is None
-                and snapshot.scalar(
-                    select(Receipt.id).where(Receipt.connection_id == identifier).limit(1)
-                )
-                is not None
-            ):
-                raise HTTPException(409, "account_identity_unavailable")
-        try:
-            cipher = TokenCipher(request.app.state.settings)
-            tokens = exchange_refresh(refresh_token)
-            subject = tokens.get("subject")
-            if not isinstance(subject, str) or not subject or len(subject) > 256:
-                raise HTTPException(422, "account_identity_unavailable")
-            if old_subject is not None and old_subject != subject:
-                raise HTTPException(409, "account_mismatch")
-            encrypted = cipher.encrypt(tokens.get("refresh_token", ""))
-        except CredentialError:
-            raise HTTPException(503, "credentials_unavailable") from None
-        except LidlError as error:
-            raise HTTPException(422, error.code) from None
-        with Session(engine, expire_on_commit=False) as persistence, persistence.begin():
-            connection = _connection(persistence, identifier, owner_id)
-            connection.encrypted_refresh_token = encrypted
-            connection.account_subject = subject
-            connection.status = "connected"
-            connection.next_sync_at = _next_sync(connection.sync_interval_minutes)
-        # Read response only after the rotation transaction is committed.
-        connection = _connection(db, identifier, owner_id)
-        return connection_outputs(db, [connection])[0]
+        return _store_authorization(identifier, refresh_token, request, owner_id, db)
+
+
+def _store_authorization(
+    identifier: UUID, refresh_token: str, request: Request, owner_id: UUID, db: Session
+) -> ConnectionOutput:
+    """Caller holds the advisory lock through OAuth and credential persistence."""
+    engine = cast(Engine, request.app.state.engine)
+    with Session(engine) as snapshot:
+        connection = _connection(snapshot, identifier, owner_id)
+        old_subject = connection.account_subject or None
+        if (
+            old_subject is None
+            and snapshot.scalar(
+                select(Receipt.id).where(Receipt.connection_id == identifier).limit(1)
+            )
+            is not None
+        ):
+            raise HTTPException(409, "account_identity_unavailable")
+    try:
+        cipher = TokenCipher(request.app.state.settings)
+        tokens = exchange_refresh(refresh_token)
+        subject = tokens.get("subject")
+        if not isinstance(subject, str) or not subject or len(subject) > 256:
+            raise HTTPException(422, "account_identity_unavailable")
+        if old_subject is not None and old_subject != subject:
+            raise HTTPException(409, "account_mismatch")
+        encrypted = cipher.encrypt(tokens.get("refresh_token", ""))
+    except CredentialError:
+        raise HTTPException(503, "credentials_unavailable") from None
+    except LidlError as error:
+        raise HTTPException(422, error.code) from None
+    with Session(engine, expire_on_commit=False) as persistence, persistence.begin():
+        connection = _connection(persistence, identifier, owner_id)
+        connection.encrypted_refresh_token = encrypted
+        connection.account_subject = subject
+        connection.status = "connected"
+        connection.next_sync_at = _next_sync(connection.sync_interval_minutes)
+    # Read response only after the rotation transaction is committed.
+    connection = _connection(db, identifier, owner_id)
+    return connection_outputs(db, [connection])[0]
 
 
 @router.post("/connections/{identifier}/authorize", response_model=ConnectionOutput)
@@ -192,10 +296,10 @@ def _login_error(error: LoginError) -> HTTPException:
 
 
 def _login_output(
-    outcome: LoginOutcome, identifier: UUID, request: Request, owner: User, db: Session
+    outcome: LoginOutcome, identifier: UUID, request: Request, owner_id: UUID, db: Session
 ) -> LidlLoginOutput:
     if outcome.step == "completed" and outcome.refresh_token:
-        connection = _authorize(identifier, outcome.refresh_token, request, owner.id, db)
+        connection = _store_authorization(identifier, outcome.refresh_token, request, owner_id, db)
         return LidlLoginOutput(step="completed", connection=connection)
     method = (outcome.method or "").casefold()
     return LidlLoginOutput(
@@ -221,13 +325,19 @@ def login_connection(
     if not allowed:
         raise HTTPException(429, "login_rate_limited")
     sessions = cast(LoginSessions, request.app.state.lidl_logins)
-    try:
-        outcome = sessions.start(
-            owner_id, identifier, str(payload.email), payload.password.get_secret_value()
-        )
-    except LoginError as error:
-        raise _login_error(error) from None
-    return _login_output(outcome, identifier, request, owner, db)
+    engine = cast(Engine, request.app.state.engine)
+    with connection_lock(engine, identifier) as acquired:
+        if not acquired:
+            raise HTTPException(409, "connection_busy")
+        with Session(engine) as snapshot:
+            _connection(snapshot, identifier, owner_id)
+        try:
+            outcome = sessions.start(
+                owner_id, identifier, str(payload.email), payload.password.get_secret_value()
+            )
+        except LoginError as error:
+            raise _login_error(error) from None
+        return _login_output(outcome, identifier, request, owner_id, db)
 
 
 @router.post("/connections/{identifier}/login/{flow_id}/verify", response_model=LidlLoginOutput)
@@ -243,11 +353,19 @@ def verify_connection_login(
     _connection(db, identifier, owner_id)
     db.rollback()
     sessions = cast(LoginSessions, request.app.state.lidl_logins)
-    try:
-        outcome = sessions.verify(owner_id, identifier, flow_id, payload.code.get_secret_value())
-    except LoginError as error:
-        raise _login_error(error) from None
-    return _login_output(outcome, identifier, request, owner, db)
+    engine = cast(Engine, request.app.state.engine)
+    with connection_lock(engine, identifier) as acquired:
+        if not acquired:
+            raise HTTPException(409, "connection_busy")
+        with Session(engine) as snapshot:
+            _connection(snapshot, identifier, owner_id)
+        try:
+            outcome = sessions.verify(
+                owner_id, identifier, flow_id, payload.code.get_secret_value()
+            )
+        except LoginError as error:
+            raise _login_error(error) from None
+        return _login_output(outcome, identifier, request, owner_id, db)
 
 
 @router.delete("/connections/{identifier}/login/{flow_id}", status_code=204)

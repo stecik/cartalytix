@@ -180,20 +180,6 @@ textarea {
   background: #214f40;
   color: white;
 }
-.sidebar-bottom {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: #788274;
-  font-size: 11px;
-  line-height: 1.6;
-  padding: 22px 7px 0;
-  border-top: 1px solid var(--line);
-}
-.privacy-mark {
-  font-size: 20px;
-}
 .app-main {
   margin-left: 244px;
 }
@@ -234,14 +220,6 @@ textarea {
 .text-button svg {
   width: 17px;
   height: 17px;
-}
-.language-select select {
-  border: 0;
-  background: transparent;
-  padding: 11px 20px 11px 4px;
-  font-size: 12px;
-  cursor: pointer;
-  max-width: 125px;
 }
 .mobile-wordmark,
 .mobile-nav {
@@ -1087,11 +1065,6 @@ form input:focus {
     padding: 0 22px;
     min-height: 66px;
   }
-  .login-app .language-select {
-    background: #f7f6f0;
-    border-radius: 4px;
-    padding: 0 6px;
-  }
   .login-layout {
     grid-template-columns: 1fr;
     min-height: 100svh;
@@ -1173,10 +1146,6 @@ form input:focus {
   .mobile-wordmark {
     font-size: 18px;
     gap: 4px;
-  }
-  .language-select select {
-    font-size: 11px;
-    max-width: 96px;
   }
   .workspace-main {
     padding-left: 20px;

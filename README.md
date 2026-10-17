@@ -12,9 +12,74 @@ other stores remain unavailable. The original Lidl experiment remains in `experi
 | `experiments/` | Lidl prototype and `provider-research.md` |
 | `ARCHITECTURE.md` | Approved direction and remaining decisions |
 
+## Architecture
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "14px", "lineColor": "#94a3b8", "edgeLabelBackground": "#f8fafc"}, "flowchart": {"curve": "basis", "nodeSpacing": 30, "rankSpacing": 50, "padding": 12}}}%%
+flowchart TB
+    user(["<b>Browser</b> · PWA"]):::client
+
+    subgraph edge["Edge"]
+        direction LR
+        proxy["<b>Reverse proxy</b><br/>Vite dev · Nginx prod"]:::web
+        frontend["<b>Frontend</b><br/>Vue 3 · TypeScript"]:::web
+    end
+
+    subgraph backend["Backend · Python 3.15 · uv"]
+        direction LR
+        migrate["<b>Migrate</b><br/>Alembic, one-shot"]:::job
+        api["<b>API</b><br/>FastAPI · uvicorn"]:::svc
+        worker["<b>Worker</b><br/>Celery"]:::svc
+        beat["<b>Beat</b><br/>Celery scheduler"]:::svc
+    end
+
+    subgraph data["Data"]
+        direction LR
+        pg[("<b>PostgreSQL 17</b><br/>users · receipts · jobs")]:::db
+        redis[("<b>Redis 7</b><br/>broker · rate limit")]:::db
+        key[/"<b>Fernet key</b><br/>Docker secret"/]:::secret
+    end
+
+    subgraph connectors["Store connectors"]
+        direction TB
+        lidl["<b>Lidl CZ</b><br/>OAuth · headless Chrome"]:::conn
+        lidlapi["<b>Lidl API</b><br/>external · unofficial"]:::ext
+    end
+
+    user --> proxy
+    proxy -- static --> frontend
+    proxy -- /api --> api
+    migrate --> pg
+    api --> pg & redis
+    worker -- consume --> redis
+    worker --> pg
+    beat -- enqueue --> redis
+    backend -. token encryption .-> key
+    api -. link account .-> lidl
+    worker -. sync receipts .-> lidl
+    lidl -- HTTPS --> lidlapi
+
+    classDef client fill:#f1f5f9,stroke:#64748b,color:#0f172a
+    classDef web fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+    classDef svc fill:#ede9fe,stroke:#7c3aed,color:#2e1065
+    classDef job fill:#f5f3ff,stroke:#7c3aed,color:#2e1065,stroke-dasharray:4 3
+    classDef conn fill:#ffedd5,stroke:#ea580c,color:#431407
+    classDef ext fill:#fff7ed,stroke:#ea580c,color:#431407,stroke-dasharray:4 3
+    classDef db fill:#dcfce7,stroke:#16a34a,color:#052e16
+    classDef secret fill:#fef9c3,stroke:#ca8a04,color:#422006
+    style edge fill:none,stroke:#0284c7,stroke-dasharray:6 4,color:#0284c7
+    style backend fill:none,stroke:#7c3aed,stroke-dasharray:6 4,color:#7c3aed
+    style data fill:none,stroke:#16a34a,stroke-dasharray:6 4,color:#16a34a
+    style connectors fill:none,stroke:#ea580c,stroke-dasharray:6 4,color:#ea580c
+```
+
+Connectors run in-process in the API (login) and worker (sync); there is no
+separate connector service. Jobs are persisted in PostgreSQL, so a Redis outage
+delays but does not lose them.
+
 ## Local setup
 
-Requires Docker Compose; Node 24 and npm for the local frontend dev server.
+Requires Docker Compose. Node and Vite run in the frontend container.
 Copy `.env.example` to `.env` and set a random URL-safe `POSTGRES_PASSWORD`.
 There are no default application credentials or public registration.
 
@@ -22,26 +87,23 @@ There are no default application credentials or public registration.
 uv --directory backend sync --locked --extra browser
 uv --directory backend run --no-sync python -c "from pathlib import Path; from cryptography.fernet import Fernet; p=Path('../.secrets/lidl.key'); p.parent.mkdir(exist_ok=True); p.open('xb').write(Fernet.generate_key())"
 docker compose build
-docker compose up -d postgres redis
-docker compose run --rm api uv run --no-sync alembic upgrade head
-docker compose run --rm api uv run --no-sync cartalytix create-user
 docker compose up -d
-npm --prefix frontend ci
-npm --prefix frontend run dev
+docker compose exec api uv run --no-sync cartalytix create-user
 ```
 
 Enter the account password at the terminal prompt; never put it in a command or
-chat. Open `http://localhost:5173` for local development; Vite forwards API calls
-to `127.0.0.1:8000`.
+chat. After initial setup, start development with `docker compose build` and
+`docker compose up -d`; no override files are needed. Migrations run before
+the API and workers start.
 
-The Docker frontend serves static files at `127.0.0.1:8080` (change
-`FRONTEND_PORT` in `.env` if occupied), the API at
-`127.0.0.1:8000`. The existing VPS Nginx must route `/api/` to the API and all
-other paths to the frontend under one HTTPS origin; no proxy container is
-included. Configure that origin, production mode and secure cookies through
-`.env`. Set `CARTALYTIX_TRUSTED_PROXY_HOSTS` to the actual Nginx peer IP/CIDR
-seen inside the API container, and have Nginx overwrite `X-Forwarded-For`.
-This keeps login limits per client. PostgreSQL and Redis have no published ports.
+The frontend runs Vite at `http://localhost:8080` (or `FRONTEND_PORT` from `.env`),
+listens on all interfaces, and proxies `/api/` to FastAPI inside Docker.
+Frontend source changes reload automatically. For mobile testing on the same
+Wi-Fi, use the computer's IP and add that exact origin to
+`CARTALYTIX_ALLOWED_ORIGINS` in `.env`. The API is bound to `127.0.0.1:8000`;
+PostgreSQL and Redis have no published ports. No local Nginx or `work/` files
+are required. This Compose setup is for development; production serves the
+frontend build and `/api/` through the existing VPS Nginx under one HTTPS origin.
 
 Create the encryption key once; keep it outside Git and back it up separately
 from the database. `TOKEN_KEY_PATH` overrides its host path. Losing or replacing

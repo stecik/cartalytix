@@ -87,6 +87,21 @@ class LoginSessions:
         finally:
             session.lock.release()
 
+    def cancel_connection(self, owner: UUID, connection: UUID) -> None:
+        """Invalidate an idle verification before disconnecting or removing its account."""
+        with self._guard:
+            matching = [
+                (identifier, session)
+                for identifier, session in self._sessions.items()
+                if session.owner_id == owner and session.connection_id == connection
+            ]
+        for identifier, _session in matching:
+            try:
+                self.cancel(owner, connection, identifier)
+            except LoginError as error:
+                if str(error) != "login_expired":
+                    raise
+
     def _acquire(self, owner: UUID, connection: UUID, identifier: str) -> LoginSession:
         self.cleanup()
         with self._guard:

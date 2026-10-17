@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from secrets import token_urlsafe
 from typing import Annotated, Protocol
 from uuid import UUID
@@ -11,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from redis import Redis
 from redis.exceptions import RedisError
-from sqlalchemy import Engine, create_engine, delete, func, select, text
+from sqlalchemy import ColumnElement, Engine, create_engine, delete, exists, func, or_, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response as StarletteResponse
@@ -34,11 +35,16 @@ from cartalytix.schemas import (
     ReceiptDetailOutput,
     ReceiptItemOutput,
     ReceiptOutput,
+    ReceiptSort,
     ReceiptsOutput,
     UserOutput,
+    UserSettingsInput,
 )
+from cartalytix.search import matches
+from cartalytix.search_routes import router as search_router
 from cartalytix.security import token_hash, verify_password
 from cartalytix.settings import Settings
+from cartalytix.stats_routes import router as stats_router
 
 PROVIDERS = (
     ("lidl", "Lidl"),
@@ -48,6 +54,12 @@ PROVIDERS = (
     ("kosik", "Kosik"),
     ("billa", "Billa"),
 )
+RECEIPT_ORDER = {
+    ReceiptSort.PURCHASED_AT_DESC: (Receipt.purchased_at.desc(), Receipt.id.desc()),
+    ReceiptSort.PURCHASED_AT_ASC: (Receipt.purchased_at.asc(), Receipt.id.asc()),
+    ReceiptSort.TOTAL_AMOUNT_DESC: (Receipt.total_amount.desc(), Receipt.id.desc()),
+    ReceiptSort.TOTAL_AMOUNT_ASC: (Receipt.total_amount.asc(), Receipt.id.asc()),
+}
 
 
 class LoginLimiter(Protocol):
@@ -151,6 +163,8 @@ def create_app(
     app.state.lidl_logins = lidl_logins
     app.state.limiter = limiter or RedisLoginLimiter(redis, config)
     app.include_router(lidl_router)
+    app.include_router(stats_router)
+    app.include_router(search_router)
 
     @app.middleware("http")
     async def browser_security(
@@ -237,6 +251,15 @@ def create_app(
     def me(user: Owner) -> User:
         return user
 
+    @app.patch("/api/v1/auth/me", response_model=UserOutput)
+    def update_me(payload: UserSettingsInput, user: Owner, db: Db) -> User:
+        if payload.locale is not None:
+            user.locale = payload.locale
+        if payload.receipt_view is not None:
+            user.receipt_view = payload.receipt_view
+        db.commit()
+        return user
+
     @app.post("/api/v1/auth/logout", status_code=204)
     def logout(request: Request, response: Response, db: Db) -> None:
         token = request.cookies.get(COOKIE_NAME)
@@ -283,10 +306,35 @@ def create_app(
         limit: Annotated[int, Query(ge=1, le=100)] = 25,
         offset: Annotated[int, Query(ge=0, le=100000)] = 0,
         connection_id: UUID | None = None,
+        q: Annotated[str | None, Query(max_length=100)] = None,
+        purchased_from: datetime | None = None,
+        purchased_to: datetime | None = None,
+        amount_min: Annotated[Decimal | None, Query(ge=0, max_digits=18, decimal_places=2)] = None,
+        amount_max: Annotated[Decimal | None, Query(ge=0, max_digits=18, decimal_places=2)] = None,
+        sort: ReceiptSort = ReceiptSort.PURCHASED_AT_DESC,
     ) -> ReceiptsOutput:
-        filters = [ProviderConnection.owner_id == user.id]
+        filters: list[ColumnElement[bool]] = [ProviderConnection.owner_id == user.id]
         if connection_id is not None:
             filters.append(Receipt.connection_id == connection_id)
+        if q and q.strip():
+            term = q.strip()
+            filters.append(
+                or_(
+                    matches(Receipt.merchant, term),
+                    exists().where(
+                        ReceiptItem.receipt_id == Receipt.id,
+                        matches(ReceiptItem.name, term),
+                    ),
+                )
+            )
+        if purchased_from is not None:
+            filters.append(Receipt.purchased_at >= purchased_from)
+        if purchased_to is not None:
+            filters.append(Receipt.purchased_at < purchased_to)
+        if amount_min is not None:
+            filters.append(Receipt.total_amount >= amount_min)
+        if amount_max is not None:
+            filters.append(Receipt.total_amount <= amount_max)
         total = (
             db.scalar(
                 select(func.count())
@@ -304,7 +352,7 @@ def create_app(
             .where(
                 *filters,
             )
-            .order_by(Receipt.purchased_at.desc(), Receipt.id.desc())
+            .order_by(*RECEIPT_ORDER.get(sort, RECEIPT_ORDER[ReceiptSort.PURCHASED_AT_DESC]))
             .limit(limit)
             .offset(offset)
         )

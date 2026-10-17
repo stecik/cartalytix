@@ -17,6 +17,7 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 
 from cartalytix.main import create_app
 from cartalytix.models import Base, ProviderConnection, Receipt, User, UserSession
+from cartalytix.search import register_sqlite
 from cartalytix.security import hash_password, token_hash
 from cartalytix.settings import Settings
 
@@ -28,6 +29,7 @@ def engine() -> Iterator[Engine]:
         database = create_engine(
             "sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
         )
+        event.listen(database, "connect", register_sqlite)
         Base.metadata.create_all(database)
         yield database
         database.dispose()

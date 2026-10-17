@@ -5,29 +5,19 @@ import { useI18n } from "vue-i18n";
 import { request } from "../api";
 import type { Connection, Provider } from "../api";
 import AppIcon from "../components/AppIcon.vue";
+import AppDialog from "../components/AppDialog.vue";
 import QueryState from "../components/QueryState.vue";
 import LidlConnection from "../components/LidlConnection.vue";
-import lidlLogo from "../assets/lidl-logo.svg";
-import albertLogo from "../assets/albert-logo.png";
-import globusLogo from "../assets/globus-logo.png";
-import rohlikLogo from "../assets/rohlik-logo.png";
-import kosikLogo from "../assets/kosik-logo.png";
-import billaLogo from "../assets/billa-logo.png";
-
-const providerLogos: Record<string, string> = {
-  lidl: lidlLogo, albert: albertLogo, globus: globusLogo,
-  rohlik: rohlikLogo, kosik: kosikLogo, billa: billaLogo,
-};
+import { providerLogos } from "../providerLogos";
 
 const { t } = useI18n();
 const client = useQueryClient();
 const adding = ref(false);
 const name = ref("");
-const interval = ref<number | null>(null);
+const createdId = ref<string | null>(null);
 const connections = useQuery({
   queryKey: ["connections"],
-  queryFn: ({ signal }) =>
-    request<{ items: Connection[] }>("/connections", { signal }),
+  queryFn: ({ signal }) => request<{ items: Connection[] }>("/connections", { signal }),
   refetchInterval: (query) => query.state.data?.items.some((connection) =>
     connection.latest_sync?.status === "pending" || connection.latest_sync?.status === "running",
   ) ? 3000 : false,
@@ -41,133 +31,97 @@ watch(() => connections.data.value?.items, (current, previous) => {
   });
   if (completed?.length) {
     void client.invalidateQueries({ queryKey: ["overview"] });
+    void client.invalidateQueries({ queryKey: ["overview-stats"] });
     void client.invalidateQueries({ queryKey: ["receipts"] });
-    for (const connection of completed) {
-      void client.invalidateQueries({ queryKey: ["connection-runs", connection.id] });
-    }
+    for (const connection of completed) void client.invalidateQueries({ queryKey: ["connection-runs", connection.id] });
   }
 });
 const providers = useQuery({
   queryKey: ["providers"],
-  queryFn: ({ signal }) =>
-    request<{ items: Provider[] }>("/providers", { signal }),
+  queryFn: ({ signal }) => request<{ items: Provider[] }>("/providers", { signal }),
 });
-const lidlAvailable = computed(() => providers.data.value?.items.some((provider) => provider.code === "lidl" && provider.status === "available"));
+const available = computed(() => providers.data.value?.items.filter((provider) => provider.status === "available") ?? []);
+const upcoming = computed(() => providers.data.value?.items.filter((provider) => provider.status !== "available") ?? []);
+const accounts = (provider: string): Connection[] => connections.data.value?.items.filter((connection) => connection.provider === provider) ?? [];
+function openAdd(): void { name.value = ""; createConnection.reset(); adding.value = true; }
 const createConnection = useMutation({
   mutationFn: () => request<Connection>("/providers/lidl/connections", {
-    method: "POST", body: JSON.stringify({ name: name.value.trim(), sync_interval_minutes: interval.value }),
+    method: "POST", body: JSON.stringify({ name: name.value.trim(), sync_interval_minutes: null }),
   }),
-  onSuccess: async () => {
+  onSuccess: async (connection) => {
     adding.value = false;
     name.value = "";
-    interval.value = null;
-    await client.invalidateQueries({ queryKey: ["connections"] });
+    createdId.value = connection.id;
+    client.setQueryData<{ items: Connection[] }>(["connections"], (previous) => ({ items: [...(previous?.items ?? []), connection] }));
+    await client.invalidateQueries({ queryKey: ["overview"] });
   },
 });
 </script>
 
 <template>
-  <div class="view-content">
-    <header class="page-heading">
-      <div class="eyebrow">{{ t("workspace") }}</div>
-      <h1>{{ t("connections") }}</h1>
-      <p>{{ t("connectionIntro") }}</p>
-    </header>
-    <section class="connections-section">
-      <div class="section-heading">
-        <h2>{{ t("yourConnections") }}</h2>
-        <button v-if="lidlAvailable" class="button primary" @click="adding = !adding">{{ t("addLidlAccount") }}</button>
-      </div>
-      <form v-if="adding" class="connection-form" :aria-busy="createConnection.isPending.value" @submit.prevent="name.trim() && createConnection.mutate()">
+  <div class="view-content connections-workspace">
+    <header class="connections-title"><h1>{{ t("connections") }}</h1><p>{{ t("connectionIntro") }}</p></header>
+    <QueryState :pending="providers.isPending.value || connections.isPending.value" :failed="providers.isError.value || connections.isError.value" @retry="providers.refetch(); connections.refetch()">
+      <section v-for="provider in available" :key="provider.code" class="connected-store" :aria-labelledby="`store-${provider.code}`">
+        <header class="store-header">
+          <img v-if="providerLogos[provider.code]" :src="providerLogos[provider.code]" class="provider-logo" width="38" height="38" alt="" />
+          <div class="store-copy"><h2 :id="`store-${provider.code}`">{{ provider.code === 'lidl' ? t('lidlPlus') : provider.name }}</h2><p>{{ t('accountCount', accounts(provider.code).length) }}</p></div>
+          <button v-if="provider.code === 'lidl'" class="button secondary add-account" @click="openAdd"><AppIcon name="plus" />{{ t("addAccount") }}</button>
+        </header>
+        <p v-if="!accounts(provider.code).length" class="accounts-empty">{{ t("noConnectionsDescription") }}</p>
+        <ul v-else class="account-list">
+          <li v-for="connection in accounts(provider.code)" :key="connection.id">
+            <LidlConnection v-if="connection.provider === 'lidl'" :connection="connection" :initial-linking="connection.id === createdId" />
+          </li>
+        </ul>
+      </section>
+      <section v-if="upcoming.length" class="upcoming-stores" :aria-label="t('otherStores')">
+        <h2>{{ t("otherStores") }}</h2>
+        <ul>
+<li v-for="provider in upcoming" :key="provider.code" class="upcoming-store">
+          <img v-if="providerLogos[provider.code]" :src="providerLogos[provider.code]" width="38" height="30" alt="" />
+          <span>{{ provider.name }}</span><small>{{ t("comingLater") }}</small>
+        </li>
+</ul>
+      </section>
+      <p v-if="!providers.data.value?.items.length" class="section-note">{{ t("noProviders") }}</p>
+    </QueryState>
+    <AppDialog v-if="adding" :title="t('addLidlAccount')" :busy="createConnection.isPending.value" @close="adding = false">
+      <p>{{ t("accountNameHelp") }}</p>
+      <form :aria-busy="createConnection.isPending.value" @submit.prevent="name.trim() && createConnection.mutate()">
         <label for="connection-name">{{ t("connectionName") }}</label>
         <input id="connection-name" v-model="name" name="connection-name" maxlength="120" required :disabled="createConnection.isPending.value" />
-        <label for="connection-interval">{{ t("syncSchedule") }}</label>
-        <select id="connection-interval" v-model="interval" :disabled="createConnection.isPending.value">
-          <option :value="null">{{ t("manualOnly") }}</option>
-          <option :value="60">{{ t("everyHour") }}</option>
-          <option :value="360">{{ t("everySixHours") }}</option>
-          <option :value="1440">{{ t("everyDay") }}</option>
-        </select>
         <p v-if="createConnection.isError.value" class="form-alert" role="alert">{{ t("connectionSaveFailed") }}</p>
-        <div class="connection-actions">
-          <button class="button primary" type="submit" :disabled="!name.trim() || createConnection.isPending.value">{{ t(createConnection.isPending.value ? "saving" : "createConnection") }}</button>
-          <button class="button secondary" type="button" :disabled="createConnection.isPending.value" @click="adding = false">{{ t("cancel") }}</button>
-        </div>
+        <div class="dialog-actions"><button class="button secondary" data-action="cancel" type="button" :disabled="createConnection.isPending.value" @click="adding = false">{{ t("cancel") }}</button><button class="button primary" type="submit" :disabled="!name.trim() || createConnection.isPending.value">{{ t(createConnection.isPending.value ? "saving" : "continueConnecting") }}</button></div>
       </form>
-      <QueryState
-        :pending="connections.isPending.value"
-        :failed="connections.isError.value"
-        @retry="connections.refetch()"
-      >
-        <div
-          v-if="connections.data.value?.items.length === 0"
-          class="connection-empty"
-        >
-          <AppIcon name="connections" />
-          <div>
-            <h3>{{ t("noConnections") }}</h3>
-            <p>{{ t("noConnectionsDescription") }}</p>
-          </div>
-        </div>
-        <ul v-else class="connection-list">
-          <li
-            v-for="connection in connections.data.value?.items"
-            :key="connection.id"
-          >
-            <LidlConnection v-if="connection.provider === 'lidl'" :connection="connection" />
-            <template v-else><strong>{{ connection.name }}</strong><span>{{ connection.provider }}</span></template>
-          </li>
-        </ul>
-      </QueryState>
-    </section>
-    <section class="providers-section">
-      <div class="section-heading">
-        <h2>{{ t("providerDirectory") }}</h2>
-      </div>
-      <p class="section-note">{{ t("providerDirectoryNote") }}</p>
-      <QueryState
-        :pending="providers.isPending.value"
-        :failed="providers.isError.value"
-        @retry="providers.refetch()"
-      >
-        <p v-if="providers.data.value?.items.length === 0" class="section-note">
-          {{ t("noProviders") }}
-        </p>
-        <ul v-else class="provider-list">
-          <li
-            v-for="provider in providers.data.value?.items"
-            :key="provider.code"
-          >
-            <img v-if="providerLogos[provider.code]" :src="providerLogos[provider.code]" class="store-logo" width="44" height="44" alt="" aria-hidden="true" />
-            <span v-else class="store-monogram" aria-hidden="true">{{
-              provider.name.slice(0, 1)
-            }}</span>
-            <div class="provider-name">
-              <h3>{{ provider.name }}</h3>
-              <span>{{ t(provider.status === "available" ? "connectorAvailable" : "connectorPending") }}</span>
-            </div>
-            <span class="status-label"><i />{{
-                t(provider.status === "available" ? "available" : provider.status === "research" ? "research" : "notAvailable")
-              }}</span>
-            <button
-              class="button secondary unavailable-action"
-              :disabled="provider.code !== 'lidl' || provider.status !== 'available'"
-              :aria-label="t(provider.code === 'lidl' && provider.status === 'available' ? 'addLidlAccount' : 'connectionUnavailable')"
-              @click="adding = true"
-            >
-              {{ t(provider.code === 'lidl' && provider.status === 'available' ? "addLidlAccount" : "notAvailable") }}
-            </button>
-          </li>
-        </ul>
-      </QueryState>
-    </section>
+    </AppDialog>
   </div>
 </template>
 
 <style>
-.connection-form { max-width: 520px; margin: 24px 0; padding: 0 0 24px; border-bottom: 1px solid var(--line); }
+.connections-workspace { --line: #e0e5dd; max-width: 1040px; }
+.connections-title { margin-bottom: 34px; }
+.connections-title h1 { font-size: 29px; line-height: 1.25; font-weight: 600; letter-spacing: -1px; margin-bottom: 9px; }
+.connections-title p { color: var(--muted); font-size: 13px; line-height: 1.7; }
+.store-header { display: flex; align-items: center; gap: 13px; padding-bottom: 20px; }
+.provider-logo { width: 38px; height: 38px; object-fit: contain; }
+.store-copy { flex: 1; min-width: 0; }
+.store-copy h2 { font-size: 16px; font-weight: 650; letter-spacing: -.3px; }
+.store-copy p { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.add-account { gap: 6px; white-space: nowrap; padding: 8px 12px; min-height: 38px; }
+.add-account svg { width: 16px; height: 16px; }
+.account-list, .upcoming-stores ul { list-style: none; margin: 0; padding: 0; }
+.account-list > li { border-top: 1px solid var(--line); }
+.account-list > li:last-child { border-bottom: 1px solid var(--line); }
+.accounts-empty { border-block: 1px solid var(--line); padding: 24px 0; font-size: 13px; line-height: 1.8; color: var(--muted); }
+.upcoming-stores { margin-top: 36px; }
+.upcoming-stores h2 { font-size: 13px; font-weight: 500; color: var(--muted); margin-bottom: 12px; }
+.upcoming-store { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.upcoming-store img { object-fit: contain; flex-shrink: 0; }
+.upcoming-store span { flex: 1; font-weight: 500; }
+.upcoming-store small { color: var(--muted); font-size: 12px; }
+.connection-form { max-width: 460px; margin: 16px 0 0; }
 .connection-form label { margin-top: 18px; }
-.connection-form select { width: 100%; height: 49px; padding: 10px 13px; border: 1px solid #cbd1c3; border-radius: 4px; background: #fbfbf6; color: inherit; font: inherit; font-size: 13px; }
-.connection-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
-.connections-section .section-heading { flex-wrap: wrap; gap: 14px; }
+.connection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+@media (max-width: 390px) { .store-header { gap: 10px; }.add-account { padding: 8px; font-size: 12px; gap: 4px; }.provider-logo { width: 32px; height: 32px; } }
 </style>

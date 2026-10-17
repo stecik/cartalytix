@@ -3,15 +3,23 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import type { Receipt } from "../api";
 import AppIcon from "./AppIcon.vue";
+import { providerLogos } from "../providerLogos";
 
-defineProps<{ receipts: Receipt[] }>();
+const props = defineProps<{ receipts: Receipt[]; sort?: string; filtered?: boolean }>();
+const emit = defineEmits<{ sort: [field: "purchased_at" | "total_amount"] }>();
 const { t, locale } = useI18n();
 const router = useRouter();
+const SORT_MARKS = { ascending: "↑", descending: "↓", none: "" } as const;
 
 function openReceipt(event: MouseEvent, id: string): void {
   if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey
     || (event.target instanceof Element && event.target.closest("a"))) return;
   void router.push({ name: "receipt-detail", params: { id } });
+}
+
+function ariaSort(field: string): "ascending" | "descending" | "none" {
+  if (props.sort === `${field}_asc`) return "ascending";
+  return props.sort === `${field}_desc` ? "descending" : "none";
 }
 
 function formatAmount(amount: string, currency: string): string {
@@ -34,7 +42,10 @@ function formatDate(date: string): string {
 </script>
 
 <template>
-  <div v-if="receipts.length === 0" class="empty-state">
+  <div v-if="receipts.length === 0 && filtered" class="empty-state">
+    <h3>{{ t("noMatchingReceipts") }}</h3>
+  </div>
+  <div v-else-if="receipts.length === 0" class="empty-state">
     <div class="ledger-illustration" aria-hidden="true">
       <AppIcon name="receipts" />
     </div>
@@ -49,14 +60,29 @@ function formatDate(date: string): string {
       <thead>
         <tr>
           <th scope="col">{{ t("store") }}</th>
-          <th scope="col">{{ t("date") }}</th>
-          <th scope="col" class="amount">{{ t("amount") }}</th>
+          <th v-if="sort === undefined" scope="col">{{ t("date") }}</th>
+          <th v-else scope="col" :aria-sort="ariaSort('purchased_at')">
+            <button type="button" class="sort-button" @click="emit('sort', 'purchased_at')">
+              {{ t("date") }}<span aria-hidden="true">{{ SORT_MARKS[ariaSort("purchased_at")] }}</span>
+            </button>
+          </th>
+          <th v-if="sort === undefined" scope="col" class="amount">{{ t("amount") }}</th>
+          <th v-else scope="col" class="amount" :aria-sort="ariaSort('total_amount')">
+            <button type="button" class="sort-button" @click="emit('sort', 'total_amount')">
+              {{ t("amount") }}<span aria-hidden="true">{{ SORT_MARKS[ariaSort("total_amount")] }}</span>
+            </button>
+          </th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="receipt in receipts" :key="receipt.id" class="receipt-row" @click="openReceipt($event, receipt.id)">
           <td>
-            <RouterLink :to="{ name: 'receipt-detail', params: { id: receipt.id } }"><strong>{{ receipt.merchant }}</strong></RouterLink><span class="row-detail">{{ receipt.provider }}</span>
+            <div class="receipt-store">
+              <img v-if="providerLogos[receipt.provider]" :src="providerLogos[receipt.provider]" class="receipt-logo" width="28" height="28" alt="" />
+              <div>
+                <RouterLink :to="{ name: 'receipt-detail', params: { id: receipt.id } }"><strong>{{ receipt.merchant }}</strong></RouterLink><span class="row-detail">{{ receipt.provider }}</span>
+              </div>
+            </div>
           </td>
           <td>{{ formatDate(receipt.purchased_at) }}</td>
           <td class="amount">
@@ -70,6 +96,11 @@ function formatDate(date: string): string {
 
 <style scoped>
 .receipt-row { cursor: pointer; }
+.receipt-store { display: flex; align-items: center; gap: 12px; }
+.receipt-logo { width: 28px; height: 28px; object-fit: contain; flex-shrink: 0; }
+.sort-button { border: 0; padding: 0; background: none; color: inherit; font-size: inherit; display: inline-flex; gap: 4px; }
+.sort-button:hover { color: var(--green); }
+.sort-button span { min-width: 1ch; }
 .receipt-row:hover { background: #e9ecdf70; }
 .receipt-row a { display: inline-block; text-underline-offset: 4px; }
 .receipt-row a:hover { text-decoration: underline; }

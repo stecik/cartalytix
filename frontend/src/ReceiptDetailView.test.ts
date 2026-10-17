@@ -22,6 +22,12 @@ async function routerForReceipt() {
   return router;
 }
 
+function detailedClient(): QueryClient {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(["session"], { id: "user-1", email: "owner@example.com", locale: "en", receipt_view: "detailed" });
+  return client;
+}
+
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("receipt details", () => {
@@ -29,7 +35,7 @@ describe("receipt details", () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(receipt));
     vi.stubGlobal("fetch", fetcher);
     const router = await routerForReceipt();
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = detailedClient();
     const wrapper = mount(ReceiptDetailView, { global: { plugins: [router, createAppI18n("en"), [VueQueryPlugin, { queryClient: client }]] } });
     await flushPromises();
     expect(fetcher).toHaveBeenCalledWith("/api/v1/receipts/receipt-1", expect.objectContaining({ signal: expect.any(AbortSignal) }));
@@ -61,7 +67,7 @@ describe("receipt details", () => {
       items: receipt.items.map((item) => ({ ...item, quantity: "2", unit: "piece", is_weight: false })),
     })));
     const router = await routerForReceipt();
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const client = detailedClient();
     const wrapper = mount(ReceiptDetailView, { global: { plugins: [router, createAppI18n("cs"), [VueQueryPlugin, { queryClient: client }]] } });
     await flushPromises();
     expect(wrapper.text()).toContain("2 ks");

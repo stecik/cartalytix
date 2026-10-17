@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
@@ -11,11 +12,28 @@ class LoginInput(BaseModel):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class Locale(StrEnum):
+    EN = "en"
+    CS = "cs"
+
+
+class ReceiptView(StrEnum):
+    RENDERED = "rendered"
+    DETAILED = "detailed"
+
+
 class UserOutput(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     email: str
     locale: str
+    receipt_view: str
+
+
+class UserSettingsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    locale: Locale | None = None
+    receipt_view: ReceiptView | None = None
 
 
 class SyncRunOutput(BaseModel):
@@ -44,6 +62,7 @@ class ConnectionOutput(BaseModel):
     name: str
     country: str
     status: str
+    receipt_count: int = 0
     sync_interval_minutes: int | None = None
     last_synced_at: datetime | None = None
     next_sync_at: datetime | None = None
@@ -58,6 +77,11 @@ class LidlConnectionInput(BaseModel):
 class LidlConnectionUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120, pattern=r"\S")
     sync_interval_minutes: int | None = Field(default=None, ge=60, le=10080)
+
+
+class ClearConnectionDataInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    pause_sync: bool = True
 
 
 class LidlAuthorizeInput(BaseModel):
@@ -99,6 +123,13 @@ class ReceiptOutput(BaseModel):
     merchant: str
     total_amount: str
     currency: str
+
+
+class ReceiptSort(StrEnum):
+    PURCHASED_AT_DESC = "purchased_at_desc"
+    PURCHASED_AT_ASC = "purchased_at_asc"
+    TOTAL_AMOUNT_DESC = "total_amount_desc"
+    TOTAL_AMOUNT_ASC = "total_amount_asc"
 
 
 class ReceiptsOutput(BaseModel):
@@ -151,6 +182,67 @@ class OverviewOutput(BaseModel):
     connection_count: int
     totals: list[CurrencyTotal]
     latest_receipts: list[ReceiptOutput]
+
+
+class StatsPeriod(StrEnum):
+    LAST_12_MONTHS = "12m"
+    THIS_YEAR = "year"
+    ALL = "all"
+
+
+class CurrencyStats(BaseModel):
+    currency: str
+    amount: str
+    receipt_count: int
+    average: str
+    previous_amount: str | None
+    previous_receipt_count: int | None
+    discount_amount: str
+
+
+class MonthStats(BaseModel):
+    month: str
+    amount: str
+    receipt_count: int
+
+
+class MerchantStats(BaseModel):
+    merchant: str
+    amount: str
+    receipt_count: int
+
+
+class ItemStats(BaseModel):
+    name: str
+    receipt_count: int
+    amount: str
+
+
+class StatsOutput(BaseModel):
+    period: StatsPeriod
+    month: str | None
+    currency: str | None
+    totals: list[CurrencyStats]
+    months: list[MonthStats]
+    merchants: list[MerchantStats]
+    frequent_items: list[ItemStats]
+    top_spend_items: list[ItemStats]
+    weekly_hours: list[list[int]]
+
+
+class SuggestionKind(StrEnum):
+    ITEM = "item"
+    MERCHANT = "merchant"
+
+
+class SuggestionOutput(BaseModel):
+    kind: SuggestionKind
+    text: str
+    receipt_count: int
+
+
+class SuggestionsOutput(BaseModel):
+    items: list[SuggestionOutput]
 
 
 class ProviderOutput(BaseModel):

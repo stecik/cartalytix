@@ -6,6 +6,7 @@ import OverviewView from "./views/OverviewView.vue";
 import ReceiptsView from "./views/ReceiptsView.vue";
 import ReceiptDetailView from "./views/ReceiptDetailView.vue";
 import ConnectionsView from "./views/ConnectionsView.vue";
+import SettingsView from "./views/SettingsView.vue";
 
 export function createAppRouter(client: QueryClient) {
   const router = createRouter({
@@ -16,6 +17,7 @@ export function createAppRouter(client: QueryClient) {
       { path: "/receipts", name: "receipts", component: ReceiptsView },
       { path: "/receipts/:id", name: "receipt-detail", component: ReceiptDetailView },
       { path: "/connections", name: "connections", component: ConnectionsView },
+      { path: "/settings", name: "settings", component: SettingsView },
       { path: "/:pathMatch(.*)*", redirect: "/" },
     ],
     scrollBehavior: () => ({ top: 0 }),
