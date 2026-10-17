@@ -573,6 +573,12 @@ th:last-child {
 .provider-list li:last-child {
   border-bottom: 1px solid var(--line);
 }
+.store-logo {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
 .store-monogram {
   width: 44px;
   height: 44px;
@@ -1054,6 +1060,7 @@ form input:focus {
     font-size: 10px;
     gap: 5px;
   }
+  .store-logo,
   .store-monogram {
     width: 38px;
     height: 38px;

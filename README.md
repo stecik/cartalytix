@@ -49,15 +49,20 @@ the key requires reconnecting all store accounts.
 
 ## Lidl account linking
 
-Add a named Lidl account under Connections, then choose **Link with Chrome**.
-Run its displayed command on a computer with uv, this repository and Chrome.
-Enter Cartalytix credentials at the local terminal prompt; Lidl credentials and
-verification codes go directly into Lidl's browser page. No tokens are printed
-or saved locally; the server stores only an encrypted refresh token.
-Refresh Connections after linking and choose **Sync now**; schedules are optional.
+Add a named Lidl account under Connections, then choose **Connect account**.
+Enter Lidl credentials in the application and a verification code if requested.
+The backend uses ephemeral headless Chrome for device/CAPTCHA initialization and
+HTTP for OAuth/password/MFA. Passwords and codes are never persisted; only the
+validated refresh token is stored encrypted. Choose **Sync now** after linking;
+schedules are optional. All connector code lives in the backend, independently
+of `experiments/`; no experimental service or port is required.
 
-This uses an unofficial native OAuth/API flow. Initial linking requires desktop
-Chrome because Lidl's native callback cannot return directly to this PWA.
+The Docker image includes Chrome. Run one API process: active login continuations
+remain in bounded process-local memory for at most ten minutes and are discarded
+on restart. Existing stored connections and syncs survive restart. Allow up to
+180 seconds for login requests at the external reverse proxy.
+
+This uses an unofficial native OAuth/API flow.
 API changes, login challenges, rate limits and provider history retention can
 interrupt imports or require relinking. Every sync verifies all available list
 pages, downloads missing receipt details and keeps source JSON for rejected

@@ -85,6 +85,13 @@ export interface SyncRun {
   pages_count: number;
 }
 
+export interface LidlLoginResult {
+  step: "otp" | "completed";
+  flow_id: string | null;
+  method: "email" | "sms" | null;
+  connection: Connection | null;
+}
+
 export interface ReceiptPage {
   items: Receipt[];
   total: number;

@@ -1,7 +1,7 @@
 # Cartalytix — pracovní návrh architektury
 
-Stav: návrh k diskusi, 16. 10. 2026. Technologické cíle a otevřené volby níže;
-současný ověřený CLI experiment zatím běží samostatně na Pythonu 3.12.
+Stav: pracovní architektura, aktualizováno 17. 10. 2026. Hlavní aplikace běží
+na Pythonu 3.15; samostatné pokusy v `experiments/` nejsou její závislostí.
 
 ## Cíl a rozsah
 
@@ -181,9 +181,11 @@ fallback `en`; uživatel může přepnout na češtinu a volba se uloží.
   Porty API a frontendu publikovat pouze na loopbacku; DB a Redis nezveřejňovat.
 - Tokeny poskytovatelů šifrovat aplikačně v DB; hlavní klíč mimo DB
   přes Docker secret. HTTPS, redakce logů, oddělená interní síť DB/cache.
-- Vyřešit interaktivní propojení účtu v Dockeru: současný lokální Chrome a
-  WinVault nejsou produkční řešení. Preferovat podporovaný OAuth; kde chybí,
-  navrhnout zabezpečený asistovaný login. MFA/CAPTCHA může vyžadovat zásah uživatele.
+- Propojení Lidl účtu probíhá ve formuláři aplikace; backend inicializuje zařízení
+  a reCAPTCHA přes dočasný headless Chrome, OAuth/heslo/MFA odesílá přes HTTP.
+  Hesla ani kódy se neukládají, refresh tokeny jsou šifrované v DB. Rozepsaná
+  přihlášení jsou v paměti jediného API procesu, omezená počtem a expirací deset
+  minut; restart je ukončí. Aplikace nemá runtime závislost na `experiments/`.
 - Zálohovat DB, raw payloady i obnovitelnou konfiguraci klíčů; ověřit obnovu.
   Healthchecky, logy úloh a měření pomalých SQL patří k základnímu provozu.
 - N+1: explicitní eager loading, SQLAlchemy `raiseload` / `lazy="raise_on_sql"`,
@@ -193,7 +195,7 @@ fallback `en`; uživatel může přepnout na češtinu a volba se uloží.
 
 ## Otevřené volby a pořadí
 
-1. Bezpečný způsob interaktivního propojení Lidl účtů v Dockeru.
+1. Opakovatelnost přihlašování, živé MFA a dlouhodobá obnova tokenů Lidl v Dockeru.
 2. Výchozí interval synchronizací, rozsah pravidelné obnovy starších detailů
    a praktické limity poskytovatelů; nastavení po připojeních v DB.
 

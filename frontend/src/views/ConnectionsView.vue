@@ -7,6 +7,17 @@ import type { Connection, Provider } from "../api";
 import AppIcon from "../components/AppIcon.vue";
 import QueryState from "../components/QueryState.vue";
 import LidlConnection from "../components/LidlConnection.vue";
+import lidlLogo from "../assets/lidl-logo.svg";
+import albertLogo from "../assets/albert-logo.png";
+import globusLogo from "../assets/globus-logo.png";
+import rohlikLogo from "../assets/rohlik-logo.png";
+import kosikLogo from "../assets/kosik-logo.png";
+import billaLogo from "../assets/billa-logo.png";
+
+const providerLogos: Record<string, string> = {
+  lidl: lidlLogo, albert: albertLogo, globus: globusLogo,
+  rohlik: rohlikLogo, kosik: kosikLogo, billa: billaLogo,
+};
 
 const { t } = useI18n();
 const client = useQueryClient();
@@ -127,7 +138,8 @@ const createConnection = useMutation({
             v-for="provider in providers.data.value?.items"
             :key="provider.code"
           >
-            <span class="store-monogram" aria-hidden="true">{{
+            <img v-if="providerLogos[provider.code]" :src="providerLogos[provider.code]" class="store-logo" width="44" height="44" alt="" aria-hidden="true" />
+            <span v-else class="store-monogram" aria-hidden="true">{{
               provider.name.slice(0, 1)
             }}</span>
             <div class="provider-name">

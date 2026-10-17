@@ -13,11 +13,16 @@ from cartalytix.credentials import CredentialError, TokenCipher
 from cartalytix.dependencies import Db, Owner
 from cartalytix.models import ProviderConnection, Receipt, SyncRun, User
 from cartalytix.providers.lidl.client import LidlError, exchange_refresh
+from cartalytix.providers.lidl.login_protocol import LoginError
+from cartalytix.providers.lidl.login_sessions import LoginOutcome, LoginSessions
 from cartalytix.schemas import (
     ConnectionOutput,
     LidlAuthorizeInput,
     LidlConnectionInput,
     LidlConnectionUpdate,
+    LidlLoginInput,
+    LidlLoginOutput,
+    LidlVerificationInput,
     SyncInput,
     SyncRunOutput,
     SyncRunsOutput,
@@ -118,11 +123,9 @@ def update_connection(
     return connection_outputs(db, [connection])[0]
 
 
-@router.post("/connections/{identifier}/authorize", response_model=ConnectionOutput)
-def authorize_connection(
-    identifier: UUID, payload: LidlAuthorizeInput, request: Request, owner: Owner, db: Db
+def _authorize(
+    identifier: UUID, refresh_token: str, request: Request, owner_id: UUID, db: Session
 ) -> ConnectionOutput:
-    owner_id = owner.id
     _connection(db, identifier, owner_id)
     # Release authentication/read transactions before locks, Redis and OAuth network waits.
     db.rollback()
@@ -151,7 +154,7 @@ def authorize_connection(
                 raise HTTPException(409, "account_identity_unavailable")
         try:
             cipher = TokenCipher(request.app.state.settings)
-            tokens = exchange_refresh(payload.refresh_token.get_secret_value())
+            tokens = exchange_refresh(refresh_token)
             subject = tokens.get("subject")
             if not isinstance(subject, str) or not subject or len(subject) > 256:
                 raise HTTPException(422, "account_identity_unavailable")
@@ -171,6 +174,94 @@ def authorize_connection(
         # Read response only after the rotation transaction is committed.
         connection = _connection(db, identifier, owner_id)
         return connection_outputs(db, [connection])[0]
+
+
+@router.post("/connections/{identifier}/authorize", response_model=ConnectionOutput)
+def authorize_connection(
+    identifier: UUID, payload: LidlAuthorizeInput, request: Request, owner: Owner, db: Db
+) -> ConnectionOutput:
+    return _authorize(identifier, payload.refresh_token.get_secret_value(), request, owner.id, db)
+
+
+def _login_error(error: LoginError) -> HTTPException:
+    code = str(error)
+    status = 409 if code in {"login_expired", "login_busy", "device_bootstrap_busy"} else 422
+    if code == "login_rate_limited":
+        status = 429
+    return HTTPException(status, code)
+
+
+def _login_output(
+    outcome: LoginOutcome, identifier: UUID, request: Request, owner: User, db: Session
+) -> LidlLoginOutput:
+    if outcome.step == "completed" and outcome.refresh_token:
+        connection = _authorize(identifier, outcome.refresh_token, request, owner.id, db)
+        return LidlLoginOutput(step="completed", connection=connection)
+    method = (outcome.method or "").casefold()
+    return LidlLoginOutput(
+        step="otp",
+        flow_id=outcome.flow_id,
+        method="email" if method == "email" else "sms" if method in {"sms", "phone"} else None,
+    )
+
+
+@router.post("/connections/{identifier}/login", response_model=LidlLoginOutput)
+def login_connection(
+    identifier: UUID, payload: LidlLoginInput, request: Request, owner: Owner, db: Db
+) -> LidlLoginOutput:
+    owner_id = owner.id
+    _connection(db, identifier, owner_id)
+    db.rollback()
+    try:
+        allowed = request.app.state.limiter.check(
+            request.client.host if request.client else "unknown", f"lidl-login:{owner_id}"
+        )
+    except RedisError:
+        raise HTTPException(503, "service_unavailable") from None
+    if not allowed:
+        raise HTTPException(429, "login_rate_limited")
+    sessions = cast(LoginSessions, request.app.state.lidl_logins)
+    try:
+        outcome = sessions.start(
+            owner_id, identifier, str(payload.email), payload.password.get_secret_value()
+        )
+    except LoginError as error:
+        raise _login_error(error) from None
+    return _login_output(outcome, identifier, request, owner, db)
+
+
+@router.post("/connections/{identifier}/login/{flow_id}/verify", response_model=LidlLoginOutput)
+def verify_connection_login(
+    identifier: UUID,
+    flow_id: str,
+    payload: LidlVerificationInput,
+    request: Request,
+    owner: Owner,
+    db: Db,
+) -> LidlLoginOutput:
+    owner_id = owner.id
+    _connection(db, identifier, owner_id)
+    db.rollback()
+    sessions = cast(LoginSessions, request.app.state.lidl_logins)
+    try:
+        outcome = sessions.verify(owner_id, identifier, flow_id, payload.code.get_secret_value())
+    except LoginError as error:
+        raise _login_error(error) from None
+    return _login_output(outcome, identifier, request, owner, db)
+
+
+@router.delete("/connections/{identifier}/login/{flow_id}", status_code=204)
+def cancel_connection_login(
+    identifier: UUID, flow_id: str, request: Request, owner: Owner, db: Db
+) -> None:
+    owner_id = owner.id
+    _connection(db, identifier, owner_id)
+    db.rollback()
+    sessions = cast(LoginSessions, request.app.state.lidl_logins)
+    try:
+        sessions.cancel(owner_id, identifier, flow_id)
+    except LoginError as error:
+        raise _login_error(error) from None
 
 
 @router.post("/connections/{identifier}/sync", response_model=SyncRunOutput, status_code=202)

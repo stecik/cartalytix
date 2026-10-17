@@ -1,5 +1,6 @@
+import asyncio
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
 from typing import Annotated, Protocol
@@ -21,6 +22,7 @@ from cartalytix.i18n import translate
 from cartalytix.lidl_routes import connection_outputs
 from cartalytix.lidl_routes import router as lidl_router
 from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem, User, UserSession
+from cartalytix.providers.lidl.login_sessions import LoginSessions
 from cartalytix.schemas import (
     ConnectionsOutput,
     CurrencyTotal,
@@ -119,13 +121,26 @@ def create_app(
         engine if engine is not None else create_engine(config.database_url, pool_pre_ping=True)
     )
     redis = Redis.from_url(config.redis_url, socket_connect_timeout=2, socket_timeout=2)
+    lidl_logins = LoginSessions()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-        yield
-        redis.close()
-        if engine is None:
-            database.dispose()
+        async def expire_logins() -> None:
+            while True:
+                await asyncio.sleep(30)
+                await asyncio.to_thread(lidl_logins.cleanup)
+
+        sweeper = asyncio.create_task(expire_logins())
+        try:
+            yield
+        finally:
+            sweeper.cancel()
+            with suppress(asyncio.CancelledError):
+                await sweeper
+            _app.state.lidl_logins.close()
+            redis.close()
+            if engine is None:
+                database.dispose()
 
     app = FastAPI(title="Cartalytix", version="0.1.0", lifespan=lifespan)
     if config.trusted_proxy_hosts:
@@ -133,6 +148,7 @@ def create_app(
     app.state.engine = database
     app.state.redis = redis
     app.state.settings = config
+    app.state.lidl_logins = lidl_logins
     app.state.limiter = limiter or RedisLoginLimiter(redis, config)
     app.include_router(lidl_router)
 

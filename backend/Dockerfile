@@ -4,7 +4,8 @@ COPY --from=uv /uv /uvx /bin/
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev --no-install-project
+RUN uv sync --locked --no-dev --no-install-project && \
+    /app/.venv/bin/python -m playwright install --with-deps chrome
 COPY src ./src
 COPY alembic.ini ./
 COPY alembic ./alembic

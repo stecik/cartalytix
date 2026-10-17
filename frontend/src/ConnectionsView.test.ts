@@ -118,18 +118,15 @@ describe("Lidl connections", () => {
     wrapper.unmount(); client.clear();
   });
 
-  it("shows a local authorization command bound to this connection without requesting store secrets", async () => {
+  it("opens the connector login form for this account without terminal instructions", async () => {
     const { wrapper, client } = render([{ ...account, status: "not_connected" }]);
     await flushPromises();
-    const button = wrapper.findAll("button").find((item) => item.text() === "Link with Chrome");
+    const button = wrapper.findAll("button").find((item) => item.text() === "Connect account");
     expect(button).toBeDefined();
     await button!.trigger("click");
-    const command = wrapper.get(".link-command").text();
-    expect(command).toContain("cartalytix link-lidl");
-    expect(command).toContain("--connection account-1");
-    expect(command).toContain(`--server ${window.location.origin}`);
-    expect(wrapper.find('input[type="password"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain("Unofficial Lidl API");
+    expect(wrapper.find(".link-command").exists()).toBe(false);
+    expect(wrapper.get('input[type="password"]').attributes("id")).toBe("lidl-password-account-1");
+    expect(wrapper.text()).toContain("unofficial Lidl API");
     wrapper.unmount(); client.clear();
   });
 });

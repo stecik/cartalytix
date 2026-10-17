@@ -64,6 +64,24 @@ class LidlAuthorizeInput(BaseModel):
     refresh_token: SecretStr = Field(min_length=1, max_length=32768)
 
 
+class LidlLoginInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    email: EmailStr
+    password: SecretStr = Field(min_length=1, max_length=1024)
+
+
+class LidlVerificationInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    code: SecretStr = Field(min_length=1, max_length=16)
+
+
+class LidlLoginOutput(BaseModel):
+    step: Literal["otp", "completed"]
+    flow_id: str | None = None
+    method: Literal["email", "sms"] | None = None
+    connection: ConnectionOutput | None = None
+
+
 class SyncInput(BaseModel):
     refresh_existing: bool = False
 

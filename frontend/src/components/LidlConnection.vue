@@ -5,6 +5,8 @@ import { useI18n } from "vue-i18n";
 import { ApiError, request } from "../api";
 import type { Connection, SyncRun } from "../api";
 import QueryState from "./QueryState.vue";
+import LidlLoginForm from "./LidlLoginForm.vue";
+import lidlLogo from "../assets/lidl-logo.svg";
 
 const props = defineProps<{ connection: Connection }>();
 const { t, locale } = useI18n();
@@ -12,7 +14,6 @@ const client = useQueryClient();
 const editing = ref(false);
 const historyOpen = ref(false);
 const linking = ref(false);
-const linkCommand = computed(() => `uv --directory backend run --extra browser cartalytix link-lidl --server ${window.location.origin} --connection ${props.connection.id}`);
 const name = ref("");
 const interval = ref<number | null>(null);
 const active = computed(() => props.connection.latest_sync?.status === "pending" || props.connection.latest_sync?.status === "running");
@@ -25,6 +26,11 @@ function updateConnection(connection: Connection): void {
   client.setQueryData<{ items: Connection[] }>(["connections"], (previous) => previous ? {
     items: previous.items.map((item) => item.id === connection.id ? connection : item),
   } : previous);
+}
+
+function linked(connection: Connection): void {
+  updateConnection(connection);
+  linking.value = false;
 }
 
 const save = useMutation({
@@ -86,7 +92,10 @@ function schedule(value: number | null): string {
 <template>
   <article class="connection-account">
     <div class="connection-heading">
-      <div><h3>{{ connection.name }}</h3><p class="section-note">{{ connection.provider }} · {{ connection.country }}</p></div>
+      <div class="connection-identity">
+        <img :src="lidlLogo" class="store-logo" width="44" height="44" alt="" aria-hidden="true" />
+        <div><h3>{{ connection.name }}</h3><p class="section-note">{{ connection.provider }} · {{ connection.country }}</p></div>
+      </div>
       <span class="status-label">{{ t(statusKey) }}</span>
     </div>
     <dl class="connection-facts">
@@ -101,16 +110,12 @@ function schedule(value: number | null): string {
     </div>
     <p v-if="sync.isError.value" role="alert" class="form-alert">{{ t(errorKey(sync.error.value instanceof ApiError ? sync.error.value.code : null)) }}</p>
     <div class="connection-actions">
-      <button class="button secondary" :disabled="active" :aria-expanded="linking" @click="linking = !linking">{{ t("linkChrome") }}</button>
-      <button class="button primary" :disabled="!['connected', 'error'].includes(connection.status) || active || sync.isPending.value" @click="sync.mutate()">{{ t(active || sync.isPending.value ? "syncing" : "syncNow") }}</button>
+      <button v-if="!linking" class="button secondary" :disabled="active" :aria-expanded="linking" @click="linking = true">{{ t(connection.status === 'not_connected' ? "linkAccount" : "reconnectAccount") }}</button>
+      <button class="button primary" :disabled="!['connected', 'error'].includes(connection.status) || active || linking || sync.isPending.value" @click="sync.mutate()">{{ t(active || sync.isPending.value ? "syncing" : "syncNow") }}</button>
       <button class="button secondary" @click="edit">{{ t("connectionSettings") }}</button>
       <button class="button secondary" :aria-expanded="historyOpen" @click="historyOpen = !historyOpen">{{ t("syncHistory") }}</button>
     </div>
-    <div v-if="linking" class="link-instructions">
-      <p>{{ t("linkInstructions") }}</p>
-      <pre class="link-command"><code>{{ linkCommand }}</code></pre>
-      <p>{{ t("linkSafety") }}</p>
-    </div>
+    <LidlLoginForm v-if="linking" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
     <form v-if="editing" class="connection-form" :aria-busy="save.isPending.value" @submit.prevent="name.trim() && save.mutate()">
       <label :for="`name-${connection.id}`">{{ t("connectionName") }}</label>
       <input :id="`name-${connection.id}`" v-model="name" maxlength="120" required :disabled="save.isPending.value" />
@@ -146,9 +151,9 @@ function schedule(value: number | null): string {
 
 <style scoped>
 .connection-account { width: 100%; min-width: 0; }
-.link-instructions { margin-top: 20px; font-size: 13px; line-height: 1.8; }
-.link-command { padding: 14px; margin: 16px 0; background: #f0f0e6; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; font-size: 12px; }
 .connection-heading { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.connection-identity { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.connection-identity > div { min-width: 0; overflow-wrap: anywhere; }
 .connection-heading h3 { font-size: 16px; font-weight: 600; }
 .connection-facts { display: flex; flex-wrap: wrap; gap: 18px 36px; margin: 22px 0; font-size: 12px; }
 .connection-facts dt { color: var(--muted); margin-bottom: 7px; }
