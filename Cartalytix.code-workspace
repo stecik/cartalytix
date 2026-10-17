@@ -1,0 +1,29 @@
+{
+    "folders": [
+        {
+            "path": ".",
+            "name": "Root"
+        },
+        {
+            "path": "backend",
+            "name": "Backend"
+        },
+        {
+            "path": "frontend",
+            "name": "Frontend"
+        },
+        {
+            "path": "experiments",
+            "name": "Experiments"
+        }
+    ],
+    "settings": {
+        "editor.formatOnSave": true,
+        "python.analysis.typeCheckingMode": "off",
+        "ty.disableLanguageServices": true,
+        "ty.diagnosticMode": "workspace",
+        "cSpell.words": [
+            "cartalytix"
+        ],
+    }
+}

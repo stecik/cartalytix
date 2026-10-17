@@ -1,0 +1,33 @@
+repos:
+  - repo: local
+    hooks:
+      - id: backend-ruff
+        name: Backend Ruff
+        entry: uv --directory backend run --locked --extra browser ruff check .
+        language: system
+        pass_filenames: false
+        files: ^backend/
+      - id: backend-format
+        name: Backend format
+        entry: uv --directory backend run --locked --extra browser ruff format --check .
+        language: system
+        pass_filenames: false
+        files: ^backend/
+      - id: backend-types
+        name: Backend types
+        entry: uv --directory backend run --locked --extra browser ty check
+        language: system
+        pass_filenames: false
+        files: ^backend/
+      - id: frontend-lint
+        name: Frontend lint
+        entry: npm --prefix frontend run lint
+        language: system
+        pass_filenames: false
+        files: ^frontend/
+      - id: frontend-types
+        name: Frontend types
+        entry: npm --prefix frontend run typecheck
+        language: system
+        pass_filenames: false
+        files: ^frontend/

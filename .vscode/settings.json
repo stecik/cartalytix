@@ -1,0 +1,7 @@
+{
+    "files.exclude": {
+        "backend": true,
+        "experiments": true,
+        "frontend": true
+    }
+}

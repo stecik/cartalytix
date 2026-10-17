@@ -1,0 +1,194 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.detect.outputs.backend }}
+      frontend: ${{ steps.detect.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect affected application parts
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          function Invoke-GitOutput {
+            param([string[]] $GitArguments)
+            $info = [System.Diagnostics.ProcessStartInfo]::new('git')
+            $info.RedirectStandardOutput = $true
+            $info.RedirectStandardError = $true
+            foreach ($argument in $GitArguments) {
+              $info.ArgumentList.Add($argument)
+            }
+            $process = [System.Diagnostics.Process]::Start($info)
+            $output = $process.StandardOutput.ReadToEnd()
+            $errorOutput = $process.StandardError.ReadToEnd()
+            $process.WaitForExit()
+            if ($process.ExitCode -ne 0) {
+              throw "git failed: $errorOutput"
+            }
+            return $output
+          }
+
+          function Get-AffectedParts {
+            param([string[]] $Paths)
+            $backend = $false
+            $frontend = $false
+            foreach ($path in $Paths) {
+              if ($path -match '^(experiments/|docs/|_docs/)' -or $path -match '\.md$') {
+                continue
+              }
+              if ($path -match '^(contracts/|openapi/|backend/src/cartalytix/(api/|api\.py$|schemas/|schemas\.py$|main\.py$))') {
+                $backend = $true
+                $frontend = $true
+              } elseif ($path.StartsWith('backend/')) {
+                $backend = $true
+              } elseif ($path.StartsWith('frontend/')) {
+                $frontend = $true
+              } else {
+                $backend = $true
+                $frontend = $true
+              }
+            }
+            return @{ backend = $backend; frontend = $frontend }
+          }
+
+          $parts = @{ backend = $true; frontend = $true }
+          try {
+            if ($env:BASE_SHA -notmatch '^[0-9a-f]{40}$' -or $env:BASE_SHA -eq ('0' * 40)) {
+              throw 'No usable base commit; checking both application parts.'
+            }
+            $base = $env:BASE_SHA
+            if ($env:EVENT_NAME -eq 'pull_request') {
+              $base = (Invoke-GitOutput -GitArguments @('merge-base', $base, $env:HEAD_SHA)).Trim()
+            }
+            $diff = Invoke-GitOutput -GitArguments @('diff', '--name-only', '-z', '--no-renames', $base, $env:HEAD_SHA, '--')
+            $parts = Get-AffectedParts -Paths ($diff.Split([char]0, [System.StringSplitOptions]::RemoveEmptyEntries))
+          } catch {
+            Write-Host $_.Exception.Message
+          }
+          "backend=$($parts.backend.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "frontend=$($parts.frontend.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+  backend:
+    name: Backend checks
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: backend
+    env:
+      CARTALYTIX_ENVIRONMENT: test
+      DATABASE_URL: postgresql+psycopg://cartalytix:cartalytix@localhost:5432/cartalytix_test
+      REDIS_URL: redis://localhost:6379/0
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: cartalytix_test
+          POSTGRES_USER: cartalytix
+          POSTGRES_PASSWORD: cartalytix
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cartalytix -d cartalytix_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: latest
+          python-version: '3.15'
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv sync --locked --all-groups --extra browser
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
+      - run: uv run --no-sync ty check
+      - run: uv run --no-sync pytest
+
+  frontend:
+    name: Frontend checks
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+
+  required:
+    name: Required checks
+    if: always()
+    needs: [changes, backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful affected checks
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          BACKEND_REQUIRED: ${{ needs.changes.outputs.backend }}
+          FRONTEND_REQUIRED: ${{ needs.changes.outputs.frontend }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+        run: |
+          if ($env:CHANGES_RESULT -ne 'success') {
+            throw 'Change detection failed.'
+          }
+          foreach ($part in @('BACKEND', 'FRONTEND')) {
+            $required = [Environment]::GetEnvironmentVariable("${part}_REQUIRED")
+            $result = [Environment]::GetEnvironmentVariable("${part}_RESULT")
+            if ($required -eq 'true' -and $result -eq 'success') {
+              continue
+            }
+            if ($required -eq 'false' -and $result -eq 'skipped') {
+              continue
+            }
+            throw "${part}: required=$required, result=$result"
+          }

@@ -1,5 +1,6 @@
 .env
-/work/
+.secrets/
+work/
 .env.*
 !.env.example
 .venv/

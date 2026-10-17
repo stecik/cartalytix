@@ -1,0 +1,74 @@
+msgid ""
+msgstr ""
+"Language: cs\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Plural-Forms: nplurals=3; plural=(n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2;\n"
+
+msgid "Authentication required"
+msgstr "Je vyžadováno přihlášení"
+
+msgid "Invalid email or password"
+msgstr "Neplatný e-mail nebo heslo"
+
+msgid "Too many login attempts"
+msgstr "Příliš mnoho pokusů o přihlášení"
+
+msgid "Request origin rejected"
+msgstr "Původ požadavku byl odmítnut"
+
+msgid "Service temporarily unavailable"
+msgstr "Služba je dočasně nedostupná"
+
+msgid "Invalid request"
+msgstr "Neplatný požadavek"
+
+msgid "Request failed"
+msgstr "Požadavek selhal"
+
+msgid "Schema initialization is only allowed in development"
+msgstr "Inicializace schématu je povolena pouze při vývoji"
+
+msgid "User already exists"
+msgstr "Uživatel již existuje"
+
+msgid "Manage local application accounts"
+msgstr "Správa místních účtů aplikace"
+
+msgid "Email: "
+msgstr "E-mail: "
+
+msgid "Password (at least 12 characters): "
+msgstr "Heslo (alespoň 12 znaků): "
+
+msgid "Confirm password: "
+msgstr "Potvrzení hesla: "
+
+msgid "Passwords do not match"
+msgstr "Hesla se neshodují"
+
+msgid "Account created"
+msgstr "Účet byl vytvořen"
+
+msgid "Use an HTTPS application origin or HTTP localhost"
+msgstr "Použijte HTTPS adresu aplikace nebo HTTP na localhostu"
+
+msgid "Create an application account"
+msgstr "Vytvořit účet aplikace"
+
+msgid "Link a Lidl account using local Chrome"
+msgstr "Propojit účet Lidl přes místní Chrome"
+
+msgid "Application email: "
+msgstr "E-mail aplikace: "
+
+msgid "Application password: "
+msgstr "Heslo aplikace: "
+
+msgid "Login cancelled"
+msgstr "Přihlášení zrušeno"
+
+msgid "Lidl account linked. Start synchronization in the application."
+msgstr "Účet Lidl propojen. Spusťte synchronizaci v aplikaci."
+
+msgid "Sign in only in the Lidl browser window; never paste passwords or codes."
+msgstr "Přihlaste se pouze v okně Lidlu; hesla ani kódy nikam nekopírujte."

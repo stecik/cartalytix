@@ -1,0 +1,100 @@
+name: cartalytix
+
+x-backend: &backend
+  build: ./backend
+  environment:
+    CARTALYTIX_ENVIRONMENT: ${CARTALYTIX_ENVIRONMENT:-development}
+    CARTALYTIX_DATABASE_URL: postgresql+psycopg://cartalytix:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/cartalytix
+    CARTALYTIX_REDIS_URL: redis://redis:6379/0
+    CARTALYTIX_ALLOWED_ORIGINS: '${CARTALYTIX_ALLOWED_ORIGINS:-["http://localhost:8080","http://127.0.0.1:8080","http://localhost:5173","http://127.0.0.1:5173"]}'
+    CARTALYTIX_COOKIE_SECURE: ${CARTALYTIX_COOKIE_SECURE:-false}
+    CARTALYTIX_TRUSTED_PROXY_HOSTS: '${CARTALYTIX_TRUSTED_PROXY_HOSTS:-[]}'
+    CARTALYTIX_TOKEN_KEY_FILE: /run/secrets/lidl_token_key
+  secrets:
+    - lidl_token_key
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  api:
+    <<: *backend
+    command: ["uv", "run", "--no-sync", "uvicorn", "cartalytix.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "uv", "run", "--no-sync", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    <<: *backend
+    command: ["uv", "run", "--no-sync", "celery", "-A", "cartalytix.tasks:celery_app", "worker", "--loglevel=INFO", "--concurrency=2", "--hostname=worker@%h"]
+    healthcheck:
+      test: ["CMD", "uv", "run", "--no-sync", "python", "-c", "import os; from cartalytix.tasks import celery_app; replies = celery_app.control.inspect(destination=['worker@' + os.environ.get('HOSTNAME', '')], timeout=5).ping(); raise SystemExit(0 if replies and all(reply.get('ok') == 'pong' for reply in replies.values()) else 1)"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 20s
+
+  beat:
+    <<: *backend
+    command: ["uv", "run", "--no-sync", "celery", "-A", "cartalytix.tasks:celery_app", "beat", "--loglevel=INFO", "--schedule=/var/lib/celery/celerybeat-schedule", "--pidfile=/var/lib/celery/celerybeat.pid"]
+    volumes:
+      - celery-beat-data:/var/lib/celery
+    deploy:
+      replicas: 1
+    healthcheck:
+      test: ["CMD", "uv", "run", "--no-sync", "python", "-c", "import os; from pathlib import Path; os.kill(int(Path('/var/lib/celery/celerybeat.pid').read_text()), 0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: cartalytix
+      POSTGRES_USER: cartalytix
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cartalytix -d cartalytix"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  redis-data:
+  celery-beat-data:
+
+secrets:
+  lidl_token_key:
+    file: ${TOKEN_KEY_PATH:-./.secrets/lidl.key}
