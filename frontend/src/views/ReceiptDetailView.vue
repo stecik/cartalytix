@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
+import { sourceName } from "../names";
 import { useRoute } from "vue-router";
 import { ApiError, request } from "../api";
 import type { ReceiptDetail, ReceiptDiscount, User } from "../api";
@@ -95,13 +96,13 @@ function date(value: string): string {
             <p v-if="!receipt.data.value.items.length" class="receipt-paper-empty">{{ t("noReceiptItems") }}</p>
             <ol v-else class="receipt-paper-items">
               <li v-for="item in receipt.data.value.items" :key="item.id">
-                <div class="receipt-paper-line"><span>{{ item.name }}</span><span>{{ money(item.original_amount ?? item.total_amount) }}</span></div>
+                <div class="receipt-paper-line"><span>{{ sourceName(item.name, t) }}</span><span>{{ money(item.original_amount ?? item.total_amount) }}</span></div>
                 <div v-if="item.unit_price !== null && (item.is_weight || Number(item.quantity) !== 1)" class="receipt-paper-sub">{{ quantity(item.quantity, item.unit) }} × {{ money(item.unit_price, true) }}</div>
-                <div v-for="discount in discounts.get(item.id)" :key="discount.id" class="receipt-paper-line receipt-paper-sub"><span>{{ discount.name || t("discount") }}</span><span>{{ money(negated(discount.amount)) }}</span></div>
+                <div v-for="discount in discounts.get(item.id)" :key="discount.id" class="receipt-paper-line receipt-paper-sub"><span>{{ discount.name ? sourceName(discount.name, t) : t("discount") }}</span><span>{{ money(negated(discount.amount)) }}</span></div>
               </li>
             </ol>
             <div v-if="discounts.get(null)?.length || Number(receipt.data.value.rounding_amount) !== 0" class="receipt-paper-block">
-              <div v-for="discount in discounts.get(null)" :key="discount.id" class="receipt-paper-line"><span>{{ discount.name || t("discount") }}</span><span>{{ money(negated(discount.amount)) }}</span></div>
+              <div v-for="discount in discounts.get(null)" :key="discount.id" class="receipt-paper-line"><span>{{ discount.name ? sourceName(discount.name, t) : t("discount") }}</span><span>{{ money(negated(discount.amount)) }}</span></div>
               <div v-if="Number(receipt.data.value.rounding_amount) !== 0" class="receipt-paper-line"><span>{{ t("rounding") }}</span><span>{{ money(receipt.data.value.rounding_amount) }}</span></div>
             </div>
             <div class="receipt-paper-total"><span>{{ t("receiptTotal") }}</span><strong>{{ money(receipt.data.value.total_amount) }}</strong></div>
@@ -117,7 +118,7 @@ function date(value: string): string {
           <p v-if="!receipt.data.value.items.length" class="section-note">{{ t("noReceiptItems") }}</p>
           <ol v-else class="receipt-item-list">
             <li v-for="item in receipt.data.value.items" :key="item.id">
-              <div class="receipt-item-heading"><h3>{{ item.name }}</h3><strong>{{ money(item.total_amount) }}</strong></div>
+              <div class="receipt-item-heading"><h3>{{ sourceName(item.name, t) }}</h3><strong>{{ money(item.total_amount) }}</strong></div>
               <dl class="receipt-item-facts">
                 <div><dt>{{ t("quantity") }}</dt><dd>{{ quantity(item.quantity, item.unit) }}</dd></div>
                 <div v-if="item.unit_price !== null"><dt>{{ t("unitPrice") }}</dt><dd>{{ money(item.unit_price, true) }}</dd></div>
@@ -129,14 +130,14 @@ function date(value: string): string {
               </dl>
               <p v-if="item.is_weight" class="section-note">{{ t("weighedItem") }}</p>
               <ul v-if="discounts.get(item.id)?.length" class="receipt-discounts" :aria-label="t('itemDiscounts')">
-                <li v-for="discount in discounts.get(item.id)" :key="discount.id"><span>{{ discount.name || t("discount") }}</span><span>{{ money(discount.amount) }}</span></li>
+                <li v-for="discount in discounts.get(item.id)" :key="discount.id"><span>{{ discount.name ? sourceName(discount.name, t) : t("discount") }}</span><span>{{ money(discount.amount) }}</span></li>
               </ul>
             </li>
           </ol>
         </section>
         <section v-if="discounts.get(null)?.length" class="receipt-level-discounts" :aria-label="t('receiptDiscounts')">
           <div class="section-heading"><h2>{{ t("receiptDiscounts") }}</h2></div>
-          <ul class="receipt-discounts"><li v-for="discount in discounts.get(null)" :key="discount.id"><span>{{ discount.name || t("discount") }}</span><span>{{ money(discount.amount) }}</span></li></ul>
+          <ul class="receipt-discounts"><li v-for="discount in discounts.get(null)" :key="discount.id"><span>{{ discount.name ? sourceName(discount.name, t) : t("discount") }}</span><span>{{ money(discount.amount) }}</span></li></ul>
         </section>
         <p v-if="receipt.data.value.discounts.length" class="section-note">{{ t("discountValuesNote") }}</p>
         <dl class="receipt-total">

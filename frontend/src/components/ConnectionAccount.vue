@@ -2,11 +2,13 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
+import { providerName } from "../names";
 import { ApiError, request } from "../api";
 import type { Connection, SyncRun } from "../api";
 import QueryState from "./QueryState.vue";
 import LidlLoginForm from "./LidlLoginForm.vue";
 import MixitLoginForm from "./MixitLoginForm.vue";
+import FermatoLoginForm from "./FermatoLoginForm.vue";
 import AppIcon from "./AppIcon.vue";
 import AppDialog from "./AppDialog.vue";
 
@@ -31,6 +33,7 @@ const statusKey = computed(() => active.value ? `syncStatus_${props.connection.l
 })[props.connection.status] ?? "connectionError");
 const statusTone = computed(() => active.value ? "working" : props.connection.status === "connected" ? "connected" : ["error", "reauth_required"].includes(props.connection.status) ? "attention" : "");
 watch(() => props.connection.name, (value) => { name.value = value; });
+const displayName = computed(() => props.connection.name || providerName(props.connection.provider));
 watch(() => props.connection.sync_interval_minutes, (value) => { if (value !== null) interval.value = value; });
 const endpoint = computed(() => `/providers/${props.connection.provider}/connections/${props.connection.id}`);
 
@@ -125,12 +128,12 @@ const actionError = computed(() => {
   <article class="connection-account">
     <div class="account-row">
       <button class="account-toggle" :aria-expanded="expanded" :aria-controls="`account-${connection.id}`" @click="expanded = !expanded">
-        <span class="account-identity"><strong>{{ connection.name }}</strong><small>{{ t('receiptCount', connection.receipt_count) }} · {{ connection.country }}</small></span>
+        <span class="account-identity"><strong>{{ displayName }}</strong><small>{{ t('receiptCount', connection.receipt_count) }} · {{ connection.country }}</small></span>
         <span class="account-status" :class="statusTone"><i />{{ t(statusKey) }}</span>
         <span class="account-fresh"><span class="sr-only">{{ t('lastSuccessfulSync') }}: </span>{{ date(connection.last_synced_at) }}</span>
         <AppIcon name="chevron" :class="{ rotated: expanded }" />
       </button>
-      <button class="remove-account" data-action="remove" :disabled="managementDisabled" :aria-label="t('removeNamedConnection', { name: connection.name })" :title="t('removeConnection')" @click="ask('remove')"><AppIcon name="trash" /></button>
+      <button class="remove-account" data-action="remove" :disabled="managementDisabled" :aria-label="t('removeNamedConnection', { name: displayName })" :title="t('removeConnection')" @click="ask('remove')"><AppIcon name="trash" /></button>
     </div>
     <div v-show="expanded" :id="`account-${connection.id}`" class="account-panel">
       <div class="account-tabs" role="tablist" :aria-label="t('connectionSettings')" @keydown="tabKey">
@@ -139,6 +142,7 @@ const actionError = computed(() => {
       <p v-if="actionError && !confirm" role="alert" class="form-alert">{{ t(actionError) }}</p>
       <p v-if="notice" class="account-notice" role="status">{{ t(notice) }}</p>
       <MixitLoginForm v-if="linking && connection.provider === 'mixit'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
+      <FermatoLoginForm v-if="linking && connection.provider === 'fermato'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <LidlLoginForm v-else-if="linking" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <section v-show="tab === 'sync'" :id="`panel-sync-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-sync-${connection.id}`" tabindex="0">
         <div v-if="!linkedAccount && !linking" class="reconnect-note"><p>{{ t(connection.status === 'not_connected' ? 'connectToImport' : 'reconnectToImport') }}</p><button class="button secondary" :disabled="active || busy" @click="connect">{{ t(connection.status === 'not_connected' ? 'linkAccount' : 'reconnectAccount') }}</button></div>
@@ -171,7 +175,7 @@ const actionError = computed(() => {
         </QueryState>
       </section>
       <section v-if="tab === 'manage'" :id="`panel-manage-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-manage-${connection.id}`" tabindex="0">
-        <form class="rename-form" @submit.prevent="name.trim() && save.mutate({ name: name.trim() })"><label :for="`name-${connection.id}`">{{ t('connectionName') }}</label><div><input :id="`name-${connection.id}`" v-model="name" maxlength="120" required :disabled="busy" /><button type="submit" class="button secondary" :disabled="!name.trim() || name.trim() === connection.name || busy">{{ t('save') }}</button></div></form>
+        <form class="rename-form" @submit.prevent="save.mutate({ name: name.trim() })"><label :for="`name-${connection.id}`">{{ t('connectionName') }}</label><div><input :id="`name-${connection.id}`" v-model="name" maxlength="120" :disabled="busy" /><button type="submit" class="button secondary" :disabled="name.trim() === connection.name || busy">{{ t('save') }}</button></div></form>
         <div class="account-setting"><div><strong>{{ t('storeAuthorization') }}</strong><p>{{ t('reconnectHelp') }}</p></div><button v-if="!linking" class="button secondary" :disabled="active || busy" @click="connect">{{ t(['not_connected', 'disconnected'].includes(connection.status) ? 'linkAccount' : 'reconnectAccount') }}</button></div>
         <div class="account-setting"><div><strong>{{ t('disconnectAccount') }}</strong><p>{{ t('disconnectHelp') }}</p></div><button class="button secondary" data-action="disconnect" :disabled="managementDisabled || ['not_connected', 'disconnected'].includes(connection.status)" @click="manage.mutate('disconnect')">{{ t('disconnect') }}</button></div>
         <div class="account-setting"><div><strong>{{ t('deleteConnectionData') }}</strong><p>{{ t('clearDataHelp') }}</p></div><button class="button secondary danger-text" data-action="clear-data" :disabled="managementDisabled" @click="ask('clear-data')">{{ t('deleteData') }}</button></div>
@@ -179,8 +183,8 @@ const actionError = computed(() => {
       </section>
     </div>
     <AppDialog v-if="confirm" :title="t(confirm === 'remove' ? 'removeConnection' : 'deleteConnectionData')" :busy="manage.isPending.value" @close="confirm = null">
-      <p>{{ t(confirm === 'remove' ? 'removeConnectionWarning' : 'clearDataWarning', { name: connection.name }) }}</p>
-      <p class="deletion-count">{{ t('receiptCount', connection.receipt_count) }} · {{ connection.name }}</p>
+      <p>{{ t(confirm === 'remove' ? 'removeConnectionWarning' : 'clearDataWarning', { name: displayName }) }}</p>
+      <p class="deletion-count">{{ t('receiptCount', connection.receipt_count) }} · {{ displayName }}</p>
       <template v-if="confirm === 'clear-data'"><label class="pause-checkbox"><input v-model="pauseSync" type="checkbox" :disabled="manage.isPending.value" />{{ t('pauseAutomaticSync') }}</label><p>{{ t('reimportWarning') }}</p></template>
       <p v-if="actionError" role="alert" class="form-alert">{{ t(actionError) }}</p>
       <div class="dialog-actions"><button class="button secondary" data-action="cancel" :disabled="manage.isPending.value" @click="confirm = null">{{ t('cancel') }}</button><button class="button danger" data-action="confirm" :disabled="manage.isPending.value || running" @click="manage.mutate(confirm)">{{ t(manage.isPending.value ? 'deleting' : confirm === 'remove' ? 'removeConnection' : 'deleteData') }}</button></div>

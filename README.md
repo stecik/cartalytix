@@ -6,6 +6,10 @@ The Lidl CZ connector imports receipt history, source items and discounts.
 The Mixit.cz connector imports shipped orders (products and mixes); Mixit does not
 itemize shipping, vouchers or credits, so the difference to the paid total is stored
 as a "Shipping and fees" item or a "Discounts and credits" order discount.
+The Fermato.cz connector (Shoptet customer area, HTML) imports all orders; the
+password is stored Fernet-encrypted because Shoptet has no refresh token. Paid fees
+become items, coupons order discounts, Shoptet whole-CZK rounding `rounding_amount`;
+orders shown as 0 Kč use the sum of their lines.
 Other stores remain unavailable. The original Lidl experiment remains in `experiments/`.
 
 | Path | Purpose |
@@ -49,6 +53,8 @@ flowchart TB
         lidlapi["<b>Lidl API</b><br/>external · unofficial"]:::ext
         mixit["<b>Mixit CZ</b><br/>email/password · token"]:::conn
         mixitapi["<b>Mixit API</b><br/>external · unofficial"]:::ext
+        fermato["<b>Fermato CZ</b><br/>email/password · session"]:::conn
+        fermatoweb["<b>Fermato web</b><br/>external · Shoptet HTML"]:::ext
     end
 
     user --> proxy
@@ -66,6 +72,9 @@ flowchart TB
     api -. link account .-> mixit
     worker -. sync orders .-> mixit
     mixit -- HTTPS --> mixitapi
+    api -. link account .-> fermato
+    worker -. sync orders .-> fermato
+    fermato -- HTTPS --> fermatoweb
 
     classDef client fill:#f1f5f9,stroke:#64748b,color:#0f172a
     classDef web fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e

@@ -2,6 +2,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/vue-query";
 import { computed, defineAsyncComponent, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { sourceName } from "../names";
 import { request } from "../api";
 import type { CurrencyStats, Overview, Stats, StatsPeriod } from "../api";
 import AppIcon from "../components/AppIcon.vue";
@@ -112,7 +113,7 @@ const merchantRows = computed<RankedRow[]>(() =>
 const frequentRows = computed<RankedRow[]>(() =>
   (stats.data.value?.frequent_items ?? []).map((item) => ({
     key: item.name,
-    label: item.name,
+    label: sourceName(item.name, t),
     value: item.receipt_count,
     display: `${formatCount(item.receipt_count)}×`,
     detail: money(item.amount),
@@ -121,7 +122,7 @@ const frequentRows = computed<RankedRow[]>(() =>
 const spendRows = computed<RankedRow[]>(() =>
   (stats.data.value?.top_spend_items ?? []).map((item) => ({
     key: item.name,
-    label: item.name,
+    label: sourceName(item.name, t),
     value: Number(item.amount),
     display: money(item.amount),
     detail: t("receiptCount", item.receipt_count),

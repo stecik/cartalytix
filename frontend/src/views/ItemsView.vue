@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { keepPreviousData, useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
+import { connectionLabel } from "../names";
 import { useRoute, useRouter } from "vue-router";
 import { request } from "../api";
 import type { Connection, ItemPage } from "../api";
@@ -140,7 +141,7 @@ function changePage(value: number): void {
         <select :value="queryValue('connection')" @change="updateQuery({ connection: inputValue($event) })">
           <option value="">{{ t("allAccounts") }}</option>
           <option v-for="connection in connections.data.value.items" :key="connection.id" :value="connection.id">
-            {{ connection.name }}
+            {{ connectionLabel(connection) }}
           </option>
         </select>
       </label>

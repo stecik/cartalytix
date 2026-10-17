@@ -2,6 +2,7 @@
 import { useQuery } from "@tanstack/vue-query";
 import { computed, defineAsyncComponent } from "vue";
 import { useI18n } from "vue-i18n";
+import { sourceName } from "../names";
 import { useRoute } from "vue-router";
 import { ApiError, request } from "../api";
 import type { ItemDetail } from "../api";
@@ -75,7 +76,7 @@ function formatDate(date: string): string {
       <template v-if="detail.data.value">
         <header class="page-heading">
           <div class="eyebrow">{{ t("items") }}</div>
-          <h1>{{ detail.data.value.name }}</h1>
+          <h1>{{ sourceName(detail.data.value.name, t) }}</h1>
           <p>{{ formatQuantity(detail.data.value.quantity, detail.data.value.unit) }} · {{ t("receiptCount", detail.data.value.receipt_count) }}</p>
         </header>
         <dl class="item-kpis">

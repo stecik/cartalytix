@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
+import { sourceName } from "../names";
 import { useRouter } from "vue-router";
 import type { ItemSummary } from "../api";
 import { formatMoney, numberLocale } from "../stats";
@@ -81,7 +82,7 @@ function formatDate(date: string): string {
           @click="openItem($event, item)"
         >
           <td class="item-name">
-            <RouterLink :to="detailRoute(item)">{{ item.name }}</RouterLink>
+            <RouterLink :to="detailRoute(item)">{{ sourceName(item.name, t) }}</RouterLink>
             <span class="row-detail">{{ formatQuantity(item) }}</span>
           </td>
           <td class="amount">{{ item.receipt_count }}</td>

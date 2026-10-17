@@ -72,15 +72,16 @@ class ConnectionOutput(BaseModel):
 class ProviderCode(StrEnum):
     LIDL = "lidl"
     MIXIT = "mixit"
+    FERMATO = "fermato"
 
 
 class ConnectionInput(BaseModel):
-    name: str = Field(min_length=1, max_length=120, pattern=r"\S")
+    name: str = Field(default="", max_length=120)
     sync_interval_minutes: int | None = Field(default=None, ge=60, le=10080)
 
 
 class ConnectionUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=120, pattern=r"\S")
+    name: str | None = Field(default=None, max_length=120)
     sync_interval_minutes: int | None = Field(default=None, ge=60, le=10080)
 
 
@@ -100,6 +101,12 @@ class LidlLoginInput(BaseModel):
 
 
 class MixitLoginInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    email: EmailStr
+    password: SecretStr = Field(min_length=1, max_length=1024)
+
+
+class FermatoLoginInput(BaseModel):
     model_config = {"extra": "forbid"}
     email: EmailStr
     password: SecretStr = Field(min_length=1, max_length=1024)

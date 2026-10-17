@@ -26,6 +26,9 @@ from cartalytix.models import (
     SyncRun,
 )
 from cartalytix.providers.common import ProviderError, ProviderPayload
+from cartalytix.providers.fermato.client import FermatoClient
+from cartalytix.providers.fermato.normalization import PARSER_VERSION as FERMATO_PARSER_VERSION
+from cartalytix.providers.fermato.normalization import validate_order as validate_fermato_order
 from cartalytix.providers.lidl.client import LidlClient
 from cartalytix.providers.lidl.normalization import PARSER_VERSION as LIDL_PARSER_VERSION
 from cartalytix.providers.lidl.normalization import validate_receipt
@@ -102,6 +105,16 @@ PROVIDERS: dict[str, ProviderSpec] = {
         id_key="hash",
         detail_id=_mixit_detail_id,
         normalize=validate_order,
+    ),
+    "fermato": ProviderSpec(
+        merchant="Fermato",
+        parser_version=FERMATO_PARSER_VERSION,
+        client=FermatoClient,
+        list_key="orders",
+        total_key="totalRecords",
+        id_key="code",
+        detail_id=lambda detail: detail.get("id"),
+        normalize=validate_fermato_order,
     ),
 }
 

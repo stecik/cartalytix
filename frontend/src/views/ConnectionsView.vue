@@ -43,7 +43,7 @@ const providers = useQuery({
 const available = computed(() => providers.data.value?.items.filter((provider) => provider.status === "available") ?? []);
 const upcoming = computed(() => providers.data.value?.items.filter((provider) => provider.status !== "available") ?? []);
 const accounts = (provider: string): Connection[] => connections.data.value?.items.filter((connection) => connection.provider === provider) ?? [];
-const addTitles: Record<string, string> = { lidl: "addLidlAccount", mixit: "addMixitAccount" };
+const addTitles: Record<string, string> = { lidl: "addLidlAccount", mixit: "addMixitAccount", fermato: "addFermatoAccount" };
 function openAdd(provider: string): void { name.value = ""; createConnection.reset(); adding.value = provider; }
 const createConnection = useMutation({
   mutationFn: (provider: string) => request<Connection>(`/providers/${provider}/connections`, {
@@ -89,11 +89,11 @@ const createConnection = useMutation({
     </QueryState>
     <AppDialog v-if="adding" :title="t(addTitles[adding] ?? 'addAccount')" :busy="createConnection.isPending.value" @close="adding = null">
       <p>{{ t("accountNameHelp") }}</p>
-      <form :aria-busy="createConnection.isPending.value" @submit.prevent="name.trim() && adding && createConnection.mutate(adding)">
+      <form :aria-busy="createConnection.isPending.value" @submit.prevent="adding && createConnection.mutate(adding)">
         <label for="connection-name">{{ t("connectionName") }}</label>
-        <input id="connection-name" v-model="name" name="connection-name" maxlength="120" required :disabled="createConnection.isPending.value" />
+        <input id="connection-name" v-model="name" name="connection-name" maxlength="120" :disabled="createConnection.isPending.value" />
         <p v-if="createConnection.isError.value" class="form-alert" role="alert">{{ t("connectionSaveFailed") }}</p>
-        <div class="dialog-actions"><button class="button secondary" data-action="cancel" type="button" :disabled="createConnection.isPending.value" @click="adding = null">{{ t("cancel") }}</button><button class="button primary" type="submit" :disabled="!name.trim() || createConnection.isPending.value">{{ t(createConnection.isPending.value ? "saving" : "continueConnecting") }}</button></div>
+        <div class="dialog-actions"><button class="button secondary" data-action="cancel" type="button" :disabled="createConnection.isPending.value" @click="adding = null">{{ t("cancel") }}</button><button class="button primary" type="submit" :disabled="createConnection.isPending.value">{{ t(createConnection.isPending.value ? "saving" : "continueConnecting") }}</button></div>
       </form>
     </AppDialog>
   </div>
