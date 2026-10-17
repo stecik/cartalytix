@@ -14,24 +14,20 @@ from urllib.parse import quote
 
 import httpx
 
+from cartalytix.providers.common import ProviderError, ProviderPayload
+
 AUTH = "https://accounts.lidl.com"
 TICKETS = "https://tickets.lidlplus.com/api"
 CLIENT_ID = "LidlPlusNativeClient"
 APP_VERSION = "16.45.5"
 
 
-class LidlError(RuntimeError):
-    def __init__(self, code: str) -> None:
-        self.code = code
-        super().__init__(code)
+class LidlError(ProviderError):
+    pass
 
 
-class LidlPayload(dict[str, Any]):
-    """Decoded data with the original JSON entity for lossless source archiving."""
-
-    def __init__(self, payload: dict[str, Any], raw: bytes) -> None:
-        super().__init__(payload)
-        self.raw = raw
+class LidlPayload(ProviderPayload):
+    pass
 
 
 class TokenData(TypedDict):

@@ -2,8 +2,11 @@
 
 Self-hosted receipt tracker. First application slice: local password accounts,
 owner-scoped receipt APIs, SQL totals per currency and an English/Czech Vue PWA.
-The Lidl CZ connector imports receipt history, source items and discounts;
-other stores remain unavailable. The original Lidl experiment remains in `experiments/`.
+The Lidl CZ connector imports receipt history, source items and discounts.
+The Mixit.cz connector imports shipped orders (products and mixes); Mixit does not
+itemize shipping, vouchers or credits, so the difference to the paid total is stored
+as a "Shipping and fees" item or a "Discounts and credits" order discount.
+Other stores remain unavailable. The original Lidl experiment remains in `experiments/`.
 
 | Path | Purpose |
 | --- | --- |
@@ -44,6 +47,8 @@ flowchart TB
         direction TB
         lidl["<b>Lidl CZ</b><br/>OAuth · headless Chrome"]:::conn
         lidlapi["<b>Lidl API</b><br/>external · unofficial"]:::ext
+        mixit["<b>Mixit CZ</b><br/>email/password · token"]:::conn
+        mixitapi["<b>Mixit API</b><br/>external · unofficial"]:::ext
     end
 
     user --> proxy
@@ -58,6 +63,9 @@ flowchart TB
     api -. link account .-> lidl
     worker -. sync receipts .-> lidl
     lidl -- HTTPS --> lidlapi
+    api -. link account .-> mixit
+    worker -. sync orders .-> mixit
+    mixit -- HTTPS --> mixitapi
 
     classDef client fill:#f1f5f9,stroke:#64748b,color:#0f172a
     classDef web fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e

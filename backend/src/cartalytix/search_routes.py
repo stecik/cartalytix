@@ -69,6 +69,7 @@ def receipt_suggestions(
     db: Db,
     q: Annotated[str, Query(min_length=MIN_TERM_LENGTH, max_length=100)],
     limit: Annotated[int, Query(ge=1, le=20)] = 8,
+    kind: SuggestionKind | None = None,
 ) -> SuggestionsOutput:
     term = q.strip()
     if len(term) < MIN_TERM_LENGTH:
@@ -79,17 +80,17 @@ def receipt_suggestions(
             text("SELECT set_config('pg_trgm.word_similarity_threshold', :value, true)"),
             {"value": str(WORD_SIMILARITY_THRESHOLD)},
         )
+    sources = ((SuggestionKind.ITEM, ReceiptItem.name), (SuggestionKind.MERCHANT, Receipt.merchant))
     candidates = [
-        (*row, SuggestionKind.ITEM)
-        for row in _suggest(db, user.id, ReceiptItem.name, term, limit, fuzzy)
-    ] + [
-        (*row, SuggestionKind.MERCHANT)
-        for row in _suggest(db, user.id, Receipt.merchant, term, limit, fuzzy)
+        (*row, source)
+        for source, column in sources
+        if kind in (None, source)
+        for row in _suggest(db, user.id, column, term, limit, fuzzy)
     ]
     candidates.sort(key=lambda row: (-row[0], -row[1], -row[2], row[3]))
     return SuggestionsOutput(
         items=[
-            SuggestionOutput(kind=kind, text=name, receipt_count=count)
-            for _rank, _similarity, count, name, kind in candidates[:limit]
+            SuggestionOutput(kind=source, text=name, receipt_count=count)
+            for _rank, _similarity, count, name, source in candidates[:limit]
         ]
     )

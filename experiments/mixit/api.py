@@ -9,9 +9,8 @@ import httpx
 
 from cartalytix.export import ExportError
 
-API = (
-    "https://api.mixit.cz/api/v2"  # Observed from the public web bundle on 2026-10-17.
-)
+# Customer API observed live; api.mixit.cz/api/v2 only serves public search and notices.
+API = "https://admin.mixit.cz/api/v1"
 SITE = "https://www.mixit.cz"
 
 

@@ -18,10 +18,13 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response as StarletteResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from cartalytix.connection_routes import connection_outputs
+from cartalytix.connection_routes import router as connection_router
 from cartalytix.dependencies import COOKIE_NAME, Db, Owner
 from cartalytix.i18n import translate
-from cartalytix.lidl_routes import connection_outputs
+from cartalytix.item_routes import router as item_router
 from cartalytix.lidl_routes import router as lidl_router
+from cartalytix.mixit_routes import router as mixit_router
 from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem, User, UserSession
 from cartalytix.providers.lidl.login_sessions import LoginSessions
 from cartalytix.schemas import (
@@ -30,6 +33,7 @@ from cartalytix.schemas import (
     DiscountOutput,
     LoginInput,
     OverviewOutput,
+    ProviderCode,
     ProviderOutput,
     ProvidersOutput,
     ReceiptDetailOutput,
@@ -48,6 +52,7 @@ from cartalytix.stats_routes import router as stats_router
 
 PROVIDERS = (
     ("lidl", "Lidl"),
+    ("mixit", "Mixit"),
     ("albert", "Albert"),
     ("globus", "Globus"),
     ("rohlik", "Rohlik"),
@@ -162,9 +167,12 @@ def create_app(
     app.state.settings = config
     app.state.lidl_logins = lidl_logins
     app.state.limiter = limiter or RedisLoginLimiter(redis, config)
+    app.include_router(connection_router)
     app.include_router(lidl_router)
+    app.include_router(mixit_router)
     app.include_router(stats_router)
     app.include_router(search_router)
+    app.include_router(item_router)
 
     @app.middleware("http")
     async def browser_security(
@@ -278,7 +286,7 @@ def create_app(
                     code=code,
                     name=name,
                     status="available"
-                    if code == "lidl" and config.token_key_file
+                    if code in ProviderCode and config.token_key_file
                     else "not_implemented",
                 )
                 for code, name in PROVIDERS

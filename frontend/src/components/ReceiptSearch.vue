@@ -8,6 +8,7 @@ import { highlight, MIN_SUGGESTION_LENGTH } from "../search";
 
 const DEBOUNCE_MS = 200;
 
+const props = defineProps<{ kind?: Suggestion["kind"]; placeholder?: string }>();
 const model = defineModel<string>({ required: true });
 const emit = defineEmits<{ select: [text: string] }>();
 
@@ -28,10 +29,10 @@ onBeforeUnmount(() => clearTimeout(timer));
 
 const enabled = computed(() => open.value && term.value.length >= MIN_SUGGESTION_LENGTH);
 const suggestions = useQuery({
-  queryKey: ["receipt-suggestions", term],
+  queryKey: ["receipt-suggestions", term, computed(() => props.kind)],
   queryFn: ({ signal }) =>
     request<{ items: Suggestion[] }>(
-      `/receipts/suggestions?${new URLSearchParams({ q: term.value })}`,
+      `/receipts/suggestions?${new URLSearchParams({ q: term.value, ...(props.kind ? { kind: props.kind } : {}) })}`,
       { signal },
     ),
   enabled,
@@ -93,7 +94,7 @@ function onEscape(): void {
 <template>
   <div class="receipt-search">
     <label>
-      <span class="sr-only">{{ t("searchReceipts") }}</span>
+      <span class="sr-only">{{ placeholder ?? t("searchReceipts") }}</span>
       <input
         v-model="model"
         type="search"
@@ -104,7 +105,7 @@ function onEscape(): void {
         :aria-expanded="expanded"
         :aria-controls="listId"
         :aria-activedescendant="active >= 0 ? optionId(active) : undefined"
-        :placeholder="t('searchReceipts')"
+        :placeholder="placeholder ?? t('searchReceipts')"
         @input="open = true"
         @focus="open = true"
         @blur="open = false"

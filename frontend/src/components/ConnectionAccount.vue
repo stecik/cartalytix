@@ -6,6 +6,7 @@ import { ApiError, request } from "../api";
 import type { Connection, SyncRun } from "../api";
 import QueryState from "./QueryState.vue";
 import LidlLoginForm from "./LidlLoginForm.vue";
+import MixitLoginForm from "./MixitLoginForm.vue";
 import AppIcon from "./AppIcon.vue";
 import AppDialog from "./AppDialog.vue";
 
@@ -31,7 +32,7 @@ const statusKey = computed(() => active.value ? `syncStatus_${props.connection.l
 const statusTone = computed(() => active.value ? "working" : props.connection.status === "connected" ? "connected" : ["error", "reauth_required"].includes(props.connection.status) ? "attention" : "");
 watch(() => props.connection.name, (value) => { name.value = value; });
 watch(() => props.connection.sync_interval_minutes, (value) => { if (value !== null) interval.value = value; });
-const endpoint = computed(() => `/providers/lidl/connections/${props.connection.id}`);
+const endpoint = computed(() => `/providers/${props.connection.provider}/connections/${props.connection.id}`);
 
 function updateConnection(connection: Connection): void {
   client.setQueryData<{ items: Connection[] }>(["connections"], (previous) => previous ? {
@@ -137,7 +138,8 @@ const actionError = computed(() => {
       </div>
       <p v-if="actionError && !confirm" role="alert" class="form-alert">{{ t(actionError) }}</p>
       <p v-if="notice" class="account-notice" role="status">{{ t(notice) }}</p>
-      <LidlLoginForm v-if="linking" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
+      <MixitLoginForm v-if="linking && connection.provider === 'mixit'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
+      <LidlLoginForm v-else-if="linking" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <section v-show="tab === 'sync'" :id="`panel-sync-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-sync-${connection.id}`" tabindex="0">
         <div v-if="!linkedAccount && !linking" class="reconnect-note"><p>{{ t(connection.status === 'not_connected' ? 'connectToImport' : 'reconnectToImport') }}</p><button class="button secondary" :disabled="active || busy" @click="connect">{{ t(connection.status === 'not_connected' ? 'linkAccount' : 'reconnectAccount') }}</button></div>
         <div class="account-setting">

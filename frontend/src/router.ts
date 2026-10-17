@@ -5,6 +5,8 @@ import LoginView from "./views/LoginView.vue";
 import OverviewView from "./views/OverviewView.vue";
 import ReceiptsView from "./views/ReceiptsView.vue";
 import ReceiptDetailView from "./views/ReceiptDetailView.vue";
+import ItemsView from "./views/ItemsView.vue";
+import ItemDetailView from "./views/ItemDetailView.vue";
 import ConnectionsView from "./views/ConnectionsView.vue";
 import SettingsView from "./views/SettingsView.vue";
 
@@ -16,6 +18,8 @@ export function createAppRouter(client: QueryClient) {
       { path: "/", name: "overview", component: OverviewView },
       { path: "/receipts", name: "receipts", component: ReceiptsView },
       { path: "/receipts/:id", name: "receipt-detail", component: ReceiptDetailView },
+      { path: "/items", name: "items", component: ItemsView },
+      { path: "/items/detail", name: "item-detail", component: ItemDetailView },
       { path: "/connections", name: "connections", component: ConnectionsView },
       { path: "/settings", name: "settings", component: SettingsView },
       { path: "/:pathMatch(.*)*", redirect: "/" },

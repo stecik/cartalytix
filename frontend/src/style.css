@@ -938,7 +938,8 @@ form input:focus {
     align-items: center;
     justify-content: center;
     gap: 5px;
-    min-width: 90px;
+    flex: 1;
+    min-width: 0;
     min-height: 56px;
     font-size: 10px;
     color: #87917f;

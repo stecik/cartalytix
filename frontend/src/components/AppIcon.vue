@@ -3,6 +3,7 @@ defineProps<{
   name:
     | "overview"
     | "receipts"
+    | "items"
     | "connections"
     | "settings"
     | "arrow"
@@ -31,6 +32,10 @@ defineProps<{
     <template v-else-if="name === 'receipts' || name === 'mark'">
       <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z" />
       <path d="M9 8h6M9 12h4" />
+    </template>
+    <template v-else-if="name === 'items'">
+      <path d="M4 9h16l-1.5 11h-13L4 9Z" />
+      <path d="M8 9l3-5M16 9l-3-5M9 13v4M15 13v4" />
     </template>
     <template v-else-if="name === 'connections'">
       <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />

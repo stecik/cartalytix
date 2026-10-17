@@ -69,12 +69,17 @@ class ConnectionOutput(BaseModel):
     latest_sync: SyncRunOutput | None = None
 
 
-class LidlConnectionInput(BaseModel):
+class ProviderCode(StrEnum):
+    LIDL = "lidl"
+    MIXIT = "mixit"
+
+
+class ConnectionInput(BaseModel):
     name: str = Field(min_length=1, max_length=120, pattern=r"\S")
     sync_interval_minutes: int | None = Field(default=None, ge=60, le=10080)
 
 
-class LidlConnectionUpdate(BaseModel):
+class ConnectionUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120, pattern=r"\S")
     sync_interval_minutes: int | None = Field(default=None, ge=60, le=10080)
 
@@ -89,6 +94,12 @@ class LidlAuthorizeInput(BaseModel):
 
 
 class LidlLoginInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    email: EmailStr
+    password: SecretStr = Field(min_length=1, max_length=1024)
+
+
+class MixitLoginInput(BaseModel):
     model_config = {"extra": "forbid"}
     email: EmailStr
     password: SecretStr = Field(min_length=1, max_length=1024)
@@ -228,6 +239,53 @@ class StatsOutput(BaseModel):
     frequent_items: list[ItemStats]
     top_spend_items: list[ItemStats]
     weekly_hours: list[list[int]]
+
+
+class ItemSort(StrEnum):
+    NAME_ASC = "name_asc"
+    NAME_DESC = "name_desc"
+    RECEIPT_COUNT_DESC = "receipt_count_desc"
+    RECEIPT_COUNT_ASC = "receipt_count_asc"
+    TOTAL_AMOUNT_DESC = "total_amount_desc"
+    TOTAL_AMOUNT_ASC = "total_amount_asc"
+    AVERAGE_PRICE_DESC = "average_price_desc"
+    AVERAGE_PRICE_ASC = "average_price_asc"
+    LAST_PURCHASED_DESC = "last_purchased_desc"
+    LAST_PURCHASED_ASC = "last_purchased_asc"
+
+
+class ItemSummaryOutput(BaseModel):
+    name: str
+    currency: str
+    unit: str | None
+    receipt_count: int
+    quantity: str
+    total_amount: str
+    average_price: str
+    min_price: str
+    max_price: str
+    last_purchased_at: datetime
+
+
+class ItemsOutput(BaseModel):
+    items: list[ItemSummaryOutput]
+    total: int
+    limit: int
+    offset: int
+
+
+class ItemPurchaseOutput(BaseModel):
+    receipt_id: UUID
+    purchased_at: datetime
+    merchant: str
+    quantity: str
+    unit: str | None
+    unit_price: str
+    total_amount: str
+
+
+class ItemDetailOutput(ItemSummaryOutput):
+    purchases: list[ItemPurchaseOutput]
 
 
 class SuggestionKind(StrEnum):

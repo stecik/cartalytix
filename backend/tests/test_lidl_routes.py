@@ -257,7 +257,7 @@ def test_broker_failure_keeps_idempotent_pending_job(
     def offline(identifier: str) -> None:
         raise OSError("private broker details")
 
-    monkeypatch.setattr("cartalytix.lidl_routes.sync_run.delay", offline)
+    monkeypatch.setattr("cartalytix.connection_routes.sync_run.delay", offline)
     identifier = create(authorized)
     assert authorize(authorized, identifier).status_code == 200
     first = authorized.post(
@@ -421,7 +421,7 @@ def test_sync_dispatches_only_submitted_run_not_other_owner_backlog(
 ) -> None:
     monkeypatch.setattr("cartalytix.lidl_routes.exchange_refresh", exchange)
     sent: list[str] = []
-    monkeypatch.setattr("cartalytix.lidl_routes.sync_run.delay", sent.append)
+    monkeypatch.setattr("cartalytix.connection_routes.sync_run.delay", sent.append)
     identifier = create(authorized)
     assert authorize(authorized, identifier).status_code == 200
     with Session(engine) as db:
@@ -461,7 +461,7 @@ def test_sync_registers_publish_after_response_instead_of_request_publish(
         pytest.fail("Broker publication must happen after the HTTP response")
 
     monkeypatch.setattr("cartalytix.lidl_routes.exchange_refresh", exchange)
-    monkeypatch.setattr("cartalytix.lidl_routes.publish_pending", forbidden)
+    monkeypatch.setattr("cartalytix.connection_routes.publish_pending", forbidden)
     monkeypatch.setattr(BackgroundTasks, "add_task", capture)
     identifier = create(authorized)
     assert authorize(authorized, identifier).status_code == 200

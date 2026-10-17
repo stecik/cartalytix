@@ -7,12 +7,12 @@ import type { Connection, Provider } from "../api";
 import AppIcon from "../components/AppIcon.vue";
 import AppDialog from "../components/AppDialog.vue";
 import QueryState from "../components/QueryState.vue";
-import LidlConnection from "../components/LidlConnection.vue";
+import ConnectionAccount from "../components/ConnectionAccount.vue";
 import { providerLogos } from "../providerLogos";
 
 const { t } = useI18n();
 const client = useQueryClient();
-const adding = ref(false);
+const adding = ref<string | null>(null);
 const name = ref("");
 const createdId = ref<string | null>(null);
 const connections = useQuery({
@@ -43,13 +43,14 @@ const providers = useQuery({
 const available = computed(() => providers.data.value?.items.filter((provider) => provider.status === "available") ?? []);
 const upcoming = computed(() => providers.data.value?.items.filter((provider) => provider.status !== "available") ?? []);
 const accounts = (provider: string): Connection[] => connections.data.value?.items.filter((connection) => connection.provider === provider) ?? [];
-function openAdd(): void { name.value = ""; createConnection.reset(); adding.value = true; }
+const addTitles: Record<string, string> = { lidl: "addLidlAccount", mixit: "addMixitAccount" };
+function openAdd(provider: string): void { name.value = ""; createConnection.reset(); adding.value = provider; }
 const createConnection = useMutation({
-  mutationFn: () => request<Connection>("/providers/lidl/connections", {
+  mutationFn: (provider: string) => request<Connection>(`/providers/${provider}/connections`, {
     method: "POST", body: JSON.stringify({ name: name.value.trim(), sync_interval_minutes: null }),
   }),
   onSuccess: async (connection) => {
-    adding.value = false;
+    adding.value = null;
     name.value = "";
     createdId.value = connection.id;
     client.setQueryData<{ items: Connection[] }>(["connections"], (previous) => ({ items: [...(previous?.items ?? []), connection] }));
@@ -66,12 +67,12 @@ const createConnection = useMutation({
         <header class="store-header">
           <img v-if="providerLogos[provider.code]" :src="providerLogos[provider.code]" class="provider-logo" width="38" height="38" alt="" />
           <div class="store-copy"><h2 :id="`store-${provider.code}`">{{ provider.code === 'lidl' ? t('lidlPlus') : provider.name }}</h2><p>{{ t('accountCount', accounts(provider.code).length) }}</p></div>
-          <button v-if="provider.code === 'lidl'" class="button secondary add-account" @click="openAdd"><AppIcon name="plus" />{{ t("addAccount") }}</button>
+          <button v-if="addTitles[provider.code]" class="button secondary add-account" @click="openAdd(provider.code)"><AppIcon name="plus" />{{ t("addAccount") }}</button>
         </header>
         <p v-if="!accounts(provider.code).length" class="accounts-empty">{{ t("noConnectionsDescription") }}</p>
         <ul v-else class="account-list">
           <li v-for="connection in accounts(provider.code)" :key="connection.id">
-            <LidlConnection v-if="connection.provider === 'lidl'" :connection="connection" :initial-linking="connection.id === createdId" />
+            <ConnectionAccount v-if="addTitles[connection.provider]" :connection="connection" :initial-linking="connection.id === createdId" />
           </li>
         </ul>
       </section>
@@ -86,13 +87,13 @@ const createConnection = useMutation({
       </section>
       <p v-if="!providers.data.value?.items.length" class="section-note">{{ t("noProviders") }}</p>
     </QueryState>
-    <AppDialog v-if="adding" :title="t('addLidlAccount')" :busy="createConnection.isPending.value" @close="adding = false">
+    <AppDialog v-if="adding" :title="t(addTitles[adding] ?? 'addAccount')" :busy="createConnection.isPending.value" @close="adding = null">
       <p>{{ t("accountNameHelp") }}</p>
-      <form :aria-busy="createConnection.isPending.value" @submit.prevent="name.trim() && createConnection.mutate()">
+      <form :aria-busy="createConnection.isPending.value" @submit.prevent="name.trim() && adding && createConnection.mutate(adding)">
         <label for="connection-name">{{ t("connectionName") }}</label>
         <input id="connection-name" v-model="name" name="connection-name" maxlength="120" required :disabled="createConnection.isPending.value" />
         <p v-if="createConnection.isError.value" class="form-alert" role="alert">{{ t("connectionSaveFailed") }}</p>
-        <div class="dialog-actions"><button class="button secondary" data-action="cancel" type="button" :disabled="createConnection.isPending.value" @click="adding = false">{{ t("cancel") }}</button><button class="button primary" type="submit" :disabled="!name.trim() || createConnection.isPending.value">{{ t(createConnection.isPending.value ? "saving" : "continueConnecting") }}</button></div>
+        <div class="dialog-actions"><button class="button secondary" data-action="cancel" type="button" :disabled="createConnection.isPending.value" @click="adding = null">{{ t("cancel") }}</button><button class="button primary" type="submit" :disabled="!name.trim() || createConnection.isPending.value">{{ t(createConnection.isPending.value ? "saving" : "continueConnecting") }}</button></div>
       </form>
     </AppDialog>
   </div>
@@ -103,6 +104,7 @@ const createConnection = useMutation({
 .connections-title { margin-bottom: 34px; }
 .connections-title h1 { font-size: 29px; line-height: 1.25; font-weight: 600; letter-spacing: -1px; margin-bottom: 9px; }
 .connections-title p { color: var(--muted); font-size: 13px; line-height: 1.7; }
+.connected-store + .connected-store { margin-top: 36px; }
 .store-header { display: flex; align-items: center; gap: 13px; padding-bottom: 20px; }
 .provider-logo { width: 38px; height: 38px; object-fit: contain; }
 .store-copy { flex: 1; min-width: 0; }

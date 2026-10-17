@@ -36,6 +36,7 @@ const logout = useMutation({
 const links = [
   { to: "/", name: "overview" },
   { to: "/receipts", name: "receipts" },
+  { to: "/items", name: "items" },
   { to: "/connections", name: "connections" },
   { to: "/settings", name: "settings" },
 ] as const;
@@ -115,7 +116,7 @@ watch(
           v-for="link in links"
           :key="link.to"
           :to="link.to"
-          :class="{ active: route.name === link.name || (link.name === 'receipts' && route.name === 'receipt-detail') }"
+          :class="{ active: route.name === link.name || (link.name === 'receipts' && route.name === 'receipt-detail') || (link.name === 'items' && route.name === 'item-detail') }"
           >
 <AppIcon :name="link.name" />{{ t(link.name) }}
 </RouterLink>
@@ -172,7 +173,7 @@ watch(
         v-for="link in links"
         :key="link.to"
         :to="link.to"
-        :class="{ active: route.name === link.name || (link.name === 'receipts' && route.name === 'receipt-detail') }"
+        :class="{ active: route.name === link.name || (link.name === 'receipts' && route.name === 'receipt-detail') || (link.name === 'items' && route.name === 'item-detail') }"
         >
 <AppIcon :name="link.name" /><span>{{
           t(link.name)

@@ -4,6 +4,7 @@ import hashlib
 import json
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from threading import Lock
@@ -24,8 +25,13 @@ from cartalytix.models import (
     ReceiptItem,
     SyncRun,
 )
-from cartalytix.providers.lidl.client import LidlClient, LidlError, LidlPayload
-from cartalytix.providers.lidl.normalization import PARSER_VERSION, validate_receipt
+from cartalytix.providers.common import ProviderError, ProviderPayload
+from cartalytix.providers.lidl.client import LidlClient
+from cartalytix.providers.lidl.normalization import PARSER_VERSION as LIDL_PARSER_VERSION
+from cartalytix.providers.lidl.normalization import validate_receipt
+from cartalytix.providers.mixit.client import MixitClient
+from cartalytix.providers.mixit.normalization import PARSER_VERSION as MIXIT_PARSER_VERSION
+from cartalytix.providers.mixit.normalization import validate_order
 from cartalytix.settings import Settings
 
 _ACTIVE = ("pending", "running")
@@ -50,9 +56,54 @@ class ClientFactory(Protocol):
         self,
         refresh_token: str,
         save_refresh: Callable[[str], None],
+        /,
         *,
         heartbeat: Callable[[], None] | None = None,
     ) -> ProviderClient: ...
+
+
+@dataclass(frozen=True)
+class ProviderSpec:
+    merchant: str
+    parser_version: str
+    client: ClientFactory
+    list_key: str
+    total_key: str
+    id_key: str
+    detail_id: Callable[[dict[str, Any]], object]
+    # None means "not importable yet" (e.g. an unshipped order), not a failure.
+    normalize: Callable[[dict[str, Any], dict[str, Any], str], dict[str, Any] | None]
+
+
+def _mixit_detail_id(detail: dict[str, Any]) -> object:
+    order = detail.get("order")
+    return order.get("hash") if isinstance(order, dict) else None
+
+
+PROVIDERS: dict[str, ProviderSpec] = {
+    "lidl": ProviderSpec(
+        merchant="Lidl",
+        parser_version=LIDL_PARSER_VERSION,
+        client=LidlClient,
+        list_key="tickets",
+        total_key="totalCount",
+        id_key="id",
+        detail_id=lambda detail: detail.get("id"),
+        normalize=lambda summary, detail, identifier: validate_receipt(
+            {**summary, **detail}, identifier
+        ),
+    ),
+    "mixit": ProviderSpec(
+        merchant="Mixit",
+        parser_version=MIXIT_PARSER_VERSION,
+        client=MixitClient,
+        list_key="orders",
+        total_key="totalRecords",
+        id_key="hash",
+        detail_id=_mixit_detail_id,
+        normalize=validate_order,
+    ),
+}
 
 
 @contextmanager
@@ -105,7 +156,7 @@ def enqueue_sync(
         )
         if connection is None:
             raise SyncError("connection_not_found")
-        if connection.provider != "lidl":
+        if connection.provider not in PROVIDERS:
             raise SyncError("connector_unavailable")
         if not connection.encrypted_refresh_token or connection.status in {
             "not_connected",
@@ -123,7 +174,7 @@ def schedule_due(engine: Engine) -> int:
             db.scalars(
                 select(ProviderConnection)
                 .where(
-                    ProviderConnection.provider == "lidl",
+                    ProviderConnection.provider.in_(tuple(PROVIDERS)),
                     ProviderConnection.status.in_(("connected", "error")),
                     ProviderConnection.encrypted_refresh_token.is_not(None),
                     ProviderConnection.sync_interval_minutes.is_not(None),
@@ -208,10 +259,16 @@ def _heartbeat(engine: Engine, run_id: UUID) -> None:
         )
 
 
-def _raw(engine: Engine, connection_id: UUID, external_id: str, value: dict[str, Any]) -> UUID:
+def _raw(
+    engine: Engine,
+    connection_id: UUID,
+    external_id: str,
+    value: dict[str, Any],
+    parser_version: str = LIDL_PARSER_VERSION,
+) -> UUID:
     payload = (
         value.raw
-        if isinstance(value, LidlPayload)
+        if isinstance(value, ProviderPayload)
         else json.dumps(
             value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
         ).encode("utf-8")
@@ -231,25 +288,27 @@ def _raw(engine: Engine, connection_id: UUID, external_id: str, value: dict[str,
                 external_id=external_id,
                 payload=payload,
                 checksum=checksum,
-                parser_version=PARSER_VERSION,
+                parser_version=parser_version,
             )
             db.add(document)
             db.flush()
         return document.id
 
 
-def _page(data: dict[str, Any]) -> tuple[list[dict[str, Any]], int | None]:
-    tickets = data.get("tickets")
-    total = data.get("totalCount")
+def _page(
+    data: dict[str, Any], spec: ProviderSpec = PROVIDERS["lidl"]
+) -> tuple[list[dict[str, Any]], int | None]:
+    tickets = data.get(spec.list_key)
+    total = data.get(spec.total_key)
     if not isinstance(tickets, list) or (
         total is not None and (type(total) is not int or total < 0)
     ):
         raise SyncError("history_incomplete")
     if any(
         not isinstance(ticket, dict)
-        or not isinstance(ticket.get("id"), str)
-        or not ticket.get("id")
-        or len(ticket.get("id")) > 256
+        or not isinstance(ticket.get(spec.id_key), str)
+        or not ticket.get(spec.id_key)
+        or len(ticket.get(spec.id_key)) > 256
         for ticket in tickets
     ):
         raise SyncError("history_incomplete")
@@ -257,24 +316,28 @@ def _page(data: dict[str, Any]) -> tuple[list[dict[str, Any]], int | None]:
 
 
 def _history(
-    engine: Engine, run_id: UUID, connection_id: UUID, client: ProviderClient
+    engine: Engine,
+    run_id: UUID,
+    connection_id: UUID,
+    client: ProviderClient,
+    spec: ProviderSpec = PROVIDERS["lidl"],
 ) -> dict[str, dict[str, Any]]:
     summaries: dict[str, dict[str, Any]] = {}
     total: int | None = None
     first_signature: tuple[list[str], int | None] | None = None
     for number in range(1, 10001):
         data = client.page(number)
-        _raw(engine, connection_id, f"list:{run_id}:{number}", data)
-        tickets, page_total = _page(data)
+        _raw(engine, connection_id, f"list:{run_id}:{number}", data, spec.parser_version)
+        tickets, page_total = _page(data, spec)
         if page_total is not None:
             if total is not None and total != page_total:
                 raise SyncError("history_incomplete")
             total = page_total
-        ids = [str(ticket.get("id")) for ticket in tickets]
+        ids = [str(ticket.get(spec.id_key)) for ticket in tickets]
         if first_signature is None:
             first_signature = (ids, page_total)
         for ticket in tickets:
-            identifier = str(ticket.get("id"))
+            identifier = str(ticket.get(spec.id_key))
             if identifier in summaries:
                 raise SyncError("history_incomplete")
             summaries[identifier] = ticket
@@ -293,9 +356,9 @@ def _history(
     else:
         raise SyncError("history_incomplete")
     check = client.page(1)
-    _raw(engine, connection_id, f"list:{run_id}:check", check)
-    tickets, check_total = _page(check)
-    if ([ticket.get("id") for ticket in tickets], check_total) != first_signature:
+    _raw(engine, connection_id, f"list:{run_id}:check", check, spec.parser_version)
+    tickets, check_total = _page(check, spec)
+    if ([ticket.get(spec.id_key) for ticket in tickets], check_total) != first_signature:
         raise SyncError("history_incomplete")
     return summaries
 
@@ -310,7 +373,12 @@ def _decimal(value: object) -> Decimal:
 
 
 def _save_receipt(
-    engine: Engine, connection_id: UUID, external_id: str, raw_id: UUID, normalized: dict[str, Any]
+    engine: Engine,
+    connection_id: UUID,
+    external_id: str,
+    raw_id: UUID,
+    normalized: dict[str, Any],
+    merchant: str = "Lidl",
 ) -> None:
     date = datetime.fromisoformat(str(normalized.get("date")))
     if date.tzinfo is None:
@@ -332,7 +400,7 @@ def _save_receipt(
             db.execute(delete(ReceiptItem).where(ReceiptItem.receipt_id == receipt.id))
         receipt.raw_document_id = raw_id
         receipt.purchased_at = date.astimezone(UTC)
-        receipt.merchant = "Lidl"
+        receipt.merchant = merchant
         receipt.currency = str(normalized.get("currency"))
         receipt.total_amount = _decimal(normalized.get("total"))
         receipt.rounding_amount = _decimal(normalized.get("rounding") or "0")
@@ -371,6 +439,15 @@ def _save_receipt(
                         amount=_decimal(discount.get("amount")),
                     )
                 )
+        discounts.extend(
+            Discount(
+                receipt_id=receipt.id,
+                item_id=None,
+                name=str(discount.get("name") or "Discount"),
+                amount=_decimal(discount.get("amount")),
+            )
+            for discount in normalized.get("discounts", [])
+        )
         db.flush()
         db.add_all(discounts)
 
@@ -397,8 +474,9 @@ def run_sync(
                 connection = db.get(ProviderConnection, connection_id)
                 if run is None or run.status not in _ACTIVE:
                     return
-                if connection is None or connection.provider != "lidl":
+                if connection is None or connection.provider not in PROVIDERS:
                     raise SyncError("connection_not_found")
+                spec = PROVIDERS[connection.provider]
                 encrypted = connection.encrypted_refresh_token
                 if not encrypted or connection.status in {"not_connected", "reauth_required"}:
                     raise SyncError("auth_required")
@@ -419,12 +497,12 @@ def run_sync(
                         raise SyncError("connection_not_found")
                     connection.encrypted_refresh_token = cipher.encrypt(value)
 
-            client = (client_factory or LidlClient)(
+            client = (client_factory or spec.client)(
                 cipher.decrypt(encrypted),
                 save_refresh,
                 heartbeat=lambda: _heartbeat(engine, run_id),
             )
-            summaries = _history(engine, run_id, connection_id, client)
+            summaries = _history(engine, run_id, connection_id, client, spec)
             with Session(engine) as db:
                 existing = set(
                     db.scalars(
@@ -447,14 +525,20 @@ def run_sync(
                 if identifier in existing and not refresh_existing:
                     continue
                 detail = client.detail(identifier)
-                raw_id = _raw(engine, connection_id, identifier, detail)
-                if detail.get("id") != identifier:
+                raw_id = _raw(engine, connection_id, identifier, detail, spec.parser_version)
+                if spec.detail_id(detail) != identifier:
                     raise SyncError("receipt_identity_mismatch")
-                normalized = validate_receipt({**summary, **detail}, identifier)
+                normalized = spec.normalize(summary, detail, identifier)
+                if normalized is None:
+                    with Session(engine) as db, db.begin():
+                        run = db.get(SyncRun, run_id)
+                        if run is not None:
+                            run.receipts_skipped += 1
+                    continue
                 if normalized.get("issues"):
                     quality_failed = True
                     continue
-                _save_receipt(engine, connection_id, identifier, raw_id, normalized)
+                _save_receipt(engine, connection_id, identifier, raw_id, normalized, spec.merchant)
                 with Session(engine) as db, db.begin():
                     run = db.get(SyncRun, run_id)
                     if run is not None:
@@ -477,7 +561,7 @@ def run_sync(
                             minutes=connection.sync_interval_minutes
                         )
         except Exception as error:
-            if isinstance(error, (LidlError, SyncError)):
+            if isinstance(error, (ProviderError, SyncError)):
                 code = error.code
             elif isinstance(error, CredentialError):
                 code = "credentials_unavailable"

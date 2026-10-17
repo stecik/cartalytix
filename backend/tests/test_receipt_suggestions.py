@@ -91,6 +91,8 @@ def test_suggestions_rank_prefix_then_word_then_substring(
     assert suggestions(client, "100%") == [
         {"kind": "merchant", "text": "Albert 100%", "receipt_count": 1}
     ]
+    response = client.get(URL, params={"q": "praha", "kind": "item"})
+    assert response.json().get("items") == []
 
 
 def test_receipt_filter_ignores_diacritics(client: TestClient, engine: Engine) -> None:

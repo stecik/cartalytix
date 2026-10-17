@@ -158,6 +158,7 @@ class ReceiptItem(Base):
             text("cartalytix_search_text(name) gin_trgm_ops"),
             postgresql_using="gin",
         ).ddl_if(dialect="postgresql"),
+        Index("ix_receipt_items_name_receipt", "name", "receipt_id"),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     receipt_id: Mapped[UUID] = mapped_column(ForeignKey("receipts.id"), index=True)

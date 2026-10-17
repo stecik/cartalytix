@@ -54,6 +54,40 @@ export interface Overview {
   latest_receipts: Receipt[];
 }
 
+export interface ItemSummary {
+  name: string;
+  currency: string;
+  unit: string | null;
+  receipt_count: number;
+  quantity: string;
+  total_amount: string;
+  average_price: string;
+  min_price: string;
+  max_price: string;
+  last_purchased_at: string;
+}
+
+export interface ItemPage {
+  items: ItemSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ItemPurchase {
+  receipt_id: string;
+  purchased_at: string;
+  merchant: string;
+  quantity: string;
+  unit: string | null;
+  unit_price: string;
+  total_amount: string;
+}
+
+export interface ItemDetail extends ItemSummary {
+  purchases: ItemPurchase[];
+}
+
 export interface Suggestion {
   kind: "item" | "merchant";
   text: string;
