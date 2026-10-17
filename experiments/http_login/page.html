@@ -27,7 +27,7 @@ async function send(path,data,form){
   if(!response.ok)throw new Error(result.detail||result.error||"Request failed");
   if(result.step==="otp"){document.getElementById("credentials").hidden=true;document.getElementById("verification").hidden=false;status.textContent="Enter the code requested by Lidl: "+result.method;}
   else if(result.step==="ready"){status.textContent="Initialization passed. No Lidl credentials were submitted.";diagnostic.textContent=JSON.stringify(result.diagnostics,null,2);}
-  else if(result.step==="completed"){form.hidden=true;status.textContent="Connected. You can start synchronization in Cartalytix.";}
+  else if(result.step==="completed"){form.hidden=true;status.textContent="Connected. You can start synchronization in Cartalytix.";diagnostic.textContent=JSON.stringify(result.diagnostics,null,2);}
   else{status.textContent="Login stopped: "+result.error;diagnostic.textContent=JSON.stringify(result.diagnostics,null,2);}
  }catch(error){status.textContent=error.message;}finally{button.disabled=false;}
 }

@@ -171,6 +171,60 @@ def test_authenticated_probe_is_owner_bound_and_no_secret_is_logged(
     assert calls == ["GET", "POST"]
 
 
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        (
+            {"error": {"code": "auth_required", "message": "Request failed"}},
+            "application_request_rejected:auth_required",
+        ),
+        ({"error": {"code": "private value"}}, "application_request_rejected"),
+        ({"detail": "private"}, "application_request_rejected"),
+    ],
+)
+def test_application_rejection_exposes_only_fixed_backend_code(
+    body: dict[str, object], expected: str
+) -> None:
+    client = httpx.Client
+    request = MagicMock()
+    request.cookies = {probe.COOKIE: "application-session"}
+
+    def upstream(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json=body)
+
+    with (
+        patch.object(
+            probe.httpx,
+            "Client",
+            lambda **options: client(
+                transport=httpx.MockTransport(upstream), **options
+            ),
+        ),
+        pytest.raises(HTTPException) as error,
+    ):
+        probe.application(request, "POST", "providers/lidl/connections/x/authorize")
+    assert error.value.status_code == 422 and error.value.detail == expected
+
+
+def test_rejected_handoff_returns_diagnostics_and_closes_client() -> None:
+    client = MagicMock()
+    client.take_refresh_token.return_value = "private-refresh"
+    client.diagnostics = {"http_status": 302}
+    flow = probe.Flow("owner", client=client, connection=uuid4())
+
+    def application(*_args: object) -> dict[str, object]:
+        raise HTTPException(422, "application_request_rejected:auth_required")
+
+    with patch.object(probe, "application", application):
+        output = probe.result(MagicMock(), flow, Status("completed"))
+    assert output == {
+        "step": "failed",
+        "error": "application_request_rejected:auth_required",
+        "diagnostics": {"http_status": 302},
+    }
+    client.close.assert_called_once()
+
+
 def test_mfa_handoff_uses_fixed_authorize_endpoint_and_closes_client(
     browser: TestClient, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -234,7 +288,11 @@ def test_mfa_handoff_uses_fixed_authorize_endpoint_and_closes_client(
         response = browser.post(
             "/verify", json={"csrf": csrf, "code": "123456"}, headers=headers
         )
-        assert response.json() == {"step": "completed", "linked": True}
+        output = response.json()
+        assert output.get("step") == "completed" and output.get("linked") is True
+        assert not any(
+            key.startswith("refresh_") for key in output.get("diagnostics", {})
+        )
         client = next(iter(probe.flows.values())).client
         assert client is not None and client._phase == "closed"
         assert "private-refresh" not in repr(client.__dict__)

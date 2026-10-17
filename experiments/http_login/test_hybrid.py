@@ -7,8 +7,27 @@ import httpx
 import pytest
 
 from http_login.client import AUTH, LoginError
-from http_login.hybrid import BrowserSession, HybridLogin, bootstrap_browser
+from http_login.hybrid import BrowserSession, HybridLogin, abck_state, bootstrap_browser
 from http_login.test_client import page
+
+
+@pytest.mark.parametrize(
+    "values,expected",
+    [
+        ([], "missing"),
+        (["private~0~rest~-1~-1"], "validated"),
+        (["private~-1~rest~-1~-1"], "unvalidated"),
+        (["private~3~rest"], "other"),
+        (["private"], "malformed"),
+        (["private~0~a", "private~0~b"], "ambiguous"),
+    ],
+)
+def test_abck_state_reports_structure_only(values: list[str], expected: str) -> None:
+    cookies = httpx.Cookies()
+    cookies.set("_abck", "private~0~other", domain=".example.com", path="/")
+    for index, value in enumerate(values):
+        cookies.set("_abck", value, domain=".lidl.com", path=f"/{index}")
+    assert abck_state(cookies.jar) == expected
 
 
 def session(

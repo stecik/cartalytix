@@ -1,10 +1,11 @@
 # Lidl login experiment: HTTP and browser-assisted variants
 
-Status: local experiment, not the production connection UI. A real CZ attempt
-stopped at device verification; pure HTTP login has not succeeded. Do not
-interpret mocked tests as provider support.
-The hybrid variant now passes anonymous Linux initialization; a real hybrid login
-is pending user testing.
+Status: local experiment, not the production connection UI. A real CZ hybrid
+login succeeded on 2026-10-17: Lidl issued tokens, the backend independently
+refreshed and encrypted the credential, and receipt import started successfully.
+The history list contains 861 receipts across 35 pages. Full import is in progress.
+Pure HTTP login without browser initialization has not succeeded. Repeated login,
+live MFA and long-term unattended renewal remain unverified.
 
 ## Purpose
 
@@ -26,7 +27,9 @@ The experiment does not trigger a receipt synchronization automatically.
 2. Load the login page and retain its cookies, CSRF token and form model.
 3. Submit email/password once; continue with the verification code when needed.
 4. Validate the callback state, exchange its code once and hand off the refresh
-   token. Never follow the custom scheme or an external redirect with credentials.
+   token. The backend owns its validation and rotation; the probe does not perform
+   diagnostic refresh attempts first. Never follow the custom scheme or an external
+   redirect with credentials.
 
 All provider traffic is HTTPS to `accounts.lidl.com`. The client does not retry
 credential submission, verification or token exchange. An uncertain POST ends
@@ -36,7 +39,7 @@ the attempt; reload the local page to create a new flow.
 
 `work/compose.http-probe.yaml` is an ignored, temporary Compose override alongside
 the existing local test override. Its separate image extends the existing API
-image with Playwright 1.64.0 and full Chromium (`channel="chromium"`, new headless
+image with Playwright 1.64.0 and Google Chrome (`channel="chrome"`, headless
 mode). This folder is mounted read-only, with one Uvicorn worker and port
 `127.0.0.1:18081:18081`. No database password or encryption key is passed to this
 service. The container has a temporary in-memory `/tmp`, a read-only root, an
@@ -51,7 +54,7 @@ paths) and its user agent, then closes Chromium. Third-party cookies are exclude
 The HTTP client reloads the same login
 document, keeping the PKCE flow and cookie scope/expiry/flags. Lidl's `#login`
 client route is removed before HTTP navigation. Credentials are submitted after
-that reload, including the mark in `DeviceId`. Only one browser initialization
+that reload, including the exact DOM form value in `DeviceId`. Only one browser initialization
 runs at a time. Before an MFA form POST, another short browser initialization
 uses the existing cookies and user agent to obtain a new, once-only CAPTCHA
 token. Passwords and verification codes are never supplied to the browser.
@@ -81,7 +84,7 @@ logging is disabled. Validation errors never echo submitted credentials.
 - Browser smoke test: existing Cartalytix login, owned connection selector, blank
   password, hidden OTP step, no mobile overflow or JavaScript errors. No Lidl
   credentials submitted by the automated test.
-- Thirty-three mocked tests pass: password/MFA/code exchange, callback state,
+- Forty-nine mocked tests pass: password/MFA/code exchange, callback state,
   foreign redirects, error parsing, uncertain POST handling, authenticated form,
   owner/CSRF/Origin protection, generic validation, once-only token handoff,
   browser-to-HTTP identity/cookie transfer, rejection of invalid browser state,
@@ -120,8 +123,22 @@ logging is disabled. Validation errors never echo submitted credentials.
   the rejected field; it does not reveal the provider's reason or independently
   prove that every CAPTCHA assessment passed. The current public password
   component posts the input unchanged as `Password`, alongside `Step=1`, matching
-  this client's format. Fresh login with the same credentials directly at Lidl
-  versus a federated Google/Apple login remains to be checked by the user.
+  this client's format. The user subsequently confirmed that a fresh login with
+  the same email/password works directly on Lidl's website.
+- Two later user attempts returned `OverCapacityError` (`provider_busy`) with
+  CAPTCHA attached and no field errors. The probe container predated the change
+  that submits the login form's own `DeviceId` (a 36-character value) instead of
+  the device-mark cookie, so those attempts used the old value. After a restart,
+  anonymous initialization reports `device_id_from_form=true`. A retry with the
+  current code still returned `provider_busy`.
+- The public login bundle (2026-10-17) confirms the request format: the password
+  step posts `Email`, `PhoneNumber`, `PhoneCountryCode`, `Password`,
+  `RememberMe`, `Step=1`, `ReCaptchaToken` (action `LOGIN`) and `DeviceId`.
+  `DeviceId` is the UBI `requestId`, also stored in the `lidl-sso-browser-mark`
+  cookie. Runtime comparison nevertheless observed different form/cookie values;
+  the probe uses the exact form value. The official UI shows `OverCapacityError`
+  as a generic connection error. The cause is not established. Diagnostics include
+  the provider's integer `access_failed_count` (`-1` when absent).
 - Ruff format/lint and ty pass for this experiment.
 - User-submitted CZ attempt from the Linux HTTP probe stopped at
   `device_verification_required`: three requests, final HTTP status 200, no
@@ -137,9 +154,21 @@ logging is disabled. Validation errors never echo submitted credentials.
   200 and `has_device_mark=true`. No credentials were submitted. This proves
   cookie handoff to HTTP, but does not prove Lidl accepts it for credentials.
 
-Pending: successful CZ password/MFA flow in the hybrid variant, actual token
-handoff and receipt sync using the resulting token. Existing receipt
-synchronization tests are separate evidence. The hybrid introduces a browser
+- A later user attempt completed authorization, code exchange and backend handoff.
+  Its two temporary diagnostic refresh attempts returned `invalid_grant`, while
+  the subsequent backend refresh succeeded. A separately queued Celery import
+  then read all 35 history pages and began importing receipt details with the
+  stored credential. The diagnostic attempts have been removed to keep refresh
+  validation/rotation in the backend and avoid replay after uncertain responses.
+  A regression test checks that the probe exchanges the code only once and hands
+  off the original refresh token without attempting to rotate it.
+- Several protocol/browser changes preceded success (CAPTCHA, form DeviceId,
+  Chrome executable/user agent and HTTP headers). Their individual causal impact
+  has not been isolated. Do not attribute success to a single change or claim
+  that the earlier provider error proves an incorrect password.
+
+Pending: completed full import and final quality totals, repeatable CZ login,
+live MFA and long-term unattended renewal. The hybrid introduces a browser
 dependency and must not be described as a browserless solution.
 
 ## Expected limitation

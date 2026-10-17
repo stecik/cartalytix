@@ -1,9 +1,12 @@
 """Throwaway browser-assisted initialization; credentials stay in HTTP code."""
 
+import json
+import re
 from collections.abc import Callable, Mapping
 from copy import copy
 from dataclasses import dataclass
 from http.cookiejar import Cookie, CookieJar
+from pathlib import Path
 from threading import BoundedSemaphore
 from typing import Any
 from urllib.parse import urldefrag
@@ -13,6 +16,83 @@ import httpx
 from .client import AUTH, CLIENT_ID, HttpLogin, LoginError, Status, _trusted
 
 browser_slot = BoundedSemaphore(1)
+FINGERPRINT_JS = (Path(__file__).parent / "fingerprint.js").read_text(encoding="utf-8")
+GREASE_CHARS = " (:-./);=?_"
+GREASE_VERSIONS = ("8", "99", "24")
+GREASE_ORDERS = ((0, 1, 2), (0, 2, 1), (1, 0, 2), (1, 2, 0), (2, 0, 1), (2, 1, 0))
+
+
+def chrome_headers(user_agent: str) -> dict[str, str]:
+    headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8,"
+        "application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "cs-CZ,cs;q=0.9",
+        "Priority": "u=0, i",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+    }
+    match = re.search(r"Chrome/(\d+)", user_agent)
+    if match is None:
+        return headers
+    major = int(match.group(1))
+    # Chromium's GenerateBrandVersionList GREASE, seeded by the major version.
+    grease = (
+        f"Not{GREASE_CHARS[major % 11]}A{GREASE_CHARS[(major + 1) % 11]}Brand",
+        GREASE_VERSIONS[major % 3],
+    )
+    brands = [("", "")] * 3
+    order = GREASE_ORDERS[major % 6]
+    brands[order[0]] = grease
+    brands[order[1]] = ("Chromium", str(major))
+    brands[order[2]] = ("Google Chrome", str(major))
+    if "Windows" in user_agent:
+        platform = "Windows"
+    elif "Macintosh" in user_agent:
+        platform = "macOS"
+    else:
+        platform = "Linux"
+    headers.update(
+        {
+            "sec-ch-ua": ", ".join(
+                f'"{brand}";v="{version}"' for brand, version in brands
+            ),
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": f'"{platform}"',
+        }
+    )
+    return headers
+
+
+def abck_state(cookies: CookieJar) -> str:
+    values = [
+        cookie.value or ""
+        for cookie in cookies
+        if cookie.name == "_abck"
+        and cookie.domain.lstrip(".") in {"accounts.lidl.com", "lidl.com"}
+    ]
+    if not values:
+        return "missing"
+    if len(values) > 1:
+        return "ambiguous"
+    parts = values[0].split("~")
+    if len(parts) < 2:
+        return "malformed"
+    # Akamai Bot Manager marks a validated sensor result as `~0~`, pending as `~-1~`.
+    return {"0": "validated", "-1": "unvalidated"}.get(parts[1], "other")
+
+
+def chrome_request(request: httpx.Request) -> None:
+    request.headers["Sec-Fetch-Site"] = (
+        "same-origin" if "Referer" in request.headers else "none"
+    )
+    if request.method == "POST":
+        request.headers["Origin"] = (
+            f"{request.url.scheme}://{request.url.netloc.decode()}"
+        )
+        request.headers["Cache-Control"] = "max-age=0"
 
 
 @dataclass(repr=False)
@@ -22,6 +102,8 @@ class BrowserSession:
     cookies: CookieJar
     captcha_token: str
     device_id: str = ""
+    fingerprint_flags: tuple[str, ...] = ()
+    fingerprint_details: str = ""
 
 
 def browser_cookie(raw: Mapping[str, Any]) -> Cookie:
@@ -61,8 +143,17 @@ def bootstrap_browser(
         stage = "device"
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(channel="chromium", headless=True)
+                browser = playwright.chromium.launch(
+                    channel="chrome",
+                    headless=True,
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
                 try:
+                    if user_agent is None:
+                        blank = browser.new_page()
+                        user_agent = str(blank.evaluate("navigator.userAgent"))
+                        user_agent = user_agent.replace("HeadlessChrome/", "Chrome/")
+                        blank.close()
                     context = browser.new_context(
                         locale="cs-CZ", accept_downloads=False, user_agent=user_agent
                     )
@@ -112,6 +203,22 @@ def bootstrap_browser(
                         "c.trim().length > 'lidl-sso-browser-mark='.length)",
                         timeout=15000,
                     )
+                    try:
+                        checks = page.evaluate(FINGERPRINT_JS)
+                        fingerprint = tuple(
+                            check
+                            for check in (checks if isinstance(checks, list) else ())
+                            if isinstance(check, dict)
+                        )
+                        fingerprint_flags = tuple(
+                            str(check.get("result", "")) for check in fingerprint
+                        )
+                        fingerprint_details = json.dumps(
+                            fingerprint, ensure_ascii=False, default=str
+                        )
+                    except Error:
+                        fingerprint_flags = ("fingerprint_failed",)
+                        fingerprint_details = ""
                     stage = "captcha"
                     rules_response = context.request.get(
                         f"{AUTH}/api/rules?client_id={CLIENT_ID}&country_code=CZ"
@@ -173,6 +280,8 @@ def bootstrap_browser(
                         cookies=jar,
                         captcha_token=captcha,
                         device_id=device_id,
+                        fingerprint_flags=fingerprint_flags,
+                        fingerprint_details=fingerprint_details,
                     )
                 finally:
                     browser.close()
@@ -225,6 +334,7 @@ class HybridLogin(HttpLogin):
         self._captcha_token = ""
         self._browser_url = ""
         self._browser_device_id = ""
+        self._http.event_hooks["request"].append(chrome_request)
 
     def close(self) -> None:
         self._captcha_token = self._browser_url = ""
@@ -258,11 +368,15 @@ class HybridLogin(HttpLogin):
         if not self._device_mark():
             raise LoginError("device_bootstrap_missing_mark")
         self._http.headers["User-Agent"] = snapshot.user_agent
+        self._http.headers.update(chrome_headers(snapshot.user_agent))
         self._captcha_token = snapshot.captcha_token
         self._browser_device_id = snapshot.device_id
         self.diagnostics["browser_bootstrap"] = True
         self.diagnostics["captcha_token_acquired"] = True
         self.diagnostics["device_id_from_form"] = True
+        self.diagnostics["abck_at_handoff"] = abck_state(snapshot.cookies)
+        self.diagnostics["fingerprint_flags"] = ",".join(snapshot.fingerprint_flags)
+        self.diagnostics["fingerprint_details"] = snapshot.fingerprint_details
         return target
 
     def _form_device_id(self) -> str:

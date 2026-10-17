@@ -1,11 +1,38 @@
 import html
 import json
+from unittest.mock import patch
 from urllib.parse import parse_qs
 
 import httpx
 import pytest
 
 from http_login.client import HttpLogin, LoginError, LoginPage
+
+
+def test_code_exchange_hands_off_original_refresh_without_diagnostic_rotation() -> None:
+    grants: list[str] = []
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        grant = parse_qs(request.content.decode())["grant_type"][0]
+        grants.append(grant)
+        if grant == "authorization_code":
+            return httpx.Response(200, json={"refresh_token": "private-original"})
+        return httpx.Response(400, json={"error": "invalid_grant"})
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(upstream)) as http,
+        httpx.Client(transport=httpx.MockTransport(upstream)) as plain,
+    ):
+        login = HttpLogin(http=http)
+        with patch("http_login.client.httpx.Client", return_value=plain):
+            status = login._finish(
+                f"com.lidlplus.app://callback?code=once&state={login._state}"
+            )
+        assert status.step == "completed"
+        assert grants == ["authorization_code"]
+        assert login.take_refresh_token() == "private-original"
+        with pytest.raises(LoginError, match="token_already_consumed"):
+            login.take_refresh_token()
 
 
 def test_errors_are_values_and_may_be_separate_from_model() -> None:
@@ -70,6 +97,26 @@ def test_unknown_provider_error_does_not_assert_bad_credentials() -> None:
         with pytest.raises(LoginError, match="^login_rejected$"):
             login.credentials("owner@example.com", "private-password")
         assert "private" not in repr(login.diagnostics)
+
+
+@pytest.mark.parametrize("count,expected", [(3, 3), ("3", -1), (True, -1)])
+def test_over_capacity_reports_only_integer_failed_count(
+    count: object, expected: int
+) -> None:
+    def upstream(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, text=page({"CountryCode": "CZ"}))
+        return httpx.Response(
+            200,
+            text=page({"AccessFailedCount": count}, errors=["OverCapacityError"]),
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(upstream)) as http:
+        login = HttpLogin(http=http)
+        login.begin()
+        with pytest.raises(LoginError, match="^provider_busy$"):
+            login.credentials("owner@example.com", "private-password")
+        assert login.diagnostics.get("access_failed_count") == expected
 
 
 def test_password_post_contains_only_fields_sent_by_official_form() -> None:
@@ -188,6 +235,10 @@ def test_email_password_mfa_callback_and_token_exchange() -> None:
         assert login.begin().step == "password"
         assert login.credentials("owner@example.com", "private-password").step == "otp"
         assert login.verify("123456").step == "completed"
+        assert login.diagnostics.get("token_fields") == (
+            "access_token,expires_in,refresh_token"
+        )
+        assert not any(key.startswith("refresh_") for key in login.diagnostics)
         assert login.take_refresh_token() == "private-refresh"
         with pytest.raises(LoginError, match="token_already_consumed"):
             login.take_refresh_token()

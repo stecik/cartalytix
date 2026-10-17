@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import secrets
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -107,7 +108,11 @@ def _trusted(url: str) -> str:
 
 
 class HttpLogin:
-    def __init__(self, *, http: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        http: httpx.Client | None = None,
+    ) -> None:
         self._owned = http is None
         self._http = (
             http
@@ -120,7 +125,7 @@ class HttpLogin:
         self._page: LoginPage | None = None
         self._url = ""
         self._refresh: str | None = None
-        self.diagnostics: dict[str, int | bool] = {"requests": 0}
+        self.diagnostics: dict[str, int | bool | str] = {"requests": 0}
         self._http.headers.update(
             {
                 "Accept-Language": "cs-CZ",
@@ -292,49 +297,56 @@ class HttpLogin:
                     if response.status_code == 429
                     else "login_http_error"
                 )
-            page = LoginPage(response.text)
-            errors = " ".join(page.errors).lower()
-            self.diagnostics.update(
-                {
-                    "provider_reported_errors": bool(errors),
-                    "captcha_field_error": "ReCaptchaToken" in page.error_fields,
-                    "password_field_error": "Password" in page.error_fields,
-                }
-            )
-            if "device" in errors or "DeviceId" in page.error_fields:
-                raise LoginError("device_verification_required")
-            if "ReCaptchaToken" in page.error_fields or any(
-                word in errors for word in ["captcha", "turnstile"]
-            ):
-                raise LoginError("captcha_required")
-            if "accountlockedout" in errors:
-                raise LoginError("account_locked")
-            if "overcapacityerror" in errors:
-                raise LoginError("provider_busy")
-            if errors:
-                if before == "otp":
-                    raise LoginError("otp_rejected")
-                if page.error_fields & {"Email", "PhoneNumber", "Password"} or any(
-                    code in errors
-                    for code in ["invalidpassworderror", "invalidcredentialserror"]
-                ):
-                    raise LoginError("credentials_rejected")
-                raise LoginError("login_rejected")
-            if not page.model or not page.hidden.get("__RequestVerificationToken"):
-                raise LoginError("login_markup_changed")
-            self._page, self._url = page, url
-            if page.model.get("TwoFactorRequired") is True or (
-                before != "new" and page.model.get("OtpMethod")
-            ):
-                if before == "otp":
-                    raise LoginError("otp_rejected")
-                self._phase = "otp"
-                return Status("otp", str(page.model.get("OtpMethod") or "Email"))
-            if before != "new":
-                raise LoginError("login_flow_incomplete")
-            self._phase = "password"
-            return Status("password")
+            return self._accept(LoginPage(response.text), url, before)
         raise LoginError("login_redirect_loop")
+
+    def _accept(self, page: LoginPage, url: str, before: str) -> Status:
+        self._phase = "failed"
+        errors = " ".join(page.errors).lower()
+        failed_count = page.model.get("AccessFailedCount")
+        self.diagnostics.update(
+            {
+                "provider_reported_errors": bool(errors),
+                "captcha_field_error": "ReCaptchaToken" in page.error_fields,
+                "password_field_error": "Password" in page.error_fields,
+                "access_failed_count": failed_count
+                if isinstance(failed_count, int) and not isinstance(failed_count, bool)
+                else -1,
+            }
+        )
+        if "device" in errors or "DeviceId" in page.error_fields:
+            raise LoginError("device_verification_required")
+        if "ReCaptchaToken" in page.error_fields or any(
+            word in errors for word in ["captcha", "turnstile"]
+        ):
+            raise LoginError("captcha_required")
+        if "accountlockedout" in errors:
+            raise LoginError("account_locked")
+        if "overcapacityerror" in errors:
+            raise LoginError("provider_busy")
+        if errors:
+            if before == "otp":
+                raise LoginError("otp_rejected")
+            if page.error_fields & {"Email", "PhoneNumber", "Password"} or any(
+                code in errors
+                for code in ["invalidpassworderror", "invalidcredentialserror"]
+            ):
+                raise LoginError("credentials_rejected")
+            raise LoginError("login_rejected")
+        if not page.model or not page.hidden.get("__RequestVerificationToken"):
+            raise LoginError("login_markup_changed")
+        self._page, self._url = page, url
+        if page.model.get("TwoFactorRequired") is True or (
+            before != "new" and page.model.get("OtpMethod")
+        ):
+            if before == "otp":
+                raise LoginError("otp_rejected")
+            self._phase = "otp"
+            return Status("otp", str(page.model.get("OtpMethod") or "Email"))
+        if before != "new":
+            raise LoginError("login_flow_incomplete")
+        self._phase = "password"
+        return Status("password")
 
     def _finish(self, url: str) -> Status:
         parsed = urlsplit(url)
@@ -374,6 +386,16 @@ class HttpLogin:
                 raise ValueError
         except (ValueError, AttributeError):
             raise LoginError("token_response_invalid") from None
+        self.diagnostics["token_fields"] = ",".join(
+            sorted(key for key in payload if re.fullmatch(r"[a-z_]{1,64}", str(key)))
+        )
+        scope = payload.get("scope")
+        self.diagnostics["token_scope"] = (
+            scope
+            if isinstance(scope, str) and re.fullmatch(r"[\w .:-]{0,512}", scope)
+            else ""
+        )
+        # The backend owns validation and rotation after the once-only handoff.
         self._refresh = refresh
         self._phase = "completed"
         self._page = None

@@ -3,6 +3,7 @@
 import asyncio
 import hmac
 import json
+import re
 import secrets
 import time
 from collections.abc import AsyncGenerator
@@ -134,7 +135,18 @@ def application(
     except httpx.HTTPError:
         raise HTTPException(503, "application_unavailable") from None
     if response.status_code not in {200, 201, 202}:
-        raise HTTPException(response.status_code, "application_request_rejected")
+        try:
+            error = response.json().get("error", {})
+            code = str(error.get("code", "")) if isinstance(error, dict) else ""
+        except (ValueError, AttributeError):
+            code = ""
+        # Backend codes are fixed identifiers; anything else is not echoed.
+        raise HTTPException(
+            response.status_code,
+            f"application_request_rejected:{code}"
+            if re.fullmatch(r"[a-z_]{1,64}", code)
+            else "application_request_rejected",
+        )
     result = response.json()
     if not isinstance(result, dict):
         raise HTTPException(502, "application_response_invalid")
@@ -175,6 +187,7 @@ def result(request: Request, flow: Flow, status: Status) -> dict[str, Any]:
     if status.step == "completed":
         assert flow.client is not None and flow.connection is not None
         refresh = flow.client.take_refresh_token()
+        diagnostics = dict(flow.client.diagnostics)
         try:
             application(
                 request,
@@ -182,10 +195,19 @@ def result(request: Request, flow: Flow, status: Status) -> dict[str, Any]:
                 f"providers/lidl/connections/{flow.connection}/authorize",
                 {"refresh_token": refresh},
             )
+        except HTTPException as error:
+            output = {
+                "step": "failed",
+                "error": str(error.detail),
+                "diagnostics": diagnostics,
+            }
+            print(json.dumps(output), flush=True)
+            return output
         finally:
             flow.client.close()
-        print(json.dumps({"step": "completed", "linked": True}), flush=True)
-        return {"step": "completed", "linked": True}
+        output = {"step": "completed", "linked": True, "diagnostics": diagnostics}
+        print(json.dumps(output), flush=True)
+        return output
     print(json.dumps({"step": status.step}), flush=True)
     return {"step": status.step, "method": status.method}
 
