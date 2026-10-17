@@ -54,7 +54,9 @@ describe("receipt filters", () => {
     expect(params?.get("sort")).toBe("total_amount_asc");
     expect(params?.get("offset")).toBe("30");
     expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe("milk");
-    expect(wrapper.get("select").text()).toContain("My Lidl");
+    const account = wrapper.get(".account-select button");
+    expect(account.text()).toContain("My Lidl");
+    expect(account.find("img").exists()).toBe(true);
     wrapper.unmount(); client.clear();
   });
 

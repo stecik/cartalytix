@@ -110,6 +110,7 @@ export interface MonthStats {
   month: string;
   amount: string;
   receipt_count: number;
+  merchants: MerchantStats[];
 }
 
 export interface MerchantStats {
@@ -147,6 +148,7 @@ export interface Connection {
   provider: string;
   name: string;
   status: string;
+  account_label?: string | null;
   country: string;
   sync_interval_minutes: number | null;
   last_synced_at: string | null;

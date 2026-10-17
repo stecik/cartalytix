@@ -2,8 +2,9 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { keepPreviousData, useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
-import { connectionLabel } from "../names";
 import { useRoute, useRouter } from "vue-router";
+import { accountOptions } from "../names";
+import AppSelect from "../components/AppSelect.vue";
 import { request } from "../api";
 import type { Connection, ItemPage } from "../api";
 import ItemLedger from "../components/ItemLedger.vue";
@@ -138,12 +139,7 @@ function changePage(value: number): void {
       </label>
       <label v-if="connections.data.value?.items.length">
         <span>{{ t("account") }}</span>
-        <select :value="queryValue('connection')" @change="updateQuery({ connection: inputValue($event) })">
-          <option value="">{{ t("allAccounts") }}</option>
-          <option v-for="connection in connections.data.value.items" :key="connection.id" :value="connection.id">
-            {{ connectionLabel(connection) }}
-          </option>
-        </select>
+        <AppSelect class="account-select" :model-value="queryValue('connection')" :options="accountOptions(connections.data.value.items, t('allAccounts'))" :label="t('account')" @update:model-value="updateQuery({ connection: $event })" />
       </label>
       <label class="filter-amount">
         <span>{{ t("priceMin") }}</span>
@@ -201,6 +197,7 @@ function changePage(value: number): void {
 .item-filters select { height: 40px; border: 1px solid #cbd1c3; border-radius: 4px; background: #fbfbf6; padding: 0 12px; font-size: 13px; }
 .item-filters input:focus,
 .item-filters select:focus { border-color: #67856c; box-shadow: 0 0 0 3px #dfe6d9; outline: 0; }
+.item-filters .account-select { min-width: 210px; }
 .reset-filters { height: 40px; }
 .ledger-section { transition: opacity 0.2s; }
 .ledger-section.updating { opacity: 0.6; }
@@ -210,6 +207,6 @@ function changePage(value: number): void {
   .reset-filters { grid-column: 1 / -1; }
   .item-filters .filter-amount { width: auto; }
   .item-filters input,
-  .item-filters select { width: 100%; min-width: 0; }
+  .item-filters select, .item-filters .account-select { width: 100%; min-width: 0; }
 }
 </style>

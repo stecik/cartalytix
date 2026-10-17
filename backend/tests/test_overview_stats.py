@@ -113,7 +113,12 @@ def test_monthly_series_and_month_filter(client: TestClient, engine: Engine) -> 
     stats = client.get(URL).json()
     months = stats.get("months", [])
     assert len(months) == 12
-    assert months[-1] == {"month": current, "amount": "100.25", "receipt_count": 1}
+    assert months[-1] == {
+        "month": current,
+        "amount": "100.25",
+        "receipt_count": 1,
+        "merchants": [{"merchant": "Lidl", "amount": "100.25", "receipt_count": 1}],
+    }
     assert sum(Decimal(month.get("amount")) for month in months) == Decimal("140.25")
 
     filtered = client.get(f"{URL}?month={current}").json()
@@ -130,7 +135,14 @@ def test_prague_time_buckets(client: TestClient, engine: Engine) -> None:
     stats = client.get(f"{URL}?period=all&month=2026-01").json()
     assert totals(stats).get("CZK", {}).get("amount") == "10.00"
     january = [month for month in stats.get("months", []) if month.get("month") == "2026-01"]
-    assert january == [{"month": "2026-01", "amount": "10.00", "receipt_count": 1}]
+    assert january == [
+        {
+            "month": "2026-01",
+            "amount": "10.00",
+            "receipt_count": 1,
+            "merchants": [{"merchant": "Lidl", "amount": "10.00", "receipt_count": 1}],
+        }
+    ]
     weekly = stats.get("weekly_hours", [])
     assert len(weekly) == 7
     assert all(len(day) == 24 for day in weekly)

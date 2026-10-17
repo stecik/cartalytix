@@ -175,14 +175,20 @@ def overview_stats(
 
     month_amounts: dict[str, Decimal] = defaultdict(Decimal)
     month_counts: Counter[str] = Counter()
+    month_merchant_amounts: dict[str, dict[str, Decimal]] = defaultdict(
+        lambda: defaultdict(Decimal)
+    )
+    month_merchant_counts: dict[str, Counter[str]] = defaultdict(Counter)
     first_month: datetime | None = period_start
-    for purchased_at, _merchant, row_currency, total_amount in rows:
+    for purchased_at, merchant, row_currency, total_amount in rows:
         local = _local(purchased_at)
         if row_currency != currency or not _in_range(local, period_start, period_end):
             continue
         key = _month_key(local)
         month_amounts[key] += total_amount
         month_counts[key] += 1
+        month_merchant_amounts[key][merchant] += total_amount
+        month_merchant_counts[key][merchant] += 1
         if period_start is None and (first_month is None or local < first_month):
             first_month = _month_start(local)
     months: list[MonthStats] = []
@@ -191,7 +197,19 @@ def overview_stats(
         key = _month_key(cursor)
         months.append(
             MonthStats(
-                month=key, amount=_money(month_amounts[key]), receipt_count=month_counts[key]
+                month=key,
+                amount=_money(month_amounts[key]),
+                receipt_count=month_counts[key],
+                merchants=[
+                    MerchantStats(
+                        merchant=merchant,
+                        amount=_money(amount),
+                        receipt_count=month_merchant_counts[key][merchant],
+                    )
+                    for merchant, amount in sorted(
+                        month_merchant_amounts[key].items(), key=lambda pair: (-pair[1], pair[0])
+                    )
+                ],
             )
         )
         cursor = _shift_months(cursor, 1)

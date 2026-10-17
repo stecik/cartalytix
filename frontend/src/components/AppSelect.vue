@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from "vue";
 import AppIcon from "./AppIcon.vue";
 
-const props = defineProps<{ modelValue: string; options: ReadonlyArray<{ value: string; label: string }>; label: string; compact?: boolean }>();
+const props = defineProps<{ modelValue: string; options: ReadonlyArray<{ value: string; label: string; icon?: string }>; label: string; compact?: boolean }>();
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
 const id = useId();
 const root = ref<HTMLElement | null>(null);
@@ -78,7 +78,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onOutside));
       @click="open ? close() : show()"
       @keydown="onTriggerKey"
     >
-      <span>{{ selected?.label ?? modelValue }}</span><AppIcon name="chevron" />
+      <span class="app-select-value"><img v-if="selected?.icon" :src="selected.icon" class="app-select-icon" alt="" />{{ selected?.label ?? modelValue }}</span><AppIcon name="chevron" />
     </button>
     <ul
       v-if="open"
@@ -101,7 +101,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onOutside));
         @click="choose(index)"
         @pointermove="active = index"
       >
-        {{ option.label }}
+        <span class="app-select-value"><img v-if="option.icon" :src="option.icon" class="app-select-icon" alt="" />{{ option.label }}</span>
       </li>
     </ul>
   </div>
@@ -121,6 +121,8 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onOutside));
 .app-select-list li { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--green); cursor: pointer; white-space: nowrap; }
 .app-select-list li::after { content: ""; width: 14px; flex-shrink: 0; text-align: center; font-size: 12px; }
 .app-select-list li.active { background: #eef0e7; }
+.app-select-value { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.app-select-icon { width: 18px; height: 18px; object-fit: contain; flex-shrink: 0; }
 .app-select-list li[aria-selected="true"] { font-weight: 600; }
 .app-select-list li[aria-selected="true"]::after { content: "✓"; }
 </style>

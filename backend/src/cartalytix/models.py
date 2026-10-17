@@ -69,6 +69,7 @@ class ProviderConnection(Base):
     status: Mapped[str] = mapped_column(String(32), default="not_connected")
     encrypted_refresh_token: Mapped[bytes | None] = mapped_column(LargeBinary)
     account_subject: Mapped[str | None] = mapped_column(String(256))
+    account_label: Mapped[str | None] = mapped_column(String(254))
     sync_interval_minutes: Mapped[int | None] = mapped_column(Integer)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     next_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

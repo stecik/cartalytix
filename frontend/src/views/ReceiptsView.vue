@@ -2,8 +2,9 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { keepPreviousData, useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
-import { connectionLabel } from "../names";
 import { useRoute, useRouter } from "vue-router";
+import { accountOptions } from "../names";
+import AppSelect from "../components/AppSelect.vue";
 import { request } from "../api";
 import type { Connection, ReceiptPage } from "../api";
 import QueryState from "../components/QueryState.vue";
@@ -129,12 +130,7 @@ function changePage(value: number): void {
       </label>
       <label v-if="connections.data.value?.items.length">
         <span>{{ t("account") }}</span>
-        <select :value="queryValue('connection')" @change="updateQuery({ connection: inputValue($event) })">
-          <option value="">{{ t("allAccounts") }}</option>
-          <option v-for="connection in connections.data.value.items" :key="connection.id" :value="connection.id">
-            {{ connectionLabel(connection) }}
-          </option>
-        </select>
+        <AppSelect class="account-select" :model-value="queryValue('connection')" :options="accountOptions(connections.data.value.items, t('allAccounts'))" :label="t('account')" @update:model-value="updateQuery({ connection: $event })" />
       </label>
       <label class="filter-amount">
         <span>{{ t("amountMin") }}</span>
@@ -196,6 +192,7 @@ function changePage(value: number): void {
 .receipt-filters select { height: 40px; border: 1px solid #cbd1c3; border-radius: 4px; background: #fbfbf6; padding: 0 12px; font-size: 13px; }
 .receipt-filters input:focus,
 .receipt-filters select:focus { border-color: #67856c; box-shadow: 0 0 0 3px #dfe6d9; outline: 0; }
+.receipt-filters .account-select { min-width: 210px; }
 .reset-filters { height: 40px; }
 @media (max-width: 780px) {
   .receipt-filters { display: grid; grid-template-columns: 1fr 1fr; }
@@ -203,6 +200,6 @@ function changePage(value: number): void {
   .reset-filters { grid-column: 1 / -1; }
   .receipt-filters .filter-amount { width: auto; }
   .receipt-filters input,
-  .receipt-filters select { width: 100%; min-width: 0; }
+  .receipt-filters select, .receipt-filters .account-select { width: 100%; min-width: 0; }
 }
 </style>

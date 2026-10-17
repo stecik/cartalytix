@@ -58,7 +58,12 @@ def _authorize(
 
 
 def _store_authorization(
-    identifier: UUID, refresh_token: str, request: Request, owner_id: UUID, db: Session
+    identifier: UUID,
+    refresh_token: str,
+    request: Request,
+    owner_id: UUID,
+    db: Session,
+    label: str | None = None,
 ) -> ConnectionOutput:
     """Caller holds the advisory lock through OAuth and credential persistence."""
     engine = cast(Engine, request.app.state.engine)
@@ -77,7 +82,7 @@ def _store_authorization(
     except LidlError as error:
         raise HTTPException(422, error.code) from None
     return persist_credentials(
-        engine, db, identifier, owner_id, PROVIDER, old_subject, subject, encrypted
+        engine, db, identifier, owner_id, PROVIDER, old_subject, subject, encrypted, label
     )
 
 
@@ -92,7 +97,9 @@ def _login_output(
     outcome: LoginOutcome, identifier: UUID, request: Request, owner_id: UUID, db: Session
 ) -> LidlLoginOutput:
     if outcome.step == "completed" and outcome.refresh_token:
-        connection = _store_authorization(identifier, outcome.refresh_token, request, owner_id, db)
+        connection = _store_authorization(
+            identifier, outcome.refresh_token, request, owner_id, db, outcome.email
+        )
         return LidlLoginOutput(step="completed", connection=connection)
     method = (outcome.method or "").casefold()
     return LidlLoginOutput(

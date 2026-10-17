@@ -17,6 +17,10 @@ const emit = defineEmits<{ select: [month: string | null] }>();
 const { t, locale } = useI18n();
 const chart = useTemplateRef<InstanceType<typeof VChart>>("chart");
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
+}
+
 const withYear = computed(() => {
   const years = new Set(props.months.map((month) => month.month.slice(0, 4)));
   return years.size > 1;
@@ -41,7 +45,9 @@ const option = computed(() => ({
       if (!month) return "";
       return [
         `<strong>${formatLongMonth(month.month, locale.value)}</strong>`,
-        `${t("chartSpending")}: <strong>${formatMoney(month.amount, props.currency, locale.value)}</strong>`,
+        ...month.merchants.map((merchant) =>
+          `${escapeHtml(merchant.merchant)}: <strong>${formatMoney(merchant.amount, props.currency, locale.value)}</strong> · ${t("receiptCount", merchant.receipt_count)}`),
+        `${t("totalSpent")}: <strong>${formatMoney(month.amount, props.currency, locale.value)}</strong>`,
         t("receiptCount", month.receipt_count),
       ].join("<br>");
     },

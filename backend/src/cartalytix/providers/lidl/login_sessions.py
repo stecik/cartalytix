@@ -26,6 +26,7 @@ class LoginOutcome:
     flow_id: str | None = None
     method: str | None = None
     refresh_token: str | None = None
+    email: str | None = None
 
 
 @dataclass(repr=False)
@@ -34,6 +35,7 @@ class LoginSession:
     connection_id: UUID
     client: LoginClient
     expires_at: float
+    email: str = ""
     lock: Lock = field(default_factory=Lock)
 
 
@@ -65,7 +67,7 @@ class LoginSessions:
                 client = self._factory()
             except Exception:
                 raise LoginError("login_unavailable") from None
-            session = LoginSession(owner, connection, client, self._clock() + self._ttl)
+            session = LoginSession(owner, connection, client, self._clock() + self._ttl, email)
             self._sessions[identifier] = session
 
         def submit(client: LoginClient) -> Status:
@@ -135,7 +137,7 @@ class LoginSessions:
                 raise LoginError("login_flow_incomplete")
             token = session.client.take_refresh_token()
             self._discard(identifier, session)
-            return LoginOutcome("completed", refresh_token=token)
+            return LoginOutcome("completed", refresh_token=token, email=session.email)
         except LoginError:
             self._discard(identifier, session)
             raise

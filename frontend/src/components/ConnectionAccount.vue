@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
-import { providerName } from "../names";
+import { accountName, providerName } from "../names";
 import { ApiError, request } from "../api";
 import type { Connection, SyncRun } from "../api";
 import QueryState from "./QueryState.vue";
@@ -33,7 +33,7 @@ const statusKey = computed(() => active.value ? `syncStatus_${props.connection.l
 })[props.connection.status] ?? "connectionError");
 const statusTone = computed(() => active.value ? "working" : props.connection.status === "connected" ? "connected" : ["error", "reauth_required"].includes(props.connection.status) ? "attention" : "");
 watch(() => props.connection.name, (value) => { name.value = value; });
-const displayName = computed(() => props.connection.name || providerName(props.connection.provider));
+const displayName = computed(() => accountName(props.connection) || providerName(props.connection.provider));
 watch(() => props.connection.sync_interval_minutes, (value) => { if (value !== null) interval.value = value; });
 const endpoint = computed(() => `/providers/${props.connection.provider}/connections/${props.connection.id}`);
 

@@ -54,5 +54,5 @@ def login_connection(
                 429 if error.code == "login_rate_limited" else 422, error.code
             ) from None
         return persist_credentials(
-            engine, db, identifier, owner_id, PROVIDER, old_subject, subject, encrypted
+            engine, db, identifier, owner_id, PROVIDER, old_subject, subject, encrypted, email
         )

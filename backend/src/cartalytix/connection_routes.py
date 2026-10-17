@@ -118,6 +118,7 @@ def persist_credentials(
     old_subject: str | None,
     subject: str,
     encrypted: bytes,
+    label: str | None = None,
 ) -> ConnectionOutput:
     """Caller holds the connection advisory lock through network login and persistence."""
     if not subject or len(subject) > 256:
@@ -128,6 +129,9 @@ def persist_credentials(
         connection = owned_connection(persistence, identifier, owner_id, provider)
         connection.encrypted_refresh_token = encrypted
         connection.account_subject = subject
+        if label:
+            # Sign-in e-mail shown when the owner leaves the account unnamed.
+            connection.account_label = label[:254]
         connection.status = "connected"
         connection.next_sync_at = next_sync(connection.sync_interval_minutes)
     # Read response only after the credential transaction is committed.

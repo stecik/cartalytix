@@ -62,6 +62,7 @@ class ConnectionOutput(BaseModel):
     name: str
     country: str
     status: str
+    account_label: str | None = None
     receipt_count: int = 0
     sync_interval_minutes: int | None = None
     last_synced_at: datetime | None = None
@@ -218,16 +219,17 @@ class CurrencyStats(BaseModel):
     discount_amount: str
 
 
-class MonthStats(BaseModel):
-    month: str
-    amount: str
-    receipt_count: int
-
-
 class MerchantStats(BaseModel):
     merchant: str
     amount: str
     receipt_count: int
+
+
+class MonthStats(BaseModel):
+    month: str
+    amount: str
+    receipt_count: int
+    merchants: list[MerchantStats] = Field(default_factory=list)
 
 
 class ItemStats(BaseModel):

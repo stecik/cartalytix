@@ -64,6 +64,7 @@ def test_login_encrypts_credentials_without_exposing_them(
     with Session(engine) as db:
         connection = db.get(ProviderConnection, UUID(identifier))
         assert connection is not None and connection.account_subject == "account-hash"
+        assert connection.account_label == "owner@example.com"
         assert connection.encrypted_refresh_token is not None
         assert b"synthetic-password" not in connection.encrypted_refresh_token
         settings = application(authorized).state.settings

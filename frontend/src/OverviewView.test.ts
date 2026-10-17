@@ -29,7 +29,10 @@ const stats: Stats = {
     { currency: "CZK", amount: "1200.00", receipt_count: 10, average: "120.00", previous_amount: "1000.00", previous_receipt_count: 10, discount_amount: "85.50" },
     { currency: "EUR", amount: "2.50", receipt_count: 1, average: "2.50", previous_amount: "0.00", previous_receipt_count: 0, discount_amount: "0.00" },
   ],
-  months: [{ month: "2026-09", amount: "700.00", receipt_count: 6 }, { month: "2026-10", amount: "500.00", receipt_count: 4 }],
+  months: [
+    { month: "2026-09", amount: "700.00", receipt_count: 6, merchants: [{ merchant: "Lidl", amount: "700.00", receipt_count: 6 }] },
+    { month: "2026-10", amount: "500.00", receipt_count: 4, merchants: [] },
+  ],
   merchants: [{ merchant: "Lidl", amount: "1200.00", receipt_count: 10 }],
   frequent_items: [{ name: "<b>Rohlík</b>", receipt_count: 8, amount: "24.00" }],
   top_spend_items: [{ name: "Víno", receipt_count: 2, amount: "400.00" }],
