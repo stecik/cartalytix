@@ -9,13 +9,16 @@ from pathlib import Path
 from .api import APP_VERSION, Client
 from .auth import Vault, login
 from .export import ExportError, collect
+from .fermato import export as fermato_export
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Cartalytix: lokální experiment Lidl Plus CZ"
     )
-    parser.add_argument("command", choices=["login", "export", "probe", "logout"])
+    parser.add_argument(
+        "command", choices=["login", "export", "probe", "logout", "fermato"]
+    )
     parser.add_argument(
         "--browser", choices=["msedge", "chrome", "chromium"], default="chrome"
     )
@@ -31,6 +34,18 @@ def main():
     if args.max_pages < 1:
         parser.error("--max-pages must be positive")
     try:
+        if args.command == "fermato":
+            report, destination = fermato_export(
+                channel=args.browser,
+                max_pages=args.max_pages,
+                refresh_details=args.refresh_details,
+                progress=lambda text: print(text, flush=True),
+            )
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            print("Export:", destination.resolve())
+            if not report["complete"]:
+                sys.exit(1)
+            return
         vault = Vault()
         if args.command == "logout":
             vault.clear()

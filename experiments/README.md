@@ -156,6 +156,26 @@ Testy používají pouze syntetická data a HTTP transport bez sítě. Nepřihla
 Verze závislostí a jejich kontrolní součty jsou v `uv.lock`.
 Veřejné referenční knihovny nejsou instalovány ani importovány.
 
+## Mixit.cz
+
+Živě ověřeno 17. 10. 2026: 24 objednávek (2021-08-19 až 2026-08-25), všechny
+detaily, řádky `cena × množství` i složení mixů sedí. U 21/24 objednávek se
+celek liší od součtu položek: detail neobsahuje dopravu, slevy ani kredity,
+rozdíl se exportuje jako `unexplained_difference` (`totals_unreconciled`).
+
+```powershell
+uv run --locked mixit login --browser chrome
+uv run --locked mixit export
+```
+
+Přihlášení probíhá ručně v okně mixit.cz; okno se po zachycení tokenu samo zavře.
+Skript přečte `localStorage.token`, ověří hlavičku, kterou ho web posílá na
+`api.mixit.cz/api/vN/`, a uloží ho do Credential Manageru (`Cartalytix.Mixit`).
+Export: `customer/orders?page=N` (úplnost podle `totalRecords`) a
+`customer/orders/{hash}` do `data/mixit/CZ/<profil>/`. Obnova tokenu není
+implementována; po vypršení spusťte `login` znovu. `report.json` obsahuje
+`schema` (pouze cesty klíčů a typy, bez hodnot) pro návrh normalizace položek.
+
 ## Odhlášení
 
 `uv run cartalytix logout` odstraní pouze lokální refresh token. Neukončuje
