@@ -1,0 +1,43 @@
+<!doctype html><html lang="en"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Cartalytix login probe</title>
+<style>
+body{font:16px system-ui;background:#f7f6f0;color:#173e34;max-width:580px;margin:50px auto;padding:20px}
+label{display:block;margin-top:22px}input,select,button{font:inherit;padding:12px;box-sizing:border-box;width:100%;margin-top:8px}
+button{background:#173e34;color:white;border:0;cursor:pointer}button:disabled{opacity:.5}small,p{line-height:1.6}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}input{color:#173e34;background:#fff}
+</style><h1>__MODE__</h1>
+<p>__INITIALIZATION__ Your Lidl password is sent through this local process to Lidl over HTTPS; it is never saved.
+On success, the existing Cartalytix connection receives an encrypted refresh token.</p>
+<div id="initialization"><button id="check-initialization" type="button">Check initialization (no password)</button></div>
+<form id="credentials"><label>Cartalytix connection<select id="connection" required>__OPTIONS__</select></label>
+<label>Lidl email<input id="email" type="email" autocomplete="username" required></label>
+<label>Lidl password<input id="password" type="password" autocomplete="off" required></label>
+<button>Test login</button></form>
+<form id="verification" hidden><label>SMS / email verification code<input id="code" inputmode="numeric" autocomplete="one-time-code" required></label><button>Verify code</button></form>
+<p id="status" role="status"></p><pre id="diagnostic"></pre>
+<p><a href="http://localhost:18080/connections">Back to Cartalytix</a></p>
+<script>
+const csrf="__CSRF__";
+const status=document.getElementById("status"), diagnostic=document.getElementById("diagnostic");
+async function send(path,data,form){
+ const button=form.querySelector("button");button.disabled=true;status.textContent="Contacting Lidl…";diagnostic.textContent="";
+ try{
+  const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...data,csrf}),cache:"no-store"});
+  const result=await response.json();
+  if(!response.ok)throw new Error(result.detail||result.error||"Request failed");
+  if(result.step==="otp"){document.getElementById("credentials").hidden=true;document.getElementById("verification").hidden=false;status.textContent="Enter the code requested by Lidl: "+result.method;}
+  else if(result.step==="ready"){status.textContent="Initialization passed. No Lidl credentials were submitted.";diagnostic.textContent=JSON.stringify(result.diagnostics,null,2);}
+  else if(result.step==="completed"){form.hidden=true;status.textContent="Connected. You can start synchronization in Cartalytix.";}
+  else{status.textContent="Login stopped: "+result.error;diagnostic.textContent=JSON.stringify(result.diagnostics,null,2);}
+ }catch(error){status.textContent=error.message;}finally{button.disabled=false;}
+}
+document.getElementById("check-initialization").onclick=()=>send("/check",{},document.getElementById("initialization"));
+document.getElementById("credentials").onsubmit=event=>{
+ event.preventDefault();const password=document.getElementById("password");
+ const data={connection:document.getElementById("connection").value,email:document.getElementById("email").value,password:password.value};
+ password.value="";send("/start",data,event.target);data.password="";
+};
+document.getElementById("verification").onsubmit=event=>{
+ event.preventDefault();const code=document.getElementById("code");const data={code:code.value};code.value="";send("/verify",data,event.target);data.code="";
+};
+</script></html>

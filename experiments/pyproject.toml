@@ -22,3 +22,7 @@ addopts = "--basetemp=work/pytest-temp"
 [tool.ruff]
 target-version = "py312"
 
+
+[tool.ty.environment]
+root = ["."]
+python = "./.venv"
