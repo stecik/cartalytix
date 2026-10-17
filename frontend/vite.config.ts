@@ -1,9 +1,38 @@
 import { defineConfig } from "vitest/config";
+import type { Plugin, ViteDevServer } from "vite";
 import vue from "@vitejs/plugin-vue";
 import { VitePWA } from "vite-plugin-pwa";
 
+export const developmentWorkerCleanup = {
+  name: "retire-production-worker-in-development",
+  apply: "serve",
+  configureServer: (server: ViteDevServer) => {
+    server.middlewares.use((request, response, next) => {
+      if (request.url?.split("?")[0] !== "/sw.js") return next();
+      response.setHeader("Content-Type", "application/javascript");
+      response.setHeader("Cache-Control", "no-store");
+      response.end(`
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => {
+  event.waitUntil((async () => {
+    const scope = self.registration.scope;
+    await self.registration.unregister();
+    const names = await caches.keys();
+    await Promise.all(names
+      .filter(name => name.startsWith("workbox-precache-") && name.endsWith(scope))
+      .map(name => caches.delete(name)));
+    const clients = await self.clients.matchAll({ type: "window" });
+    await Promise.all(clients.map(client => client.navigate(client.url)));
+  })());
+});
+`);
+    });
+  },
+} satisfies Plugin;
+
 export default defineConfig({
   plugins: [
+    developmentWorkerCleanup,
     vue(),
     VitePWA({
       registerType: "prompt",
