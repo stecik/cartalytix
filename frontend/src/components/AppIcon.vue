@@ -4,6 +4,7 @@ defineProps<{
     | "overview"
     | "receipts"
     | "items"
+    | "calculator"
     | "connections"
     | "settings"
     | "arrow"
@@ -37,6 +38,10 @@ defineProps<{
     <template v-else-if="name === 'items'">
       <path d="M4 9h16l-1.5 11h-13L4 9Z" />
       <path d="M8 9l3-5M16 9l-3-5M9 13v4M15 13v4" />
+    </template>
+    <template v-else-if="name === 'calculator'">
+      <rect x="5" y="3" width="14" height="18" rx="2" />
+      <path d="M8 7h8M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 16h.01M12 16h.01M15.5 16h.01" />
     </template>
     <template v-else-if="name === 'connections'">
       <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />

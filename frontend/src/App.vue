@@ -39,6 +39,7 @@ const userLinks = [
   { to: "/", name: "overview" },
   { to: "/receipts", name: "receipts" },
   { to: "/items", name: "items" },
+  { to: "/calculator", name: "calculator" },
   { to: "/connections", name: "connections" },
   { to: "/settings", name: "settings" },
 ] as const;

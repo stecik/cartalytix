@@ -88,6 +88,18 @@ export interface ItemSummary {
   last_purchased_at: string;
 }
 
+export type ItemKey = Pick<ItemSummary, "name" | "currency">;
+
+/** Currency has a fixed length, so the key stays unambiguous for any product name. */
+export function itemKey(item: ItemKey): string {
+  return `${item.currency}:${item.name}`;
+}
+
+export interface ItemTotals {
+  items: ItemSummary[];
+  totals: Array<{ currency: string; total_amount: string }>;
+}
+
 export interface ItemPage {
   items: ItemSummary[];
   total: number;

@@ -9,6 +9,7 @@ import ReceiptsView from "./views/ReceiptsView.vue";
 import ReceiptDetailView from "./views/ReceiptDetailView.vue";
 import ItemsView from "./views/ItemsView.vue";
 import ItemDetailView from "./views/ItemDetailView.vue";
+import CalculatorView from "./views/CalculatorView.vue";
 import ConnectionsView from "./views/ConnectionsView.vue";
 import SettingsView from "./views/SettingsView.vue";
 import OAuthConsentView from "./views/OAuthConsentView.vue";
@@ -36,6 +37,7 @@ export function createAppRouter(client: QueryClient) {
       { path: "/receipts/:id", name: "receipt-detail", component: ReceiptDetailView },
       { path: "/items", name: "items", component: ItemsView },
       { path: "/items/detail", name: "item-detail", component: ItemDetailView },
+      { path: "/calculator", name: "calculator", component: CalculatorView },
       { path: "/connections", name: "connections", component: ConnectionsView },
       { path: "/settings", name: "settings", component: SettingsView },
       { path: "/accounts", name: "accounts", component: AccountsView },

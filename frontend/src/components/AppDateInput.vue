@@ -75,6 +75,10 @@ function update(value: unknown): void {
   height: 40px;
   color: var(--green);
 }
+/* The library toggles on both the icon and its wrapper, so an icon click reopens and closes at once; let it reach the input. */
+.app-date .dp--input-icon {
+  pointer-events: none;
+}
 .app-date .dp--input-focus {
   box-shadow: 0 0 0 3px var(--ring-input-focus);
 }

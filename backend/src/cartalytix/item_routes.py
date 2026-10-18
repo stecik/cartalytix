@@ -6,7 +6,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import ColumnElement, Select, UnaryExpression, func, select
+from sqlalchemy import ColumnElement, Select, UnaryExpression, func, select, tuple_
 
 from cartalytix.dependencies import Db, Owner
 from cartalytix.models import ProviderConnection, Receipt, ReceiptItem
@@ -16,6 +16,9 @@ from cartalytix.schemas import (
     ItemSort,
     ItemsOutput,
     ItemSummaryOutput,
+    ItemTotalOutput,
+    ItemTotalsInput,
+    ItemTotalsOutput,
 )
 from cartalytix.search import name_matches
 
@@ -158,6 +161,37 @@ def items(
     )
     return ItemsOutput(
         items=[_summary(*row) for row in rows], total=total, limit=limit, offset=offset
+    )
+
+
+@router.post("/totals", response_model=ItemTotalsOutput)
+def item_totals(user: Owner, db: Db, body: ItemTotalsInput) -> ItemTotalsOutput:
+    if not body.items:
+        return ItemTotalsOutput(items=[], totals=[])
+    filters: list[ColumnElement[bool]] = [
+        ProviderConnection.owner_id == user.id,
+        tuple_(ReceiptItem.name, Receipt.currency).in_(
+            [(item.name, item.currency) for item in body.items]
+        ),
+    ]
+    if body.connection_id is not None:
+        filters.append(Receipt.connection_id == body.connection_id)
+    if body.purchased_from is not None:
+        filters.append(Receipt.purchased_at >= body.purchased_from)
+    if body.purchased_to is not None:
+        filters.append(Receipt.purchased_at < body.purchased_to)
+    rows = db.execute(
+        _summaries(filters).order_by(TOTAL_AMOUNT.desc(), ReceiptItem.name.asc())
+    ).all()
+    totals: dict[str, Decimal] = {}
+    for row in rows:
+        totals[row[1]] = totals.get(row[1], Decimal(0)) + Decimal(str(row[5]))
+    return ItemTotalsOutput(
+        items=[_summary(*row) for row in rows],
+        totals=[
+            ItemTotalOutput(currency=currency, total_amount=_money(amount))
+            for currency, amount in sorted(totals.items())
+        ],
     )
 
 

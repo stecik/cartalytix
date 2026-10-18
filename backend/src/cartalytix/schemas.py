@@ -409,6 +409,30 @@ class ItemDetailOutput(ItemSummaryOutput):
     purchases: list[ItemPurchaseOutput]
 
 
+class ItemKeyInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=1000)
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+
+
+class ItemTotalsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[ItemKeyInput] = Field(max_length=200)
+    purchased_from: datetime | None = None
+    purchased_to: datetime | None = None
+    connection_id: UUID | None = None
+
+
+class ItemTotalOutput(BaseModel):
+    currency: str
+    total_amount: str
+
+
+class ItemTotalsOutput(BaseModel):
+    items: list[ItemSummaryOutput]
+    totals: list[ItemTotalOutput]
+
+
 class SuggestionKind(StrEnum):
     ITEM = "item"
     MERCHANT = "merchant"

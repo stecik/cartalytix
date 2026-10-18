@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi.testclient import TestClient
+from httpx2 import Response
 from sqlalchemy import Engine, event, select
 from sqlalchemy.orm import Session
 from test_api import client as client
@@ -12,6 +13,7 @@ from test_api import login
 from cartalytix.models import ProviderConnection, Receipt, ReceiptItem
 
 URL = "/api/v1/items"
+ORIGIN = {"Origin": "http://testserver"}
 
 
 def seed(engine: Engine) -> dict[str, str]:
@@ -61,6 +63,10 @@ def seed(engine: Engine) -> dict[str, str]:
             )
         db.commit()
     return receipt_ids
+
+
+def totals(client: TestClient, payload: dict[str, Any]) -> Response:
+    return client.post(f"{URL}/totals", json=payload, headers=ORIGIN)
 
 
 def names(client: TestClient, query: str = "") -> list[str]:
@@ -143,6 +149,47 @@ def test_item_detail_lists_purchase_history(client: TestClient, engine: Engine) 
         client.get(f"{URL}/detail", params={"name": "Kaviár", "currency": "CZK"}).status_code == 404
     )
     assert client.get(f"{URL}/detail", params={"name": "Rohlík"}).status_code == 422
+
+
+def test_item_totals_sum_selected_items(client: TestClient, engine: Engine) -> None:
+    assert totals(client, {"items": []}).status_code == 401
+    seed(engine)
+    login(client)
+    selected = [
+        {"name": "Rohlík", "currency": "CZK"},
+        {"name": "Sýr", "currency": "CZK"},
+        {"name": "Káva", "currency": "EUR"},
+        {"name": "Káva", "currency": "CZK"},
+    ]
+    response = totals(client, {"items": selected})
+    assert response.status_code == 200
+    result: dict[str, Any] = response.json()
+    assert [item.get("name") for item in result.get("items", [])] == ["Sýr", "Rohlík", "Káva"]
+    assert result.get("totals") == [
+        {"currency": "CZK", "total_amount": "132.90"},
+        {"currency": "EUR", "total_amount": "6.00"},
+    ]
+    period = totals(
+        client,
+        {
+            "items": selected,
+            "purchased_from": "2026-03-02T00:00:00Z",
+            "purchased_to": "2026-03-04T00:00:00Z",
+        },
+    ).json()
+    assert period.get("totals") == [{"currency": "CZK", "total_amount": "23.00"}]
+    with Session(engine) as db:
+        foreign = db.scalar(
+            select(ProviderConnection.id).where(ProviderConnection.name == "Private Lidl")
+        )
+    assert totals(client, {"items": selected, "connection_id": str(foreign)}).json() == {
+        "items": [],
+        "totals": [],
+    }
+    assert totals(client, {"items": []}).json() == {"items": [], "totals": []}
+    assert totals(client, {"items": [{"name": "Rohlík"}]}).status_code == 422
+    too_many = [{"name": f"Item {number}", "currency": "CZK"} for number in range(201)]
+    assert totals(client, {"items": too_many}).status_code == 422
 
 
 def test_item_queries_are_bounded(client: TestClient, engine: Engine) -> None:

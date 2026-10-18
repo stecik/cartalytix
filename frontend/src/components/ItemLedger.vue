@@ -2,6 +2,7 @@
 import { useI18n } from "vue-i18n";
 import { sourceName } from "../names";
 import { useRouter } from "vue-router";
+import { itemKey } from "../api";
 import type { ItemSummary } from "../api";
 import { formatMoney, numberLocale } from "../stats";
 
@@ -12,8 +13,9 @@ export type ItemSortField =
   | "average_price"
   | "last_purchased";
 
-const props = defineProps<{ items: ItemSummary[]; sort: string }>();
-const emit = defineEmits<{ sort: [field: ItemSortField] }>();
+/** Without `sort` headers are static; with `selected` rows toggle a checkbox instead of opening. */
+const props = defineProps<{ items: ItemSummary[]; sort?: string; selected?: ReadonlySet<string> }>();
+const emit = defineEmits<{ sort: [field: ItemSortField]; toggle: [item: ItemSummary] }>();
 const { t, locale } = useI18n();
 const router = useRouter();
 const SORT_MARKS = { ascending: "↑", descending: "↓", none: "" } as const;
@@ -31,8 +33,9 @@ function detailRoute(item: ItemSummary) {
 
 function openItem(event: MouseEvent, item: ItemSummary): void {
   if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey
-    || (event.target instanceof Element && event.target.closest("a, button"))) return;
-  void router.push(detailRoute(item));
+    || (event.target instanceof Element && event.target.closest("a, button, label"))) return;
+  if (props.selected) emit("toggle", item);
+  else void router.push(detailRoute(item));
 }
 
 function ariaSort(field: ItemSortField): "ascending" | "descending" | "none" {
@@ -58,29 +61,38 @@ function formatDate(date: string): string {
 
 <template>
   <div class="table-wrap">
-    <table class="item-table">
+    <table class="item-table" :class="{ selectable: selected }">
       <thead>
         <tr>
+          <th v-if="selected" scope="col" class="select-cell"><span class="sr-only">{{ t("select") }}</span></th>
           <th
             v-for="column in COLUMNS"
             :key="column.field"
             scope="col"
             :class="{ amount: column.numeric }"
-            :aria-sort="ariaSort(column.field)"
+            :aria-sort="sort === undefined ? undefined : ariaSort(column.field)"
           >
-            <button type="button" class="sort-button" @click="emit('sort', column.field)">
+            <button v-if="sort !== undefined" type="button" class="sort-button" @click="emit('sort', column.field)">
               {{ t(column.label) }}<span aria-hidden="true">{{ SORT_MARKS[ariaSort(column.field)] }}</span>
             </button>
+            <template v-else>{{ t(column.label) }}</template>
           </th>
         </tr>
       </thead>
       <tbody>
         <tr
           v-for="item in items"
-          :key="`${item.name}:${item.currency}`"
+          :key="itemKey(item)"
           class="item-row"
+          :class="{ selected: selected?.has(itemKey(item)) }"
           @click="openItem($event, item)"
         >
+          <td v-if="selected" class="select-cell">
+            <label>
+              <input type="checkbox" :checked="selected.has(itemKey(item))" @change="emit('toggle', item)">
+              <span class="sr-only">{{ t("selectItem", { name: sourceName(item.name, t) }) }}</span>
+            </label>
+          </td>
           <td class="item-name">
             <RouterLink :to="detailRoute(item)">{{ sourceName(item.name, t) }}</RouterLink>
             <span class="row-detail">{{ formatQuantity(item) }}</span>
@@ -105,8 +117,31 @@ function formatDate(date: string): string {
   cursor: pointer;
   transition: background 0.12s;
 }
-.item-row:hover {
+.item-row:hover,
+.item-row.selected {
   background: var(--surface-item-ledger);
+}
+.select-cell {
+  width: 1%;
+  padding-right: 4px;
+}
+.selectable td:first-child,
+.selectable th:first-child {
+  padding-left: 14px;
+}
+.selectable td:last-child,
+.selectable th:last-child {
+  padding-right: 14px;
+}
+.select-cell label {
+  display: flex;
+  cursor: pointer;
+}
+.select-cell input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--green);
 }
 .item-name {
   white-space: normal;
