@@ -10,6 +10,7 @@ import LidlLoginForm from "./LidlLoginForm.vue";
 import MixitLoginForm from "./MixitLoginForm.vue";
 import ShoptetLoginForm from "./ShoptetLoginForm.vue";
 import BoltLoginForm from "./BoltLoginForm.vue";
+import WoltLoginForm from "./WoltLoginForm.vue";
 import AppIcon from "./AppIcon.vue";
 import AppDialog from "./AppDialog.vue";
 
@@ -145,6 +146,7 @@ const actionError = computed(() => {
       <MixitLoginForm v-if="linking && connection.provider === 'mixit'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <ShoptetLoginForm v-else-if="linking && SHOPTET_SHOPS.includes(connection.provider)" :provider="connection.provider" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <BoltLoginForm v-else-if="linking && connection.provider === 'bolt'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
+      <WoltLoginForm v-else-if="linking && connection.provider === 'wolt'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <LidlLoginForm v-else-if="linking" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <section v-show="tab === 'sync'" :id="`panel-sync-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-sync-${connection.id}`" tabindex="0">
         <div v-if="!linkedAccount && !linking" class="reconnect-note"><p>{{ t(connection.status === 'not_connected' ? 'connectToImport' : 'reconnectToImport') }}</p><button class="button secondary" :disabled="active || busy" @click="connect">{{ t(connection.status === 'not_connected' ? 'linkAccount' : 'reconnectAccount') }}</button></div>

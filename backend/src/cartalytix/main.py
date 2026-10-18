@@ -43,6 +43,7 @@ from cartalytix.security import token_hash, verify_password
 from cartalytix.settings import Settings
 from cartalytix.shoptet_routes import router as shoptet_router
 from cartalytix.stats_routes import router as stats_router
+from cartalytix.wolt_routes import router as wolt_router
 
 PROVIDERS = (
     ("lidl", "Lidl"),
@@ -50,6 +51,7 @@ PROVIDERS = (
     ("fermato", "Fermato"),
     ("nejkafe", "Nejkafe"),
     ("bolt", "Bolt Food"),
+    ("wolt", "Wolt"),
     ("albert", "Albert"),
     ("globus", "Globus"),
     ("rohlik", "Rohlik"),
@@ -154,6 +156,7 @@ def create_app(
     app.include_router(lidl_router)
     app.include_router(mixit_router)
     app.include_router(bolt_router)
+    app.include_router(wolt_router)
     app.include_router(shoptet_router)
     app.include_router(stats_router)
     app.include_router(search_router)

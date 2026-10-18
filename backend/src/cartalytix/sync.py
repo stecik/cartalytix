@@ -38,6 +38,9 @@ from cartalytix.providers.mixit.normalization import validate_order
 from cartalytix.providers.shoptet.client import client_factory as shoptet_client
 from cartalytix.providers.shoptet.normalization import PARSER_VERSION as SHOPTET_PARSER_VERSION
 from cartalytix.providers.shoptet.normalization import validate_order as validate_shoptet_order
+from cartalytix.providers.wolt.client import WoltClient
+from cartalytix.providers.wolt.normalization import PARSER_VERSION as WOLT_PARSER_VERSION
+from cartalytix.providers.wolt.normalization import validate_order as validate_wolt_order
 from cartalytix.settings import Settings
 
 _ACTIVE = ("pending", "running")
@@ -131,6 +134,16 @@ PROVIDERS: dict[str, ProviderSpec] = {
         id_key="order_id",
         detail_id=lambda detail: str(detail.get("order_id")),
         normalize=validate_bolt_order,
+    ),
+    "wolt": ProviderSpec(
+        merchant="Wolt",
+        parser_version=WOLT_PARSER_VERSION,
+        client=WoltClient,
+        list_key="orders",
+        total_key="totalRecords",
+        id_key="purchase_id",
+        detail_id=lambda detail: detail.get("order_id"),
+        normalize=validate_wolt_order,
     ),
 }
 

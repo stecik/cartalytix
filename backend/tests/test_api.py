@@ -290,5 +290,5 @@ def test_validation_and_translation(client: TestClient) -> None:
 def test_health_and_disabled_providers(client: TestClient) -> None:
     assert client.get("/api/v1/health/live").json() == {"status": "ok"}
     providers = client.get("/api/v1/providers").json().get("items")
-    assert len(providers) == 10
+    assert len(providers) == 11
     assert all(provider.get("status") == "not_implemented" for provider in providers)

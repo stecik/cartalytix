@@ -91,6 +91,7 @@ class ProviderCode(StrEnum):
     FERMATO = "fermato"
     NEJKAFE = "nejkafe"
     BOLT = "bolt"
+    WOLT = "wolt"
 
 
 class ShoptetShop(StrEnum):
@@ -136,6 +137,11 @@ class BoltVerificationInput(BaseModel):
     model_config = {"extra": "forbid"}
     flow_id: SecretStr = Field(min_length=1, max_length=2048)
     code: SecretStr = Field(min_length=1, max_length=16)
+
+
+class WoltLoginInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    link: SecretStr = Field(min_length=1, max_length=2048)
 
 
 class MixitLoginInput(BaseModel):
