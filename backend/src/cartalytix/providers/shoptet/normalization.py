@@ -1,4 +1,4 @@
-"""Fermato (Shoptet) HTML order parsing; fees become items, coupons receipt discounts."""
+"""Shoptet HTML order parsing; fees become items, coupons receipt discounts."""
 
 import re
 from dataclasses import dataclass, field
@@ -8,8 +8,7 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import parse_qs, urljoin, urlsplit
 
-PARSER_VERSION = "fermato-cz-1"
-SITE = "https://www.fermato.cz"
+PARSER_VERSION = "shoptet-cz-1"
 VOID = frozenset(
     {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "wbr"}
 )
@@ -18,6 +17,8 @@ SKIPPED = frozenset({"client-table-heading", "p-name__codeLabel", "p-name__shipp
 CODE = re.compile(r"\d{1,20}")
 PAGE = re.compile(r"/klient/objednavky/strana-(\d{1,5})/")
 ORDER_HEADING = re.compile(r"<h2>\s*Objednávka č\.\s*(\d{1,20})\s*</h2>")
+# Shops with CSRF enabled reject forms without it; Shoptet JS normally injects it on submit.
+CSRF_TOKEN = re.compile(r"shoptet\.csrf\.token\s*=\s*'([\w-]{1,200})'")
 QUANTITY = re.compile(r"([\d\s,.]+?)\s*([^\d\s].*)?")
 
 
@@ -144,6 +145,11 @@ def account_email(settings_html: str) -> str | None:
     return parser.email
 
 
+def csrf_token(login_html: str) -> str | None:
+    match = CSRF_TOKEN.search(login_html)
+    return match.group(1) if match else None
+
+
 def order_code(detail_html: str) -> str | None:
     match = ORDER_HEADING.search(detail_html)
     return match.group(1) if match else None
@@ -165,7 +171,7 @@ def _date(text: str) -> str | None:
         return None
 
 
-def parse_list(html: str) -> tuple[list[dict[str, Any]], dict[int, str]]:
+def parse_list(html: str, site: str) -> tuple[list[dict[str, Any]], dict[int, str]]:
     rows, links = _table(html, "customer-orders")
     orders: list[dict[str, Any]] = []
     for row in rows:
@@ -184,7 +190,7 @@ def parse_list(html: str) -> tuple[list[dict[str, Any]], dict[int, str]]:
             }
         )
     pages = {
-        int(match.group(1)): urljoin(SITE, match.group(0))
+        int(match.group(1)): urljoin(site, match.group(0))
         for link in links
         if (match := PAGE.search(link))
     }

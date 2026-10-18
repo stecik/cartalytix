@@ -89,7 +89,13 @@ class ProviderCode(StrEnum):
     LIDL = "lidl"
     MIXIT = "mixit"
     FERMATO = "fermato"
+    NEJKAFE = "nejkafe"
     BOLT = "bolt"
+
+
+class ShoptetShop(StrEnum):
+    FERMATO = "fermato"
+    NEJKAFE = "nejkafe"
 
 
 class ConnectionInput(BaseModel):
@@ -138,7 +144,7 @@ class MixitLoginInput(BaseModel):
     password: SecretStr = Field(min_length=1, max_length=1024)
 
 
-class FermatoLoginInput(BaseModel):
+class ShoptetLoginInput(BaseModel):
     model_config = {"extra": "forbid"}
     email: EmailStr
     password: SecretStr = Field(min_length=1, max_length=1024)

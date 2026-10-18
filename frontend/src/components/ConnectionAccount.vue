@@ -2,13 +2,13 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
-import { accountName, providerName } from "../names";
+import { accountName, providerName, SHOPTET_SHOPS } from "../names";
 import { ApiError, request } from "../api";
 import type { Connection, SyncRun } from "../api";
 import QueryState from "./QueryState.vue";
 import LidlLoginForm from "./LidlLoginForm.vue";
 import MixitLoginForm from "./MixitLoginForm.vue";
-import FermatoLoginForm from "./FermatoLoginForm.vue";
+import ShoptetLoginForm from "./ShoptetLoginForm.vue";
 import BoltLoginForm from "./BoltLoginForm.vue";
 import AppIcon from "./AppIcon.vue";
 import AppDialog from "./AppDialog.vue";
@@ -143,7 +143,7 @@ const actionError = computed(() => {
       <p v-if="actionError && !confirm" role="alert" class="form-alert">{{ t(actionError) }}</p>
       <p v-if="notice" class="account-notice" role="status">{{ t(notice) }}</p>
       <MixitLoginForm v-if="linking && connection.provider === 'mixit'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
-      <FermatoLoginForm v-else-if="linking && connection.provider === 'fermato'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
+      <ShoptetLoginForm v-else-if="linking && SHOPTET_SHOPS.includes(connection.provider)" :provider="connection.provider" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <BoltLoginForm v-else-if="linking && connection.provider === 'bolt'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <LidlLoginForm v-else-if="linking" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <section v-show="tab === 'sync'" :id="`panel-sync-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-sync-${connection.id}`" tabindex="0">

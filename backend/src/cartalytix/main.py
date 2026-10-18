@@ -20,7 +20,6 @@ from cartalytix.bolt_routes import router as bolt_router
 from cartalytix.connection_routes import connection_outputs
 from cartalytix.connection_routes import router as connection_router
 from cartalytix.dependencies import COOKIE_NAME, Db, Owner
-from cartalytix.fermato_routes import router as fermato_router
 from cartalytix.i18n import translate
 from cartalytix.item_routes import router as item_router
 from cartalytix.lidl_routes import router as lidl_router
@@ -42,12 +41,14 @@ from cartalytix.schemas import (
 from cartalytix.search_routes import router as search_router
 from cartalytix.security import token_hash, verify_password
 from cartalytix.settings import Settings
+from cartalytix.shoptet_routes import router as shoptet_router
 from cartalytix.stats_routes import router as stats_router
 
 PROVIDERS = (
     ("lidl", "Lidl"),
     ("mixit", "Mixit"),
     ("fermato", "Fermato"),
+    ("nejkafe", "Nejkafe"),
     ("bolt", "Bolt Food"),
     ("albert", "Albert"),
     ("globus", "Globus"),
@@ -152,8 +153,8 @@ def create_app(
     app.include_router(connection_router)
     app.include_router(lidl_router)
     app.include_router(mixit_router)
-    app.include_router(fermato_router)
     app.include_router(bolt_router)
+    app.include_router(shoptet_router)
     app.include_router(stats_router)
     app.include_router(search_router)
     app.include_router(receipt_router)

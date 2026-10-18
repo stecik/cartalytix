@@ -1,4 +1,4 @@
-"""Fermato linking routes and sync; synthetic credentials and provider data only."""
+"""Shoptet linking routes and sync; synthetic credentials and provider data only."""
 
 import json
 from collections.abc import Callable
@@ -13,14 +13,14 @@ from sqlalchemy.orm import Session
 from test_api import application
 from test_api import client as client
 from test_api import engine as engine
-from test_fermato_adapter import detail_html
 from test_lidl_routes import HEADERS
 from test_lidl_routes import authorized as authorized
 from test_lidl_sync import database as database
+from test_shoptet_adapter import detail_html
 
 from cartalytix.credentials import TokenCipher
 from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem, SyncRun
-from cartalytix.providers.fermato.client import FermatoError
+from cartalytix.providers.shoptet.client import ShoptetError
 from cartalytix.settings import Settings
 from cartalytix.sync import enqueue_sync, run_sync
 
@@ -44,10 +44,15 @@ def test_account_name_is_optional(authorized: TestClient) -> None:
     assert (response.status_code, response.json().get("name")) == (200, "")
 
 
-def accepted(subject: str = "account-hash") -> Callable[[str, str], str]:
-    def sign_in(email: str, password: str) -> str:
+def accepted(
+    subject: str = "account-hash", site: str = "https://www.fermato.cz"
+) -> Callable[..., str]:
+    def sign_in(email: str, password: str, *, site: str = site) -> str:
         assert (email, password) == ("owner@example.com", "synthetic-password")
+        assert site == expected
         return subject
+
+    expected = site
 
     return sign_in
 
@@ -55,7 +60,7 @@ def accepted(subject: str = "account-hash") -> Callable[[str, str], str]:
 def test_login_encrypts_credentials_without_exposing_them(
     authorized: TestClient, engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("cartalytix.fermato_routes.sign_in", accepted())
+    monkeypatch.setattr("cartalytix.shoptet_routes.sign_in", accepted())
     identifier = create(authorized)
     response = authorized.post(f"{PREFIX}/{identifier}/login", json=CREDENTIALS, headers=HEADERS)
     assert response.status_code == 200, response.text
@@ -77,19 +82,19 @@ def test_login_encrypts_credentials_without_exposing_them(
 def test_login_rejects_other_account_and_bad_credentials(
     authorized: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("cartalytix.fermato_routes.sign_in", accepted())
+    monkeypatch.setattr("cartalytix.shoptet_routes.sign_in", accepted())
     identifier = create(authorized)
     url = f"{PREFIX}/{identifier}/login"
     assert authorized.post(url, json=CREDENTIALS, headers=HEADERS).status_code == 200
-    monkeypatch.setattr("cartalytix.fermato_routes.sign_in", accepted("other"))
+    monkeypatch.setattr("cartalytix.shoptet_routes.sign_in", accepted("other"))
     response = authorized.post(url, json=CREDENTIALS, headers=HEADERS)
     assert response.status_code == 409
     assert response.json().get("error", {}).get("code") == "account_mismatch"
 
-    def rejected(email: str, password: str) -> str:
-        raise FermatoError("credentials_rejected")
+    def rejected(email: str, password: str, *, site: str) -> str:
+        raise ShoptetError("credentials_rejected")
 
-    monkeypatch.setattr("cartalytix.fermato_routes.sign_in", rejected)
+    monkeypatch.setattr("cartalytix.shoptet_routes.sign_in", rejected)
     response = authorized.post(url, json=CREDENTIALS, headers=HEADERS)
     assert response.status_code == 422
     assert response.json().get("error", {}).get("code") == "credentials_rejected"
@@ -123,14 +128,15 @@ class Orders:
         pass
 
 
+@pytest.mark.parametrize(("provider", "merchant"), [("fermato", "Fermato"), ("nejkafe", "Nejkafe")])
 def test_sync_imports_orders_with_discounts_fees_and_rounding(
-    database: tuple[Engine, Settings, UUID, UUID],
+    database: tuple[Engine, Settings, UUID, UUID], provider: str, merchant: str
 ) -> None:
     engine, config, owner, connection = database
     with Session(engine) as db, db.begin():
         row = db.get(ProviderConnection, connection)
         assert row is not None
-        row.provider = "fermato"
+        row.provider = provider
     orders = Orders({"100": detail_html(), "200": detail_html("0 Kč")})
     run = enqueue_sync(engine, connection, owner)
     run_sync(engine, run.id, config, client_factory=orders.factory)
@@ -140,7 +146,7 @@ def test_sync_imports_orders_with_discounts_fees_and_rounding(
         assert stored.status == "completed", stored.error_code
         assert stored.receipts_imported == 2
         receipts = {r.external_id: r for r in db.scalars(select(Receipt))}
-        assert receipts["100"].merchant == "Fermato"
+        assert receipts["100"].merchant == merchant
         assert receipts["100"].total_amount == Decimal("838")
         assert receipts["100"].rounding_amount == Decimal("0.05")
         assert receipts["200"].total_amount == Decimal("837.95")
@@ -158,3 +164,21 @@ def test_sync_imports_orders_with_discounts_fees_and_rounding(
             ("Kupon", Decimal("134")),
         }
         assert sum(item_id is None for _, _, item_id in discounts) == 1
+
+
+def test_nejkafe_login_uses_its_own_shop(
+    authorized: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "cartalytix.shoptet_routes.sign_in", accepted(site="https://www.nejkafe.cz")
+    )
+    response = authorized.post(
+        "/api/v1/providers/nejkafe/connections", json={"name": ""}, headers=HEADERS
+    )
+    assert response.status_code == 201, response.text
+    identifier = response.json().get("id")
+    url = f"/api/v1/providers/nejkafe/connections/{identifier}/login"
+    response = authorized.post(url, json=CREDENTIALS, headers=HEADERS)
+    assert (response.status_code, response.json().get("provider")) == (200, "nejkafe")
+    other = authorized.post(f"{PREFIX}/{identifier}/login", json=CREDENTIALS, headers=HEADERS)
+    assert other.status_code == 404

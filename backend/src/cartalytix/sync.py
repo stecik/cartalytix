@@ -29,15 +29,15 @@ from cartalytix.providers.bolt.client import BoltClient
 from cartalytix.providers.bolt.normalization import PARSER_VERSION as BOLT_PARSER_VERSION
 from cartalytix.providers.bolt.normalization import validate_order as validate_bolt_order
 from cartalytix.providers.common import ProviderError, ProviderPayload
-from cartalytix.providers.fermato.client import FermatoClient
-from cartalytix.providers.fermato.normalization import PARSER_VERSION as FERMATO_PARSER_VERSION
-from cartalytix.providers.fermato.normalization import validate_order as validate_fermato_order
 from cartalytix.providers.lidl.client import LidlClient
 from cartalytix.providers.lidl.normalization import PARSER_VERSION as LIDL_PARSER_VERSION
 from cartalytix.providers.lidl.normalization import validate_receipt
 from cartalytix.providers.mixit.client import MixitClient
 from cartalytix.providers.mixit.normalization import PARSER_VERSION as MIXIT_PARSER_VERSION
 from cartalytix.providers.mixit.normalization import validate_order
+from cartalytix.providers.shoptet.client import client_factory as shoptet_client
+from cartalytix.providers.shoptet.normalization import PARSER_VERSION as SHOPTET_PARSER_VERSION
+from cartalytix.providers.shoptet.normalization import validate_order as validate_shoptet_order
 from cartalytix.settings import Settings
 
 _ACTIVE = ("pending", "running")
@@ -109,16 +109,19 @@ PROVIDERS: dict[str, ProviderSpec] = {
         detail_id=_mixit_detail_id,
         normalize=validate_order,
     ),
-    "fermato": ProviderSpec(
-        merchant="Fermato",
-        parser_version=FERMATO_PARSER_VERSION,
-        client=FermatoClient,
-        list_key="orders",
-        total_key="totalRecords",
-        id_key="code",
-        detail_id=lambda detail: detail.get("id"),
-        normalize=validate_fermato_order,
-    ),
+    **{
+        shop: ProviderSpec(
+            merchant=merchant,
+            parser_version=SHOPTET_PARSER_VERSION,
+            client=shoptet_client(shop),
+            list_key="orders",
+            total_key="totalRecords",
+            id_key="code",
+            detail_id=lambda detail: detail.get("id"),
+            normalize=validate_shoptet_order,
+        )
+        for shop, merchant in (("fermato", "Fermato"), ("nejkafe", "Nejkafe"))
+    },
     "bolt": ProviderSpec(
         merchant="Bolt Food",
         parser_version=BOLT_PARSER_VERSION,

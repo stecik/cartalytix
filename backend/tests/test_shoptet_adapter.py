@@ -1,4 +1,4 @@
-"""Fermato adapter and normalization; synthetic Shoptet markup and HTTP transport only."""
+"""Shoptet adapter and normalization; synthetic Shoptet markup and HTTP transport only."""
 
 import hashlib
 import json
@@ -6,8 +6,10 @@ import json
 import httpx
 import pytest
 
-from cartalytix.providers.fermato.client import FermatoClient, FermatoError, sign_in
-from cartalytix.providers.fermato.normalization import parse_list, validate_order
+from cartalytix.providers.shoptet.client import ShoptetClient, ShoptetError, sign_in
+from cartalytix.providers.shoptet.normalization import parse_list, validate_order
+
+SITE = "https://www.nejkafe.cz"
 
 SETTINGS_HTML = '<form><input type="email" name="email" value="Owner@Example.com"></form>'
 LIST_HTML = """
@@ -50,9 +52,9 @@ def detail_html(total: str = "838 Kč") -> str:
 
 
 def test_list_parses_orders_and_pagination() -> None:
-    orders, pages = parse_list(LIST_HTML)
+    orders, pages = parse_list(LIST_HTML, SITE)
     assert orders == [{"code": "100", "date": "2026-07-12T21:03:00", "total": "838"}]
-    assert pages == {2: "https://www.fermato.cz/klient/objednavky/strana-2/"}
+    assert pages == {2: "https://www.nejkafe.cz/klient/objednavky/strana-2/"}
 
 
 def test_order_maps_discounts_fees_and_rounding() -> None:
@@ -88,12 +90,14 @@ def test_zero_total_uses_paid_lines_and_mismatch_is_flagged() -> None:
 
 def shoptet(signed_in: list[bool], password: str = "secret") -> httpx.MockTransport:
     def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "www.nejkafe.cz"
         if request.url.path == "/action/Customer/Login/":
             form = dict(item.split("=") for item in request.read().decode().split("&"))
-            signed_in[0] = form.get("password") == password
+            # CSRF-enabled shops (Nejkafe) reject a POST without the page token.
+            signed_in[0] = form.get("password") == password and form.get("__csrf__") == "csrf_t1"
             return httpx.Response(302, headers={"Location": "/klient/"})
         if request.url.path == "/login/":
-            return httpx.Response(200, text="<form></form>")
+            return httpx.Response(200, text="<script>shoptet.csrf.token = 'csrf_t1';</script>")
         if not signed_in[0]:
             return httpx.Response(302, headers={"Location": "/login/?backTo=%2Fklient%2F"})
         if request.url.path == "/klient/nastaveni/":
@@ -107,10 +111,10 @@ def shoptet(signed_in: list[bool], password: str = "secret") -> httpx.MockTransp
 
 def test_sign_in_returns_hashed_account_and_rejects_bad_password() -> None:
     with httpx.Client(transport=shoptet([False])) as http:
-        subject = sign_in("owner@example.com", "secret", http=http)
+        subject = sign_in("owner@example.com", "secret", site=SITE, http=http)
     assert subject == hashlib.sha256(b"owner@example.com").hexdigest()
-    with httpx.Client(transport=shoptet([False])) as http, pytest.raises(FermatoError) as error:
-        sign_in("owner@example.com", "wrong", http=http)
+    with httpx.Client(transport=shoptet([False])) as http, pytest.raises(ShoptetError) as error:
+        sign_in("owner@example.com", "wrong", site=SITE, http=http)
     assert error.value.code == "credentials_rejected"
 
 
@@ -118,13 +122,13 @@ def test_client_signs_in_again_after_session_expiry() -> None:
     state = [False]
     credentials = json.dumps({"email": "owner@example.com", "password": "secret"})
     with httpx.Client(transport=shoptet(state)) as http:
-        client = FermatoClient(credentials, lambda _value: None, http=http, delay=0)
+        client = ShoptetClient(credentials, lambda _value: None, site=SITE, http=http, delay=0)
         assert client.page(1)["orders"][0]["code"] == "100"
         state[0] = False
         detail = client.detail("100")
         assert detail.get("id") == "100"
         assert client.page(3) == {"orders": [], "totalRecords": None}
     bad = json.dumps({"email": "owner@example.com", "password": "changed"})
-    with httpx.Client(transport=shoptet([False])) as http, pytest.raises(FermatoError) as error:
-        FermatoClient(bad, lambda _value: None, http=http, delay=0).page(1)
+    with httpx.Client(transport=shoptet([False])) as http, pytest.raises(ShoptetError) as error:
+        ShoptetClient(bad, lambda _value: None, site=SITE, http=http, delay=0).page(1)
     assert error.value.code == "auth_required"
