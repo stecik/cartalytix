@@ -22,7 +22,7 @@ describe("queued account preferences", () => {
     { instances: 2, secondFails: false },
     { instances: 2, secondFails: true },
   ])("serializes theme saves across $instances hooks with secondFails=$secondFails", async ({ instances, secondFails }) => {
-    const user: User = { id: "owner", email: "owner@example.com", locale: "en", receipt_view: "rendered", theme: "light", is_admin: false, must_change_password: false };
+    const user: User = { id: "owner", email: "owner@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", is_admin: false, must_change_password: false };
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     client.setQueryData(sessionOptions.queryKey, user);
     setTheme("light");

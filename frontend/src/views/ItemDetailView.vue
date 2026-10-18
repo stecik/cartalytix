@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useQuery } from "@tanstack/vue-query";
-import { computed, defineAsyncComponent } from "vue";
+import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { sourceName } from "../names";
 import { useRoute } from "vue-router";
@@ -14,6 +14,7 @@ const PriceHistoryChart = defineAsyncComponent(
   () => import("../components/PriceHistoryChart.vue"),
 );
 const PURCHASE_LIMIT = 200;
+const PAGE_SIZE = 20;
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -32,6 +33,11 @@ const detail = useQuery({
   enabled: computed(() => name.value !== "" && currency.value !== ""),
   retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
 });
+// The chart uses every loaded purchase; only the table is paged.
+const offset = ref(0);
+const purchases = computed(() => detail.data.value?.purchases ?? []);
+const visiblePurchases = computed(() => purchases.value.slice(offset.value, offset.value + PAGE_SIZE));
+watch([name, currency], () => { offset.value = 0; });
 const missing = computed(
   () =>
     name.value === "" ||
@@ -62,7 +68,7 @@ function formatDate(date: string): string {
 <template>
   <div class="view-content">
     <RouterLink class="text-link back-link" to="/items">
-      <AppIcon name="arrow" class="back-arrow" />{{ t("backToItems") }}
+      <AppIcon name="arrow" />{{ t("backToItems") }}
     </RouterLink>
     <div v-if="missing" class="empty-state">
       <h3>{{ t("itemNotFound") }}</h3>
@@ -122,7 +128,7 @@ function formatDate(date: string): string {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(purchase, index) in detail.data.value.purchases" :key="`${purchase.receipt_id}:${index}`">
+                <tr v-for="(purchase, index) in visiblePurchases" :key="`${purchase.receipt_id}:${offset + index}`">
                   <td>
                     <RouterLink class="receipt-link" :to="{ name: 'receipt-detail', params: { id: purchase.receipt_id } }">
                       {{ formatDate(purchase.purchased_at) }}
@@ -136,6 +142,13 @@ function formatDate(date: string): string {
               </tbody>
             </table>
           </div>
+          <div v-if="purchases.length > PAGE_SIZE" class="pagination">
+            <span>{{ t("pageRange", { start: offset + 1, end: Math.min(offset + PAGE_SIZE, purchases.length), total: purchases.length }) }}</span>
+            <div>
+              <button type="button" class="button secondary" :disabled="offset === 0" @click="offset = Math.max(0, offset - PAGE_SIZE)">{{ t("previous") }}</button>
+              <button type="button" class="button secondary" :disabled="offset + PAGE_SIZE >= purchases.length" @click="offset += PAGE_SIZE">{{ t("next") }}</button>
+            </div>
+          </div>
         </section>
       </template>
     </QueryState>
@@ -145,9 +158,6 @@ function formatDate(date: string): string {
 <style scoped>
 .back-link {
   margin-bottom: 18px;
-}
-.back-arrow {
-  transform: rotate(180deg);
 }
 .item-kpis {
   display: grid;

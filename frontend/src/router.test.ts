@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { User } from './api'
 import { accountRedirect, createAppRouter } from './router'
 
-const base: User = { id: 'u', email: 'u@example.com', locale: 'en', receipt_view: 'rendered', theme: 'system', is_admin: false, must_change_password: false }
+const base: User = { id: 'u', email: 'u@example.com', locale: 'en', receipt_view: 'rendered', theme: 'system', dashboard_period: '12m', is_admin: false, must_change_password: false }
 
 describe('account routing', () => {
   it('forces issued credentials to be replaced before anything else', () => {

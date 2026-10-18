@@ -3,7 +3,8 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import VChart from "vue-echarts";
 import type { ItemPurchase } from "../api";
-import { getChartTheme } from "../charts";
+import { getChartTheme, stepPoints } from "../charts";
+import type { StepPoint } from "../charts";
 import { formatMoney, numberLocale } from "../stats";
 
 const props = defineProps<{ purchases: ItemPurchase[]; currency: string }>();
@@ -30,8 +31,8 @@ const option = computed(() => {
     tooltip: {
       ...tooltipStyle,
       trigger: "axis",
-      formatter: (params: Array<{ dataIndex: number }>) => {
-        const point = points[params[0]?.dataIndex ?? 0];
+      formatter: (params: Array<{ data: StepPoint }>) => {
+        const point = points[params[0]?.data.purchase ?? 0];
         if (!point) return "";
         return [
           `<strong>${formatMoney(point.unit_price, props.currency, locale.value)}</strong>`,
@@ -65,7 +66,7 @@ const option = computed(() => {
         lineStyle: { width: 2, color: chartColors.green },
         itemStyle: { color: chartColors.green, borderColor: chartColors.paper, borderWidth: 2 },
         areaStyle: { color: chartColors.area },
-        data: points.map((point) => [point.purchased_at, Number(point.unit_price)]),
+        data: stepPoints(points),
       },
     ],
   };

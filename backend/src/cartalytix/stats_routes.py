@@ -3,21 +3,23 @@
 from calendar import monthrange
 from collections import Counter, defaultdict
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import ColumnElement, Integer, Select, String, cast, func, select
 
 from cartalytix.dependencies import Db, Owner
 from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem
 from cartalytix.schemas import (
+    STATS_BUCKET_PATTERN,
+    BucketStats,
     CurrencyStats,
     ItemStats,
     MerchantStats,
-    MonthStats,
+    StatsGranularity,
     StatsOutput,
     StatsPeriod,
 )
@@ -25,6 +27,10 @@ from cartalytix.schemas import (
 PRAGUE = ZoneInfo("Europe/Prague")
 TOP_ITEMS = 50
 CENTS = Decimal("0.01")
+# Ranges up to this many days are charted per day, longer ones per month.
+DAILY_MAX_DAYS = 92
+# How far back the comparison window starts: (months, days).
+Lookback = tuple[int, int]
 
 router = APIRouter(prefix="/api/v1/overview", tags=["overview"])
 
@@ -34,25 +40,28 @@ def _money(amount: Decimal) -> str:
 
 
 def _local_parts(
-    dialect: str,
+    dialect: str, granularity: StatsGranularity
 ) -> tuple[ColumnElement[str], ColumnElement[int], ColumnElement[int]]:
-    """Month key, Monday-based weekday and hour of the purchase in Prague wall time."""
+    """Bucket key, Monday-based weekday and hour of the purchase in Prague wall time."""
+    day = granularity == StatsGranularity.DAY
     if dialect == "postgresql":
         local = func.timezone(PRAGUE.key, Receipt.purchased_at)
         return (
-            func.to_char(local, "YYYY-MM", type_=String),
+            func.to_char(local, "YYYY-MM-DD" if day else "YYYY-MM", type_=String),
             cast(func.extract("isodow", local), Integer) - 1,
             cast(func.extract("hour", local), Integer),
         )
     local = func.cartalytix_prague_time(Receipt.purchased_at, type_=String)
     return (
-        func.strftime("%Y-%m", local, type_=String),
+        func.strftime("%Y-%m-%d" if day else "%Y-%m", local, type_=String),
         (cast(func.strftime("%w", local), Integer) + 6) % 7,
         cast(func.strftime("%H", local), Integer),
     )
 
 
-def _month_key(value: datetime) -> str:
+def _bucket_key(value: datetime, granularity: StatsGranularity) -> str:
+    if granularity == StatsGranularity.DAY:
+        return value.date().isoformat()
     return f"{value.year:04d}-{value.month:02d}"
 
 
@@ -63,8 +72,57 @@ def _shift_months(value: datetime, months: int) -> datetime:
     return value.replace(year=year, month=month + 1, day=day)
 
 
+def _back(value: datetime, lookback: Lookback) -> datetime:
+    # Aware datetimes sharing one tzinfo add timedeltas in wall time, so midnight stays midnight.
+    months, days = lookback
+    return _shift_months(value, -months) - timedelta(days=days)
+
+
 def _month_start(value: datetime) -> datetime:
     return value.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def _day_start(value: date) -> datetime:
+    return datetime.combine(value, time(), PRAGUE)
+
+
+def _period_range(
+    period: StatsPeriod, now: datetime, date_from: date | None, date_to: date | None
+) -> tuple[datetime | None, datetime, Lookback | None]:
+    """Half-open [start, end) of the period and how far back its comparison window lies."""
+    tomorrow = _day_start(now.date() + timedelta(days=1))
+    next_month = _shift_months(_month_start(now), 1)
+    match period:
+        case StatsPeriod.TODAY:
+            return tomorrow - timedelta(days=1), tomorrow, (0, 1)
+        case StatsPeriod.THIS_MONTH:
+            return _month_start(now), tomorrow, (1, 0)
+        case StatsPeriod.THIS_YEAR:
+            return _month_start(now).replace(month=1), next_month, (12, 0)
+        case StatsPeriod.LAST_30_DAYS:
+            return tomorrow - timedelta(days=30), tomorrow, (0, 30)
+        case StatsPeriod.LAST_90_DAYS:
+            return tomorrow - timedelta(days=90), tomorrow, (0, 90)
+        case StatsPeriod.LAST_12_MONTHS:
+            return _shift_months(next_month, -12), next_month, (12, 0)
+        case StatsPeriod.CUSTOM:
+            if date_from is None or date_to is None or date_from > date_to:
+                raise HTTPException(422, "invalid_date_range")
+            end = _day_start(date_to + timedelta(days=1))
+            return _day_start(date_from), end, (0, (date_to - date_from).days + 1)
+        case StatsPeriod.ALL:
+            return None, next_month, None
+
+
+def _bucket_range(bucket: str) -> tuple[datetime, datetime, Lookback]:
+    try:
+        day = date.fromisoformat(bucket if len(bucket) > 7 else f"{bucket}-01")
+    except ValueError as exc:
+        raise HTTPException(422, "invalid_bucket") from exc
+    start = _day_start(day)
+    if len(bucket) > 7:
+        return start, start + timedelta(days=1), (0, 1)
+    return start, _shift_months(start, 1), (1, 0)
 
 
 def _range_filters(start: datetime | None, end: datetime | None) -> list[ColumnElement[bool]]:
@@ -105,27 +163,26 @@ def overview_stats(
     user: Owner,
     db: Db,
     period: StatsPeriod = StatsPeriod.LAST_12_MONTHS,
-    month: Annotated[str | None, Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")] = None,
+    bucket: Annotated[str | None, Query(pattern=STATS_BUCKET_PATTERN)] = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> StatsOutput:
     now = datetime.now(PRAGUE)
-    current_month = _month_start(now)
-    period_start: datetime | None = None
-    if period == StatsPeriod.LAST_12_MONTHS:
-        period_start = _shift_months(current_month, -11)
-    elif period == StatsPeriod.THIS_YEAR:
-        period_start = current_month.replace(month=1)
-    period_end = _shift_months(current_month, 1)
+    period_start, period_end, lookback = _period_range(period, now, date_from, date_to)
+    granularity = (
+        StatsGranularity.DAY
+        if period_start is not None and (period_end - period_start).days <= DAILY_MAX_DAYS
+        else StatsGranularity.MONTH
+    )
 
-    start: datetime | None
-    if month is not None:
-        year, number = (int(part) for part in month.split("-"))
-        start = datetime(year, number, 1, tzinfo=PRAGUE)
-        end, shift = _shift_months(start, 1), 1
-    else:
-        start, end, shift = period_start, period_end, 12
+    start, end = period_start, period_end
+    if bucket is not None:
+        bucket_start, bucket_end, lookback = _bucket_range(bucket)
+        start = bucket_start if period_start is None else max(bucket_start, period_start)
+        end = min(bucket_end, period_end)
     owner_filter = ProviderConnection.owner_id == user.id
     selection_filters = [owner_filter, *_range_filters(start, end)]
-    month_key, weekday, hour = _local_parts(db.get_bind().dialect.name)
+    bucket_key, weekday, hour = _local_parts(db.get_bind().dialect.name, granularity)
     amounts: dict[str, Decimal] = defaultdict(Decimal)
     counts: Counter[str] = Counter()
     by_merchant: dict[str, list[MerchantStats]] = defaultdict(list)
@@ -146,14 +203,14 @@ def overview_stats(
     merchants = by_merchant[currency] if currency is not None else []
 
     previous: dict[str, tuple[int, Decimal]] = {}
-    if start is not None:
-        previous_end = _shift_months(min(end, now), -shift)
+    if start is not None and lookback is not None:
+        previous_range = _back(start, lookback), _back(min(end, now), lookback)
         previous = {
             row_currency: (count, amount)
             for row_currency, count, amount in db.execute(
                 select(Receipt.currency, func.count(), func.sum(Receipt.total_amount))
                 .join(ProviderConnection)
-                .where(owner_filter, *_range_filters(_shift_months(start, -shift), previous_end))
+                .where(owner_filter, *_range_filters(*previous_range))
                 .group_by(Receipt.currency)
             )
         }
@@ -178,50 +235,54 @@ def overview_stats(
             if start is None
             else _money(previous.get(code, (0, Decimal(0)))[1]),
             previous_receipt_count=None if start is None else previous.get(code, (0, 0))[0],
-            discount_amount=_money(-discounts.get(code, Decimal(0))),
+            discount_amount=_money(discounts.get(code, Decimal(0))),
         )
         for code in sorted(counts, key=lambda code: (-counts[code], code))
     ]
 
-    # Month buckets follow Prague wall time; the database groups, Python only fills gaps.
-    month_merchants: dict[str, list[MerchantStats]] = defaultdict(list)
-    month_amounts: dict[str, Decimal] = defaultdict(Decimal)
-    month_counts: Counter[str] = Counter()
+    # Chart buckets follow Prague wall time; the database groups, Python only fills gaps.
+    bucket_merchants: dict[str, list[MerchantStats]] = defaultdict(list)
+    bucket_amounts: dict[str, Decimal] = defaultdict(Decimal)
+    bucket_counts: Counter[str] = Counter()
     if currency is not None:
-        month_amount = func.sum(Receipt.total_amount)
+        bucket_amount = func.sum(Receipt.total_amount)
         for key, merchant, count, amount in db.execute(
-            select(month_key, Receipt.merchant, func.count(), month_amount)
+            select(bucket_key, Receipt.merchant, func.count(), bucket_amount)
             .join(ProviderConnection)
             .where(
                 owner_filter,
                 Receipt.currency == currency,
                 *_range_filters(period_start, period_end),
             )
-            .group_by(month_key, Receipt.merchant)
-            .order_by(month_key, month_amount.desc(), Receipt.merchant)
+            .group_by(bucket_key, Receipt.merchant)
+            .order_by(bucket_key, bucket_amount.desc(), Receipt.merchant)
         ):
-            month_merchants[key].append(
+            bucket_merchants[key].append(
                 MerchantStats(merchant=merchant, amount=_money(amount), receipt_count=count)
             )
-            month_amounts[key] += amount
-            month_counts[key] += count
-    first_month = period_start
-    if first_month is None and month_counts:
-        year, number = (int(part) for part in min(month_counts).split("-"))
-        first_month = datetime(year, number, 1, tzinfo=PRAGUE)
-    months: list[MonthStats] = []
-    cursor = first_month
+            bucket_amounts[key] += amount
+            bucket_counts[key] += count
+    cursor = period_start
+    if cursor is None and bucket_counts:
+        cursor = _bucket_range(min(bucket_counts))[0]
+    if cursor is not None and granularity == StatsGranularity.MONTH:
+        cursor = _month_start(cursor)
+    buckets: list[BucketStats] = []
     while cursor is not None and cursor < period_end and currency is not None:
-        key = _month_key(cursor)
-        months.append(
-            MonthStats(
-                month=key,
-                amount=_money(month_amounts[key]),
-                receipt_count=month_counts[key],
-                merchants=month_merchants[key],
+        key = _bucket_key(cursor, granularity)
+        buckets.append(
+            BucketStats(
+                key=key,
+                amount=_money(bucket_amounts[key]),
+                receipt_count=bucket_counts[key],
+                merchants=bucket_merchants[key],
             )
         )
-        cursor = _shift_months(cursor, 1)
+        cursor = (
+            cursor + timedelta(days=1)
+            if granularity == StatsGranularity.DAY
+            else _shift_months(cursor, 1)
+        )
 
     weekly_hours = [[0] * 24 for _day in range(7)]
     for day, hour_of_day, count in db.execute(
@@ -245,10 +306,11 @@ def overview_stats(
 
     return StatsOutput(
         period=period,
-        month=month,
+        bucket=bucket,
+        granularity=granularity,
         currency=currency,
         totals=totals,
-        months=months,
+        buckets=buckets,
         merchants=merchants,
         frequent_items=frequent_items,
         top_spend_items=top_spend_items,

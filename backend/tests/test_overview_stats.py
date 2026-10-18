@@ -71,13 +71,13 @@ def test_stats_require_session_and_valid_filters(client: TestClient) -> None:
     assert client.get(URL).status_code == 401
     login(client)
     assert client.get(f"{URL}?period=week").status_code == 422
-    assert client.get(f"{URL}?month=2026-13").status_code == 422
-    assert client.get(f"{URL}?month=26-01").status_code == 422
+    assert client.get(f"{URL}?bucket=2026-13").status_code == 422
+    assert client.get(f"{URL}?bucket=26-01").status_code == 422
 
 
 def test_period_totals_trend_and_discounts(client: TestClient, engine: Engine) -> None:
     now = datetime.now(UTC)
-    add_receipt(engine, "recent", now - timedelta(days=1), "50.00", discount="-7.50")
+    add_receipt(engine, "recent", now - timedelta(days=1), "50.00", discount="7.50")
     add_receipt(engine, "previous", now - timedelta(days=400), "80.00")
     add_receipt(engine, "old", now - timedelta(days=1200), "300.00")
     add_receipt(engine, "foreign", now, "999.00", connection="Private Lidl")
@@ -111,33 +111,33 @@ def test_monthly_series_and_month_filter(client: TestClient, engine: Engine) -> 
     login(client)
 
     stats = client.get(URL).json()
-    months = stats.get("months", [])
+    months = stats.get("buckets", [])
     assert len(months) == 12
     assert months[-1] == {
-        "month": current,
+        "key": current,
         "amount": "100.25",
         "receipt_count": 1,
         "merchants": [{"merchant": "Lidl", "amount": "100.25", "receipt_count": 1}],
     }
     assert sum(Decimal(month.get("amount")) for month in months) == Decimal("140.25")
 
-    filtered = client.get(f"{URL}?month={current}").json()
-    assert filtered.get("month") == current
+    filtered = client.get(f"{URL}?bucket={current}").json()
+    assert filtered.get("bucket") == current
     assert totals(filtered).get("CZK", {}).get("amount") == "100.25"
     assert totals(filtered).get("CZK", {}).get("previous_amount") == "40.00"
-    assert filtered.get("months") == months
+    assert filtered.get("buckets") == months
 
 
 def test_prague_time_buckets(client: TestClient, engine: Engine) -> None:
     add_receipt(engine, "new-year", datetime(2025, 12, 31, 23, 30, tzinfo=UTC), "10.00")
     login(client)
 
-    stats = client.get(f"{URL}?period=all&month=2026-01").json()
+    stats = client.get(f"{URL}?period=all&bucket=2026-01").json()
     assert totals(stats).get("CZK", {}).get("amount") == "10.00"
-    january = [month for month in stats.get("months", []) if month.get("month") == "2026-01"]
+    january = [month for month in stats.get("buckets", []) if month.get("key") == "2026-01"]
     assert january == [
         {
-            "month": "2026-01",
+            "key": "2026-01",
             "amount": "10.00",
             "receipt_count": 1,
             "merchants": [{"merchant": "Lidl", "amount": "10.00", "receipt_count": 1}],
@@ -148,6 +148,61 @@ def test_prague_time_buckets(client: TestClient, engine: Engine) -> None:
     assert all(len(day) == 24 for day in weekly)
     assert weekly[3][0] == 1
     assert sum(sum(day) for day in weekly) == 1
+
+
+def test_custom_range_daily_buckets_and_comparison(client: TestClient, engine: Engine) -> None:
+    add_receipt(engine, "before", datetime(2026, 3, 2, 10, tzinfo=PRAGUE).astimezone(UTC), "5.00")
+    add_receipt(
+        engine, "first", datetime(2026, 3, 5, 0, 30, tzinfo=PRAGUE).astimezone(UTC), "20.00"
+    )
+    add_receipt(engine, "last", datetime(2026, 3, 7, 23, 30, tzinfo=PRAGUE).astimezone(UTC), "7.00")
+    add_receipt(
+        engine, "after", datetime(2026, 3, 8, 0, 30, tzinfo=PRAGUE).astimezone(UTC), "90.00"
+    )
+    login(client)
+
+    custom = f"{URL}?period=custom&date_from=2026-03-05&date_to=2026-03-07"
+    stats = client.get(custom).json()
+    assert stats.get("granularity") == "day"
+    buckets = stats.get("buckets", [])
+    assert [bucket.get("key") for bucket in buckets] == ["2026-03-05", "2026-03-06", "2026-03-07"]
+    assert [bucket.get("amount") for bucket in buckets] == ["20.00", "0.00", "7.00"]
+    czk = totals(stats).get("CZK", {})
+    assert czk.get("amount") == "27.00"
+    assert czk.get("previous_amount") == "5.00"
+
+    day = client.get(f"{custom}&bucket=2026-03-05").json()
+    assert day.get("bucket") == "2026-03-05"
+    assert totals(day).get("CZK", {}).get("amount") == "20.00"
+    assert totals(day).get("CZK", {}).get("previous_amount") == "0.00"
+    assert day.get("buckets") == buckets
+
+
+def test_long_ranges_use_month_buckets(client: TestClient, engine: Engine) -> None:
+    add_receipt(engine, "early", datetime(2026, 1, 10, 12, tzinfo=PRAGUE).astimezone(UTC), "3.00")
+    add_receipt(engine, "inside", datetime(2026, 1, 20, 12, tzinfo=PRAGUE).astimezone(UTC), "4.00")
+    login(client)
+
+    stats = client.get(f"{URL}?period=custom&date_from=2026-01-15&date_to=2026-04-30").json()
+    assert stats.get("granularity") == "month"
+    keys = [bucket.get("key") for bucket in stats.get("buckets", [])]
+    assert keys == ["2026-01", "2026-02", "2026-03", "2026-04"]
+    assert totals(stats).get("CZK", {}).get("amount") == "4.00"
+
+    today = client.get(f"{URL}?period=today").json()
+    assert today.get("granularity") == "day"
+    assert [bucket.get("key") for bucket in today.get("buckets", [])] == [
+        datetime.now(PRAGUE).date().isoformat()
+    ]
+
+
+def test_custom_range_and_bucket_validation(client: TestClient) -> None:
+    login(client)
+    assert client.get(f"{URL}?period=custom").status_code == 422
+    assert client.get(f"{URL}?period=custom&date_from=2026-03-02").status_code == 422
+    range_url = f"{URL}?period=custom&date_from=2026-03-05&date_to=2026-03-01"
+    assert client.get(range_url).status_code == 422
+    assert client.get(f"{URL}?bucket=2026-02-30").status_code == 422
 
 
 def test_merchants_and_top_items(client: TestClient, engine: Engine) -> None:

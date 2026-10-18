@@ -4,6 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { accountOptions } from "../names";
+import AppDateInput from "../components/AppDateInput.vue";
 import AppSelect from "../components/AppSelect.vue";
 import { request } from "../api";
 import type { Connection, ItemPage } from "../api";
@@ -131,11 +132,11 @@ function changePage(value: number): void {
       />
       <label>
         <span>{{ t("dateFrom") }}</span>
-        <input type="date" :value="queryValue('from')" :max="queryValue('to') || undefined" @change="updateQuery({ from: inputValue($event) })">
+        <AppDateInput :model-value="queryValue('from')" :max="queryValue('to')" @update:model-value="updateQuery({ from: $event })" />
       </label>
       <label>
         <span>{{ t("dateTo") }}</span>
-        <input type="date" :value="queryValue('to')" :min="queryValue('from') || undefined" @change="updateQuery({ to: inputValue($event) })">
+        <AppDateInput :model-value="queryValue('to')" :min="queryValue('from')" @update:model-value="updateQuery({ to: $event })" />
       </label>
       <label v-if="connections.data.value?.items.length">
         <span>{{ t("account") }}</span>

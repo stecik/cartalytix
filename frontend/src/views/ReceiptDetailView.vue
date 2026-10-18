@@ -6,6 +6,7 @@ import { sourceName } from "../names";
 import { useRoute } from "vue-router";
 import { ApiError, request } from "../api";
 import type { ReceiptDetail, ReceiptDiscount, User } from "../api";
+import AppIcon from "../components/AppIcon.vue";
 import QueryState from "../components/QueryState.vue";
 import SegmentedToggle from "../components/SegmentedToggle.vue";
 import { sessionOptions } from "../auth";
@@ -75,7 +76,7 @@ function date(value: string): string {
 
 <template>
   <div class="view-content receipt-detail">
-    <RouterLink to="/receipts" class="text-link receipt-back">{{ t("backToReceipts") }}</RouterLink>
+    <RouterLink to="/receipts" class="text-link back-link receipt-back"><AppIcon name="arrow" />{{ t("backToReceipts") }}</RouterLink>
     <header class="page-heading">
       <div class="eyebrow">{{ t("receiptDetails") }}</div>
       <h1>{{ receipt.data.value?.merchant ?? t("receiptDetails") }}</h1>

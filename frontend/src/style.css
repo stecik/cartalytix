@@ -330,6 +330,14 @@ textarea {
 .text-link:hover svg {
   transform: translateX(4px);
 }
+.back-link svg {
+  width: 24px;
+  height: 24px;
+  transform: rotate(180deg);
+}
+.back-link:hover svg {
+  transform: rotate(180deg) translateX(4px);
+}
 .empty-state {
   display: flex;
   align-items: center;

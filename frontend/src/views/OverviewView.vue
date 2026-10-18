@@ -5,43 +5,70 @@ import { useI18n } from "vue-i18n";
 import { sourceName } from "../names";
 import { request } from "../api";
 import type { CurrencyStats, Overview, Stats, StatsPeriod } from "../api";
+import { sessionOptions } from "../auth";
 import AppIcon from "../components/AppIcon.vue";
+import AppDateInput from "../components/AppDateInput.vue";
+import AppSelect from "../components/AppSelect.vue";
 import QueryState from "../components/QueryState.vue";
 import RankedBars from "../components/RankedBars.vue";
 import type { RankedRow } from "../components/RankedBars.vue";
 import ReceiptLedger from "../components/ReceiptLedger.vue";
 import {
+  PRESET_PERIODS,
+  formatLongDay,
   formatLongMonth,
   formatMoney,
+  isoDay,
   numberLocale,
   percentChange,
 } from "../stats";
 
-const MonthlySpendingChart = defineAsyncComponent(
-  () => import("../components/MonthlySpendingChart.vue"),
+const SpendingChart = defineAsyncComponent(
+  () => import("../components/SpendingChart.vue"),
 );
 const ShoppingHeatmap = defineAsyncComponent(
   () => import("../components/ShoppingHeatmap.vue"),
 );
 
-const PERIODS: StatsPeriod[] = ["12m", "year", "all"];
+const PERIODS: readonly StatsPeriod[] = [...PRESET_PERIODS, "custom"];
 
 const { t, locale } = useI18n();
-const period = ref<StatsPeriod>("12m");
-const month = ref<string | null>(null);
+const session = useQuery(sessionOptions);
+const period = ref<StatsPeriod>(session.data.value?.dashboard_period ?? "12m");
+const dateFrom = ref("");
+const dateTo = ref("");
+const bucket = ref<string | null>(null);
+const periodOptions = computed(() =>
+  PERIODS.map((value) => ({ value, label: t(`period_${value}`) })),
+);
+const rangeValid = computed(
+  () => period.value !== "custom" || (!!dateFrom.value && !!dateTo.value && dateFrom.value <= dateTo.value),
+);
 
 const overview = useQuery({
   queryKey: ["overview"],
   queryFn: ({ signal }) => request<Overview>("/overview", { signal }),
 });
 const stats = useQuery({
-  queryKey: ["overview-stats", period, month],
+  queryKey: ["overview-stats", period, dateFrom, dateTo, bucket],
   queryFn: ({ signal }) => {
     const params = new URLSearchParams({ period: period.value });
-    if (month.value) params.set("month", month.value);
+    if (period.value === "custom") {
+      params.set("date_from", dateFrom.value);
+      params.set("date_to", dateTo.value);
+    }
+    if (bucket.value) params.set("bucket", bucket.value);
     return request<Stats>(`/overview/stats?${params}`, { signal });
   },
+  enabled: rangeValid,
   placeholderData: keepPreviousData,
+});
+const daily = computed(() => stats.data.value?.granularity === "day");
+const bucketLabel = computed(() => {
+  if (!bucket.value) return "";
+  return bucket.value.length > 7
+    ? formatLongDay(bucket.value, locale.value)
+    : formatLongMonth(bucket.value, locale.value);
 });
 
 const primary = computed<CurrencyStats | null>(() => {
@@ -54,9 +81,10 @@ const otherTotals = computed(() =>
     .map((total) => formatMoney(total.amount, total.currency, locale.value))
     .join(", "),
 );
-const comparisonLabel = computed(() =>
-  month.value ? t("vsPreviousMonth") : t("vsPreviousPeriod"),
-);
+const comparisonLabel = computed(() => {
+  if (!bucket.value) return t("vsPreviousPeriod");
+  return bucket.value.length > 7 ? t("vsPreviousDay") : t("vsPreviousMonth");
+});
 
 interface Trend {
   text: string;
@@ -129,9 +157,20 @@ const spendRows = computed<RankedRow[]>(() =>
   })),
 );
 
-function selectPeriod(value: StatsPeriod): void {
-  period.value = value;
-  month.value = null;
+function selectPeriod(value: string): void {
+  const next = PERIODS.find((option) => option === value);
+  if (!next) return;
+  if (next === "custom" && !dateFrom.value) {
+    dateFrom.value = isoDay(-29);
+    dateTo.value = isoDay();
+  }
+  period.value = next;
+  bucket.value = null;
+}
+
+function selectDate(edge: "from" | "to", value: string): void {
+  (edge === "from" ? dateFrom : dateTo).value = value;
+  bucket.value = null;
 }
 </script>
 
@@ -143,17 +182,24 @@ function selectPeriod(value: StatsPeriod): void {
         <h1>{{ t("overview") }}</h1>
         <p>{{ t("overviewIntro") }}</p>
       </div>
-      <div class="period-switch" role="group" :aria-label="t('period')">
-        <button
-          v-for="value in PERIODS"
-          :key="value"
-          type="button"
-          :class="{ active: period === value }"
-          :aria-pressed="period === value"
-          @click="selectPeriod(value)"
-        >
-          {{ t(`period_${value}`) }}
-        </button>
+      <div class="period-controls">
+        <template v-if="period === 'custom'">
+          <label class="period-date">
+            <span>{{ t("dateFrom") }}</span>
+            <AppDateInput :model-value="dateFrom" :max="dateTo" required @update:model-value="selectDate('from', $event)" />
+          </label>
+          <label class="period-date">
+            <span>{{ t("dateTo") }}</span>
+            <AppDateInput :model-value="dateTo" :min="dateFrom" required @update:model-value="selectDate('to', $event)" />
+          </label>
+        </template>
+        <AppSelect
+          class="period-select"
+          :model-value="period"
+          :options="periodOptions"
+          :label="t('period')"
+          @update:model-value="selectPeriod"
+        />
       </div>
     </header>
 
@@ -167,13 +213,13 @@ function selectPeriod(value: StatsPeriod): void {
         class="dashboard"
         :class="{ updating: stats.isPlaceholderData.value }"
       >
-        <div v-if="month" class="month-filter">
-          <span>{{ formatLongMonth(month, locale) }}</span>
+        <div v-if="bucket" class="bucket-filter">
+          <span>{{ bucketLabel }}</span>
           <button
             type="button"
             :aria-label="t('showWholePeriod')"
             :title="t('showWholePeriod')"
-            @click="month = null"
+            @click="bucket = null"
           >
             ×
           </button>
@@ -217,15 +263,16 @@ function selectPeriod(value: StatsPeriod): void {
 
         <section class="panel">
           <div class="section-heading">
-            <h2>{{ t("monthlySpending") }}</h2>
-            <span class="panel-hint">{{ t("monthlySpendingHint") }}</span>
+            <h2>{{ t(daily ? "dailySpending" : "monthlySpending") }}</h2>
+            <span class="panel-hint">{{ t(daily ? "dailySpendingHint" : "monthlySpendingHint") }}</span>
           </div>
-          <MonthlySpendingChart
-            v-if="stats.data.value.currency && stats.data.value.months.length"
-            :months="stats.data.value.months"
+          <SpendingChart
+            v-if="stats.data.value.currency && stats.data.value.buckets.length"
+            :buckets="stats.data.value.buckets"
+            :granularity="stats.data.value.granularity"
             :currency="stats.data.value.currency"
-            :selected="month"
-            @select="month = $event"
+            :selected="bucket"
+            @select="bucket = $event"
           />
           <p v-else class="panel-empty">{{ t("noStatsData") }}</p>
         </section>
@@ -293,33 +340,34 @@ function selectPeriod(value: StatsPeriod): void {
   gap: 24px;
   flex-wrap: wrap;
 }
-.period-switch {
-  display: inline-flex;
-  padding: 4px;
-  gap: 2px;
-  background: var(--light);
-  border-radius: 8px;
+.period-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
 }
-.period-switch button {
-  border: 0;
-  background: transparent;
+.period-select {
+  min-width: 200px;
+}
+.period-date {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-  padding: 9px 14px;
-  min-height: 36px;
+}
+.period-date input {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border-input);
   border-radius: 6px;
-  transition:
-    background 0.16s,
-    color 0.16s;
-}
-.period-switch button:hover {
-  color: var(--green);
-}
-.period-switch button.active {
   background: var(--surface-input);
-  color: var(--green);
-  box-shadow: 0 1px 3px var(--shadow-green-12);
+  font-size: 13px;
+}
+.period-date input:focus {
+  border-color: var(--border-input-focus);
+  box-shadow: 0 0 0 2px var(--ring-input-focus);
+  outline: 0;
 }
 .dashboard {
   transition: opacity 0.2s;
@@ -327,7 +375,7 @@ function selectPeriod(value: StatsPeriod): void {
 .dashboard.updating {
   opacity: 0.6;
 }
-.month-filter {
+.bucket-filter {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -341,7 +389,7 @@ function selectPeriod(value: StatsPeriod): void {
   text-transform: capitalize;
   animation: arrive 0.2s ease-out;
 }
-.month-filter button {
+.bucket-filter button {
   display: grid;
   place-items: center;
   width: 26px;
@@ -353,7 +401,7 @@ function selectPeriod(value: StatsPeriod): void {
   font-size: 15px;
   line-height: 1;
 }
-.month-filter button:hover {
+.bucket-filter button:hover {
   background: var(--white-overlay-26);
 }
 .kpi-grid {
@@ -469,12 +517,18 @@ function selectPeriod(value: StatsPeriod): void {
     flex-direction: column;
     gap: 18px;
   }
-  .period-switch {
+  .period-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     width: 100%;
   }
-  .period-switch button {
-    flex: 1;
-    padding: 9px 6px;
+  .period-select {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+  .period-date input {
+    width: 100%;
+    min-width: 0;
   }
   .kpi-grid {
     grid-template-columns: 1fr 1fr;

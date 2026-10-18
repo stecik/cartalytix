@@ -7,6 +7,7 @@ import type { McpGrant, User } from "../api";
 import { sessionOptions } from "../auth";
 import { useUserSettings } from "../settings";
 import { pwaInstallKey } from "../pwaInstall";
+import { PRESET_PERIODS } from "../stats";
 import { isThemePreference, themePreference } from "../theme";
 import AppDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
@@ -70,6 +71,16 @@ const themes = computed(() => [
   { value: "light", label: t("themeLight") },
   { value: "dark", label: t("themeDark") },
 ]);
+const dashboardPeriod = computed({
+  get: (): string => session.data.value?.dashboard_period ?? "12m",
+  set: (value: string) => {
+    const period = PRESET_PERIODS.find((preset) => preset === value);
+    if (period) settings.mutate({ dashboard_period: period });
+  },
+});
+const dashboardPeriods = computed(() =>
+  PRESET_PERIODS.map((value) => ({ value, label: t(`period_${value}`) })),
+);
 const views = computed(() => [
   { value: "rendered" as const, label: t("receiptViewRendered") },
   { value: "detailed" as const, label: t("receiptViewDetailed") },
@@ -104,6 +115,15 @@ const views = computed(() => [
         </div>
         <div class="settings-control">
           <SegmentedToggle v-model="receiptView" class="settings-receipt-toggle" :options="views" :label="t('receiptDisplay')" aria-describedby="receipt-display-hint" />
+        </div>
+      </div>
+      <div v-if="!isAdmin" class="settings-row">
+        <div class="settings-copy">
+          <h3>{{ t("dashboardPeriod") }}</h3>
+          <p>{{ t("dashboardPeriodHint") }}</p>
+        </div>
+        <div class="settings-control">
+          <AppSelect v-model="dashboardPeriod" class="settings-select" :options="dashboardPeriods" :label="t('dashboardPeriod')" />
         </div>
       </div>
       <div class="settings-row">

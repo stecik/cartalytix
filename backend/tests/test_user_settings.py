@@ -87,3 +87,23 @@ def test_theme_rejects_invalid_values(client: TestClient, theme: str | None) -> 
     response = client.patch("/api/v1/auth/me", json={"theme": theme}, headers=ORIGIN)
     assert response.status_code == 422
     assert client.get("/api/v1/auth/me").json().get("theme") == "dark"
+
+
+def test_dashboard_period_defaults_to_last_12_months(client: TestClient, engine: Engine) -> None:
+    login(client)
+    assert client.get("/api/v1/auth/me").json().get("dashboard_period") == "12m"
+    response = client.patch("/api/v1/auth/me", json={"dashboard_period": "30d"}, headers=ORIGIN)
+    assert response.status_code == 200
+    assert response.json().get("dashboard_period") == "30d"
+    with Session(engine) as db:
+        periods = dict(db.execute(select(User.email, User.dashboard_period)).all())
+    assert periods.get("owner@example.com") == "30d"
+    assert periods.get("other@example.com") == "12m"
+
+
+@pytest.mark.parametrize("period", ["custom", "week", None])
+def test_dashboard_period_rejects_non_presets(client: TestClient, period: str | None) -> None:
+    login(client)
+    response = client.patch("/api/v1/auth/me", json={"dashboard_period": period}, headers=ORIGIN)
+    assert response.status_code == 422
+    assert client.get("/api/v1/auth/me").json().get("dashboard_period") == "12m"

@@ -325,6 +325,8 @@ def create_app(
             user.receipt_view = payload.receipt_view
         if payload.theme is not None:
             user.theme = payload.theme
+        if payload.dashboard_period is not None:
+            user.dashboard_period = payload.dashboard_period
         db.commit()
         return user
 

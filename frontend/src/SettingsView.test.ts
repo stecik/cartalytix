@@ -53,7 +53,7 @@ describe("settings PWA installation", () => {
 
 describe("settings appearance", () => {
   it.each([false, true])("saves a theme immediately and rolls it back on API failure=%s", async (fail) => {
-    const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", is_admin: false, must_change_password: false };
+    const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", is_admin: false, must_change_password: false };
     setTheme("light");
     const { wrapper, client } = render(false, user);
     let finish: (value: Response) => void = () => undefined;

@@ -6,6 +6,7 @@ export interface User {
   locale: string;
   receipt_view: "rendered" | "detailed";
   theme: ThemePreference;
+  dashboard_period: PresetPeriod;
   is_admin: boolean;
   must_change_password: boolean;
 }
@@ -114,7 +115,9 @@ export interface Suggestion {
   receipt_count: number;
 }
 
-export type StatsPeriod = "12m" | "year" | "all";
+export type PresetPeriod = "today" | "month" | "year" | "30d" | "90d" | "12m" | "all";
+export type StatsPeriod = PresetPeriod | "custom";
+export type StatsGranularity = "day" | "month";
 
 export interface CurrencyStats {
   currency: string;
@@ -126,8 +129,9 @@ export interface CurrencyStats {
   discount_amount: string;
 }
 
-export interface MonthStats {
-  month: string;
+export interface BucketStats {
+  /** YYYY-MM for month buckets, YYYY-MM-DD for day buckets. */
+  key: string;
   amount: string;
   receipt_count: number;
   merchants: MerchantStats[];
@@ -147,10 +151,11 @@ export interface ItemStats {
 
 export interface Stats {
   period: StatsPeriod;
-  month: string | null;
+  bucket: string | null;
+  granularity: StatsGranularity;
   currency: string | null;
   totals: CurrencyStats[];
-  months: MonthStats[];
+  buckets: BucketStats[];
   merchants: MerchantStats[];
   frequent_items: ItemStats[];
   top_spend_items: ItemStats[];

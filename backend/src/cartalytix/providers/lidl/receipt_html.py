@@ -119,7 +119,8 @@ def parse_html(html: str) -> tuple[list[dict[str, Any]], list[str], str | None, 
             current["discounts"].append(
                 {
                     "description": discount["label"].strip(),
-                    "amount": discount["amount"].replace(" ", ""),
+                    # Printed as "-3,00"; stored as a positive saving like every other source.
+                    "amount": discount["amount"].replace(" ", "").removeprefix("-"),
                     "promotionId": attrs.get("data-promotion-id"),
                 }
             )

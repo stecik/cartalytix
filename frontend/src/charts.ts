@@ -66,3 +66,24 @@ export function getChartTheme(): ChartTheme {
     },
   };
 }
+
+export interface StepPoint {
+  value: [number, number];
+  purchase: number;
+  symbol?: "none";
+}
+
+/**
+ * A price step lasts until the next purchase. The axis tooltip snaps to the nearest point, so an
+ * invisible point closes every step and hovering a step reports its own price, not the next one.
+ */
+export function stepPoints(points: Array<{ purchased_at: string; unit_price: string }>): StepPoint[] {
+  return points.flatMap((point, index) => {
+    const time = new Date(point.purchased_at).getTime();
+    const price = Number(point.unit_price);
+    const own: StepPoint = { value: [time, price], purchase: index };
+    const next = points[index + 1];
+    const end = next ? new Date(next.purchased_at).getTime() - 1 : time;
+    return end > time ? [own, { value: [end, price], purchase: index, symbol: "none" }] : [own];
+  });
+}

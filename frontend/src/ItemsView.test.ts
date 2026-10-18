@@ -9,7 +9,7 @@ import { createAppI18n } from "./i18n";
 
 vi.mock("./components/PriceHistoryChart.vue", () => ({
   __esModule: true,
-  default: { props: ["purchases", "currency"], setup: () => () => h("div", { class: "chart-stub" }) },
+  default: { props: ["purchases", "currency"], setup: (props: { purchases: unknown[] }) => () => h("div", { class: "chart-stub", "data-count": props.purchases.length }) },
 }));
 
 const item = { name: "<b>Rohlík</b>", currency: "CZK", unit: null, receipt_count: 3, quantity: "17",
@@ -101,6 +101,21 @@ describe("item detail", () => {
     expect(wrapper.text().replace(/\s/g, " ")).toContain("CZK 43.00");
     expect(wrapper.find(".chart-stub").exists()).toBe(true);
     expect(wrapper.get('a[href="/receipts/receipt-2"]').text()).toContain("3 Mar 2026");
+    wrapper.unmount(); client.clear();
+  });
+
+  it("pages the purchase table while the chart keeps every purchase", async () => {
+    const purchases = Array.from({ length: 45 }, (_, index) => ({ ...detail.purchases[0], receipt_id: `receipt-${index}` }));
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ ...detail, purchases })));
+    const { wrapper, client } = await mountAt("/items/detail?name=Roh%C3%ADk&currency=CZK");
+    expect(wrapper.findAll("tbody tr")).toHaveLength(20);
+    expect(wrapper.get(".pagination span").text()).toBe("1–20 of 45");
+    expect(wrapper.get(".chart-stub").attributes("data-count")).toBe("45");
+    const next = wrapper.findAll(".pagination button").find((button) => button.text() === "Next");
+    await next?.trigger("click");
+    await next?.trigger("click");
+    expect(wrapper.findAll("tbody tr")).toHaveLength(5);
+    expect(wrapper.get("tbody a").attributes("href")).toBe("/receipts/receipt-40");
     wrapper.unmount(); client.clear();
   });
 

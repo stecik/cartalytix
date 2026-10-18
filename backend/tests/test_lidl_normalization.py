@@ -27,7 +27,7 @@ def test_html_item_attributes_and_discount_are_exported() -> None:
     assert len(result["items"]) == 1
     assert result["items"][0]["name"] == "Test"
     assert result["items"][0]["quantity"] == "2"
-    assert result["items"][0]["discounts"][0]["amount"] == "-3.00"
+    assert result["items"][0]["discounts"][0]["amount"] == "3.00"
     assert result["items"][0]["original_amount"] == "20.00"
     assert "items_unavailable" not in result["issues"]
 

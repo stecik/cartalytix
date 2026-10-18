@@ -1,7 +1,7 @@
 """Read-only MCP connector (Streamable HTTP) over the owner-scoped web queries."""
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
@@ -30,6 +30,7 @@ from cartalytix.models import User
 from cartalytix.oauth import OFFLINE_SCOPE, SCOPE, DatabaseOAuthProvider, McpUrls
 from cartalytix.receipt_routes import overview, receipt_detail, receipts
 from cartalytix.schemas import (
+    STATS_BUCKET_PATTERN,
     ItemDetailOutput,
     ItemSort,
     ItemsOutput,
@@ -161,13 +162,28 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
         with Session(engine) as db:
             return overview(_owner(db), db)
 
-    @tool("Spending statistics for a period or one month (YYYY-MM), in the main currency.")
+    @tool(
+        "Spending statistics for a period, in the main currency. Custom period needs date_from "
+        "and date_to (inclusive). bucket narrows it to one month (YYYY-MM) or day (YYYY-MM-DD)."
+    )
     def get_spending_stats(
         period: StatsPeriod = StatsPeriod.LAST_12_MONTHS,
-        month: Annotated[str | None, Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")] = None,
+        bucket: Annotated[str | None, Field(pattern=STATS_BUCKET_PATTERN)] = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
     ) -> StatsOutput:
         with Session(engine) as db:
-            return overview_stats(_owner(db), db, period=period, month=month)
+            try:
+                return overview_stats(
+                    _owner(db),
+                    db,
+                    period=period,
+                    bucket=bucket,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+            except HTTPException as exc:
+                raise ToolError(str(exc.detail)) from exc
 
 
 def _token_route(provider: DatabaseOAuthProvider, urls: McpUrls) -> Route:

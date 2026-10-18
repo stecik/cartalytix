@@ -3,16 +3,17 @@ import type { ElementEvent } from "echarts/core";
 import { computed, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
 import VChart from "vue-echarts";
-import type { MonthStats } from "../api";
+import type { BucketStats, StatsGranularity } from "../api";
 import { getChartTheme } from "../charts";
-import { formatLongMonth, formatMoney, formatMonth } from "../stats";
+import { formatDay, formatLongDay, formatLongMonth, formatMoney, formatMonth } from "../stats";
 
 const props = defineProps<{
-  months: MonthStats[];
+  buckets: BucketStats[];
+  granularity: StatsGranularity;
   currency: string;
   selected: string | null;
 }>();
-const emit = defineEmits<{ select: [month: string | null] }>();
+const emit = defineEmits<{ select: [bucket: string | null] }>();
 
 const { t, locale } = useI18n();
 const chart = useTemplateRef<InstanceType<typeof VChart>>("chart");
@@ -22,9 +23,21 @@ function escapeHtml(value: string): string {
 }
 
 const withYear = computed(() => {
-  const years = new Set(props.months.map((month) => month.month.slice(0, 4)));
+  const years = new Set(props.buckets.map((bucket) => bucket.key.slice(0, 4)));
   return years.size > 1;
 });
+
+function label(key: string): string {
+  return props.granularity === "day"
+    ? formatDay(key, locale.value)
+    : formatMonth(key, locale.value, withYear.value);
+}
+
+function longLabel(key: string): string {
+  return props.granularity === "day"
+    ? formatLongDay(key, locale.value)
+    : formatLongMonth(key, locale.value);
+}
 
 const option = computed(() => {
   const { axisLabelStyle, chartColors, tooltipStyle } = getChartTheme();
@@ -43,20 +56,20 @@ const option = computed(() => {
       trigger: "axis",
       axisPointer: { type: "shadow", shadowStyle: { color: chartColors.pointer } },
       formatter: (params: Array<{ dataIndex: number }>) => {
-        const month = props.months[params[0]?.dataIndex ?? 0];
-        if (!month) return "";
+        const bucket = props.buckets[params[0]?.dataIndex ?? 0];
+        if (!bucket) return "";
         return [
-          `<strong>${formatLongMonth(month.month, locale.value)}</strong>`,
-          ...month.merchants.map((merchant) =>
+          `<strong>${longLabel(bucket.key)}</strong>`,
+          ...bucket.merchants.map((merchant) =>
             `${escapeHtml(merchant.merchant)}: <strong>${formatMoney(merchant.amount, props.currency, locale.value)}</strong> · ${t("receiptCount", merchant.receipt_count)}`),
-          `${t("totalSpent")}: <strong>${formatMoney(month.amount, props.currency, locale.value)}</strong>`,
-          t("receiptCount", month.receipt_count),
+          `${t("totalSpent")}: <strong>${formatMoney(bucket.amount, props.currency, locale.value)}</strong>`,
+          t("receiptCount", bucket.receipt_count),
         ].join("<br>");
       },
     },
     xAxis: {
       type: "category",
-      data: props.months.map((month) => formatMonth(month.month, locale.value, withYear.value)),
+      data: props.buckets.map((bucket) => label(bucket.key)),
       axisTick: { show: false },
       axisLine: { lineStyle: { color: chartColors.line } },
       axisLabel: { ...axisLabelStyle, hideOverlap: true },
@@ -78,11 +91,11 @@ const option = computed(() => {
         name: t("chartSpending"),
         type: "bar",
         barMaxWidth: 38,
-        data: props.months.map((month) => ({
-          value: Number(month.amount),
+        data: props.buckets.map((bucket) => ({
+          value: Number(bucket.amount),
           itemStyle: {
             color:
-              props.selected === null || props.selected === month.month
+              props.selected === null || props.selected === bucket.key
                 ? chartColors.green
                 : chartColors.faded,
             borderRadius: [4, 4, 0, 0],
@@ -99,7 +112,7 @@ const option = computed(() => {
         symbolSize: 6,
         lineStyle: { width: 2, color: chartColors.sage },
         itemStyle: { color: chartColors.sage, borderColor: chartColors.paper, borderWidth: 2 },
-        data: props.months.map((month) => month.receipt_count),
+        data: props.buckets.map((bucket) => bucket.receipt_count),
       },
     ],
   };
@@ -110,16 +123,16 @@ function onClick(event: ElementEvent): void {
   const point = [event.offsetX, event.offsetY];
   if (!instance?.containPixel("grid", point)) return;
   const [index] = instance.convertFromPixel({ seriesIndex: 0 }, point) as number[];
-  const month = props.months[Math.round(index ?? -1)];
-  if (!month) return;
-  emit("select", props.selected === month.month ? null : month.month);
+  const bucket = props.buckets[Math.round(index ?? -1)];
+  if (!bucket) return;
+  emit("select", props.selected === bucket.key ? null : bucket.key);
 }
 </script>
 
 <template>
   <VChart
     ref="chart"
-    class="monthly-chart"
+    class="spending-chart"
     :option="option"
     :init-options="{ renderer: 'svg' }"
     autoresize
@@ -128,16 +141,16 @@ function onClick(event: ElementEvent): void {
 </template>
 
 <style scoped>
-.monthly-chart {
+.spending-chart {
   height: 300px;
   cursor: pointer;
 }
-.monthly-chart :deep(svg) {
+.spending-chart :deep(svg) {
   width: 100%;
   height: 100%;
 }
 @media (max-width: 780px) {
-  .monthly-chart {
+  .spending-chart {
     height: 240px;
   }
 }

@@ -1,3 +1,7 @@
+import type { PresetPeriod } from "./api";
+
+export const PRESET_PERIODS: readonly PresetPeriod[] = ["today", "month", "year", "30d", "90d", "12m", "all"];
+
 export function numberLocale(locale: string): string {
   return locale === "cs" ? "cs-CZ" : "en-GB";
 }
@@ -29,6 +33,26 @@ export function formatLongMonth(month: string, locale: string): string {
     month: "long",
     year: "numeric",
   }).format(new Date(year ?? 2000, (number ?? 1) - 1, 1));
+}
+
+function parseDay(day: string): Date {
+  const [year, month, date] = day.split("-").map(Number);
+  return new Date(year ?? 2000, (month ?? 1) - 1, date ?? 1);
+}
+
+export function formatDay(day: string, locale: string): string {
+  return new Intl.DateTimeFormat(numberLocale(locale), { day: "numeric", month: "numeric" }).format(parseDay(day));
+}
+
+export function formatLongDay(day: string, locale: string): string {
+  return new Intl.DateTimeFormat(numberLocale(locale), { dateStyle: "long" }).format(parseDay(day));
+}
+
+/** Local calendar date as YYYY-MM-DD, days from today. */
+export function isoDay(days = 0): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()].map((part) => String(part).padStart(2, "0")).join("-");
 }
 
 export function weekdayNames(locale: string): string[] {

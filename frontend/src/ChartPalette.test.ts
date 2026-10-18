@@ -1,6 +1,6 @@
 import { mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import MonthlySpendingChart from "./components/MonthlySpendingChart.vue";
+import SpendingChart from "./components/SpendingChart.vue";
 import PriceHistoryChart from "./components/PriceHistoryChart.vue";
 import ShoppingHeatmap from "./components/ShoppingHeatmap.vue";
 import { createAppI18n } from "./i18n";
@@ -44,8 +44,8 @@ afterEach(() => {
 describe("chart palette", () => {
   it("recolors mounted charts when appearance changes", async () => {
     const charts = [
-      mount(MonthlySpendingChart, { global, props: {
-        months: [{ month: "2026-10", amount: "100", receipt_count: 1, merchants: [] }], currency: "CZK", selected: null,
+      mount(SpendingChart, { global, props: {
+        buckets: [{ key: "2026-10", amount: "100", receipt_count: 1, merchants: [] }], granularity: "month", currency: "CZK", selected: null,
       } }),
       mount(PriceHistoryChart, { global, props: { purchases: [], currency: "CZK" } }),
       mount(ShoppingHeatmap, { global, props: { weeklyHours: [[1]] } }),
@@ -64,8 +64,8 @@ describe("chart palette", () => {
   });
 
   it("uses CSS colors for spending, selection, axes and tooltips", async () => {
-    const wrapper = mount(MonthlySpendingChart, { global, props: {
-      months: [{ month: "2026-10", amount: "100", receipt_count: 1, merchants: [] }],
+    const wrapper = mount(SpendingChart, { global, props: {
+      buckets: [{ key: "2026-10", amount: "100", receipt_count: 1, merchants: [] }], granularity: "month",
       currency: "CZK", selected: null,
     } });
     const option = wrapper.getComponent({ name: "ChartProbe" }).props("option");

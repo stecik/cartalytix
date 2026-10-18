@@ -28,6 +28,17 @@ class Theme(StrEnum):
     DARK = "dark"
 
 
+class StatsPeriod(StrEnum):
+    TODAY = "today"
+    THIS_MONTH = "month"
+    THIS_YEAR = "year"
+    LAST_30_DAYS = "30d"
+    LAST_90_DAYS = "90d"
+    LAST_12_MONTHS = "12m"
+    ALL = "all"
+    CUSTOM = "custom"
+
+
 class UserOutput(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
@@ -35,6 +46,7 @@ class UserOutput(BaseModel):
     locale: str
     receipt_view: str
     theme: Theme
+    dashboard_period: StatsPeriod
     is_admin: bool
     must_change_password: bool
 
@@ -83,12 +95,21 @@ class UserSettingsInput(BaseModel):
     locale: Locale | None = None
     receipt_view: ReceiptView | None = None
     theme: Theme | None = None
+    dashboard_period: StatsPeriod | None = None
 
     @field_validator("theme")
     @classmethod
     def require_theme(cls, value: Theme | None) -> Theme:
         if value is None:
             raise ValueError("Theme must not be null")
+        return value
+
+    @field_validator("dashboard_period")
+    @classmethod
+    def require_preset_period(cls, value: StatsPeriod | None) -> StatsPeriod:
+        # A custom range has no dates to remember, so only presets can be the default.
+        if value is None or value == StatsPeriod.CUSTOM:
+            raise ValueError("Dashboard period must be a preset")
         return value
 
 
@@ -290,10 +311,13 @@ class OverviewOutput(BaseModel):
     latest_receipts: list[ReceiptOutput]
 
 
-class StatsPeriod(StrEnum):
-    LAST_12_MONTHS = "12m"
-    THIS_YEAR = "year"
-    ALL = "all"
+class StatsGranularity(StrEnum):
+    DAY = "day"
+    MONTH = "month"
+
+
+# A chart bucket: a month (YYYY-MM) or a day (YYYY-MM-DD).
+STATS_BUCKET_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?$"
 
 
 class CurrencyStats(BaseModel):
@@ -312,8 +336,8 @@ class MerchantStats(BaseModel):
     receipt_count: int
 
 
-class MonthStats(BaseModel):
-    month: str
+class BucketStats(BaseModel):
+    key: str
     amount: str
     receipt_count: int
     merchants: list[MerchantStats] = Field(default_factory=list)
@@ -327,10 +351,11 @@ class ItemStats(BaseModel):
 
 class StatsOutput(BaseModel):
     period: StatsPeriod
-    month: str | None
+    bucket: str | None
+    granularity: StatsGranularity
     currency: str | None
     totals: list[CurrencyStats]
-    months: list[MonthStats]
+    buckets: list[BucketStats]
     merchants: list[MerchantStats]
     frequent_items: list[ItemStats]
     top_spend_items: list[ItemStats]
