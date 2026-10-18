@@ -42,6 +42,12 @@
   - be English
   - use translation wrapper
 
+## Vue
+
+- Use reusable components
+- Before building something, first check that similar component does not already exists
+- Colors must be defined in one place colors.css
+
 ## SQL / Database
 
 - Use full table names only.
