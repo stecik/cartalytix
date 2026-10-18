@@ -1,4 +1,4 @@
-"""Fermato.cz (Shoptet) order export; credentials go directly to Fermato, never to Python."""
+"""Shoptet e-shop order export; credentials go directly to the shop, never to Python."""
 
 import hashlib
 import re
@@ -13,10 +13,11 @@ from urllib.parse import parse_qs, urljoin, urlsplit
 
 from .export import ExportError, number, write_json
 
-BASE = "https://www.fermato.cz"
-LOGIN = BASE + "/login/?backTo=%2Fklient%2F"
-ORDERS = BASE + "/klient/objednavky/"
-SETTINGS = BASE + "/klient/nastaveni/"
+# Shops verified live; all share the stock Shoptet customer area markup.
+SHOPS = {"fermato": "https://www.fermato.cz", "nejkafe": "https://www.nejkafe.cz"}
+LOGIN = "/login/?backTo=%2Fklient%2F"
+ORDERS = "/klient/objednavky/"
+SETTINGS = "/klient/nastaveni/"
 DELAY = 0.5
 VOID = {
     "area",
@@ -159,7 +160,7 @@ def account_profile(settings_html: str) -> str:
     parser = EmailInput()
     parser.feed(settings_html)
     if not parser.email:
-        raise ExportError("Fermato account e-mail not found; sign in again")
+        raise ExportError("Shop account e-mail not found; sign in again")
     # Hashed e-mail keeps one export namespace per account without storing the address.
     return hashlib.sha256(parser.email.strip().lower().encode()).hexdigest()[:32]
 
@@ -182,8 +183,19 @@ def order_date(text: str) -> str | None:
         return None
 
 
-def parse_list(html: str) -> tuple[list[dict[str, Any]], list[str]]:
+def parse_list(html: str, base: str) -> tuple[list[dict[str, Any]], list[str]]:
     rows, links = table_rows(html, "customer-orders")
+    # Optional columns (order state, tracking) differ per shop; locate them by header.
+    headers = (
+        {cell["text"]: i for i, cell in enumerate(rows[0]["cells"])} if rows else {}
+    )
+
+    def column(cells: list[dict[str, Any]], name: str) -> str | None:
+        index = headers.get(name)
+        return (
+            cells[index]["text"] if index is not None and index < len(cells) else None
+        )
+
     orders = []
     for row in rows:
         cells = row["cells"]
@@ -198,15 +210,16 @@ def parse_list(html: str) -> tuple[list[dict[str, Any]], list[str]]:
                 "date": order_date(cells[1]["text"]),
                 "total_net": money(cells[2]["text"])[0],
                 "total": money(cells[3]["text"])[0],
-                "payment_state": cells[4]["text"] if len(cells) > 4 else None,
+                "order_state": column(cells, "Stav objednávky"),
+                "payment_state": column(cells, "Stav platby"),
             }
         )
-    pages = sorted({urljoin(BASE, link) for link in links if PAGE.search(link)})
+    pages = sorted({urljoin(base, link) for link in links if PAGE.search(link)})
     return orders, pages
 
 
 def normalize(
-    code: str, html: str, listed: dict[str, Any] | None = None
+    code: str, html: str, base: str, listed: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     issues: list[str] = []
     currencies: set[str] = set()
@@ -253,7 +266,7 @@ def normalize(
                     "code": parts.get("p-name__code"),
                     "name": parts.get("p-name__itemLink")
                     or parts.get("p-name__itemName"),
-                    "url": urljoin(BASE, cells[0]["href"])
+                    "url": urljoin(base, cells[0]["href"])
                     if cells[0]["href"]
                     else None,
                     "quantity": number(quantity.group(1)) if quantity else None,
@@ -319,6 +332,7 @@ def collect(
     fetch: Callable[[str], str],
     destination: Path,
     *,
+    base: str,
     max_pages: int = 10000,
     refresh_details: bool = False,
     progress: Callable[[str], None] | None = None,
@@ -335,7 +349,7 @@ def collect(
         "errors": [],
     }
     listed: dict[str, dict[str, Any]] = {}
-    queue, seen = [ORDERS], set()
+    queue, seen = [base + ORDERS], set()
     while queue:
         url = queue.pop(0)
         if url in seen:
@@ -349,7 +363,7 @@ def collect(
         (destination / "raw" / "pages" / run / f"{len(seen)}.html").write_text(
             html, encoding="utf-8"
         )
-        orders, pages = parse_list(html)
+        orders, pages = parse_list(html, base)
         report["pages"].append({"url": url, "orders": len(orders)})
         for order in orders:
             listed.setdefault(order["code"], order)
@@ -364,11 +378,11 @@ def collect(
         else:
             if progress:
                 progress(f"Objednávka {code}")
-            html = fetch(f"{ORDERS}?code={code}")
+            html = fetch(f"{base}{ORDERS}?code={code}")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(html, encoding="utf-8")
             report["downloaded_details"] += 1
-        result = normalize(code, path.read_text(encoding="utf-8"), order)
+        result = normalize(code, path.read_text(encoding="utf-8"), base, order)
         if "items_unavailable" in result["issues"]:
             report["errors"].append(f"detail_unparsed:{code}")
         normalized.append(result)
@@ -387,6 +401,7 @@ def collect(
 
 
 def export(
+    shop: str,
     *,
     channel: str = "chrome",
     max_pages: int = 10000,
@@ -397,6 +412,8 @@ def export(
     """Manual login in a fresh headed browser; session cookies stay in that browser only."""
     from playwright.sync_api import Error as BrowserError
     from playwright.sync_api import sync_playwright
+
+    base = SHOPS[shop]
 
     with sync_playwright() as playwright:
         try:
@@ -411,9 +428,9 @@ def export(
         try:
             context = browser.new_context(locale="cs-CZ")
             page = context.new_page()
-            page.goto(LOGIN, wait_until="domcontentloaded", timeout=60000)
+            page.goto(base + LOGIN, wait_until="domcontentloaded", timeout=60000)
             print(
-                "Přihlaste se ručně v okně Fermato. Heslo zadávejte pouze tam.",
+                "Přihlaste se ručně v okně obchodu. Heslo zadávejte pouze tam.",
                 flush=True,
             )
             deadline = time.monotonic() + timeout
@@ -429,14 +446,15 @@ def export(
                 response = context.request.get(url, timeout=30000)
                 if not response.ok or urlsplit(response.url).path.startswith("/login"):
                     raise ExportError(
-                        f"Fermato request failed (HTTP {response.status}); sign in again"
+                        f"Shop request failed (HTTP {response.status}); sign in again"
                     )
                 return response.text()
 
-            destination = Path("data") / "fermato" / account_profile(fetch(SETTINGS))
+            destination = Path("data") / shop / account_profile(fetch(base + SETTINGS))
             report = collect(
                 fetch,
                 destination,
+                base=base,
                 max_pages=max_pages,
                 refresh_details=refresh_details,
                 progress=progress,

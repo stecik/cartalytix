@@ -9,7 +9,8 @@ from pathlib import Path
 from .api import APP_VERSION, Client
 from .auth import Vault, login
 from .export import ExportError, collect
-from .fermato import export as fermato_export
+from .shoptet import SHOPS
+from .shoptet import export as shoptet_export
 
 
 def main():
@@ -17,7 +18,7 @@ def main():
         description="Cartalytix: lokální experiment Lidl Plus CZ"
     )
     parser.add_argument(
-        "command", choices=["login", "export", "probe", "logout", "fermato"]
+        "command", choices=["login", "export", "probe", "logout", *SHOPS]
     )
     parser.add_argument(
         "--browser", choices=["msedge", "chrome", "chromium"], default="chrome"
@@ -34,8 +35,9 @@ def main():
     if args.max_pages < 1:
         parser.error("--max-pages must be positive")
     try:
-        if args.command == "fermato":
-            report, destination = fermato_export(
+        if args.command in SHOPS:
+            report, destination = shoptet_export(
+                args.command,
                 channel=args.browser,
                 max_pages=args.max_pages,
                 refresh_details=args.refresh_details,

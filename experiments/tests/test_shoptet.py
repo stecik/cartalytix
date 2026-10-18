@@ -1,11 +1,14 @@
-"""Synthetic Shoptet fixtures reproducing observed Fermato markup, no real orders."""
+"""Synthetic Shoptet fixtures reproducing observed Fermato/Nejkafe markup, no real orders."""
 
 from pathlib import Path
 
-from cartalytix.fermato import ORDERS, account_profile, collect, normalize, parse_list
+from cartalytix.shoptet import ORDERS, account_profile, collect, normalize, parse_list
+
+BASE = "https://www.fermato.cz"
 
 LIST = """
-<table class="table customer-orders"><thead><tr><th>Kód</th><th>Datum</th></tr></thead><tbody>
+<table class="table customer-orders"><thead><tr><th>Kód</th><th>Datum</th><th>Cena bez DPH</th>
+<th>Cena celkem včetně DPH</th><th>Stav platby</th><th>Sledování zásilky</th></tr></thead><tbody>
 <tr><td><span class="client-table-heading">Kód</span>
 <a href="/klient/objednavky/?code=100"><strong>100</strong></a></td>
 <td><span class="client-table-heading">Datum</span><span>12.7.2026 21:03</span></td>
@@ -40,13 +43,14 @@ DETAIL = """
 
 
 def test_list_parses_orders_and_pagination():
-    orders, pages = parse_list(LIST)
+    orders, pages = parse_list(LIST, BASE)
     assert orders == [
         {
             "code": "100",
             "date": "2026-07-12T21:03:00",
             "total_net": "1189.29",
             "total": "1332",
+            "order_state": None,
             "payment_state": "Placeno",
         }
     ]
@@ -55,7 +59,7 @@ def test_list_parses_orders_and_pagination():
 
 def test_detail_items_adjustments_and_totals():
     result = normalize(
-        "100", DETAIL, {"date": "2026-07-12T21:03:00", "total": "837.95"}
+        "100", DETAIL, BASE, {"date": "2026-07-12T21:03:00", "total": "837.95"}
     )
     assert result["currency"] == "CZK"
     assert result["total"] == "837.95"
@@ -73,12 +77,13 @@ def test_detail_items_adjustments_and_totals():
 
 def test_detail_flags_unreconciled_and_missing_items():
     broken = DETAIL.replace("837,95 Kč", "900 Kč")
-    assert "totals_unreconciled" in normalize("100", broken)["issues"]
+    assert "totals_unreconciled" in normalize("100", broken, BASE)["issues"]
     zero = normalize(
         "100",
         DETAIL.replace("837,95 Kč", "0 Kč")
         .replace("748,18 Kč", "0 Kč")
         .replace("89,77 Kč", "0 Kč"),
+        BASE,
         {"total": "0"},
     )
     assert zero["issues"] == ["source_total_zero"]
@@ -88,10 +93,10 @@ def test_detail_flags_unreconciled_and_missing_items():
         "748.18",
         "89.77",
     )
-    rounded = normalize("100", DETAIL.replace("837,95 Kč", "838 Kč"))
+    rounded = normalize("100", DETAIL.replace("837,95 Kč", "838 Kč"), BASE)
     assert rounded["issues"] == []
     assert rounded["rounding"] == "0.05"
-    assert "items_unavailable" in normalize("100", "<p>nenalezena</p>")["issues"]
+    assert "items_unavailable" in normalize("100", "<p>nenalezena</p>", BASE)["issues"]
 
 
 def test_profile_hashes_email():
@@ -106,18 +111,32 @@ def test_collect_reuses_cached_details(tmp_path: Path):
 
     def fetch(url: str) -> str:
         calls.append(url)
-        if url == ORDERS:
+        if url == BASE + ORDERS:
             return LIST.replace("1&nbsp;332 Kč", "837,95 Kč")
         if "strana-2" in url:
             return "<p>empty</p>"
         return DETAIL
 
-    report = collect(fetch, tmp_path)
+    report = collect(fetch, tmp_path, base=BASE)
     assert report["complete"] is True
     assert report["unique_orders"] == 1
     assert report["downloaded_details"] == 1
     assert (tmp_path / "orders.json").exists()
     calls.clear()
-    report = collect(fetch, tmp_path)
+    report = collect(fetch, tmp_path, base=BASE)
     assert report["cached_details"] == 1
     assert not any("code=" in url for url in calls)
+
+
+def test_list_reads_optional_order_state_column():
+    nejkafe = """
+<table class="table customer-orders"><thead><tr><th>Kód</th><th>Datum</th><th>Cena bez DPH</th>
+<th>Cena celkem včetně DPH</th><th>Stav objednávky</th><th>Stav platby</th></tr></thead><tbody>
+<tr><td><a href="/klient/objednavky/?code=200">200</a></td><td>20.2.2026 12:09</td>
+<td>716,95 Kč</td><td><strong>803 Kč</strong></td><td>Doručena</td><td>Placeno</td></tr>
+</tbody></table>"""
+    orders, _pages = parse_list(nejkafe, "https://www.nejkafe.cz")
+    assert (orders[0]["order_state"], orders[0]["payment_state"]) == (
+        "Doručena",
+        "Placeno",
+    )
