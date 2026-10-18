@@ -317,9 +317,9 @@ function selectPeriod(value: StatsPeriod): void {
   color: var(--green);
 }
 .period-switch button.active {
-  background: #fbfbf6;
+  background: var(--surface-input);
   color: var(--green);
-  box-shadow: 0 1px 3px rgba(23, 62, 52, 0.12);
+  box-shadow: 0 1px 3px var(--shadow-green-12);
 }
 .dashboard {
   transition: opacity 0.2s;
@@ -348,13 +348,13 @@ function selectPeriod(value: StatsPeriod): void {
   height: 26px;
   border: 0;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--white-overlay-14);
   color: inherit;
   font-size: 15px;
   line-height: 1;
 }
 .month-filter button:hover {
-  background: rgba(255, 255, 255, 0.26);
+  background: var(--white-overlay-26);
 }
 .kpi-grid {
   display: grid;
@@ -394,7 +394,7 @@ function selectPeriod(value: StatsPeriod): void {
   letter-spacing: -1.8px;
 }
 .kpi dd.saved {
-  color: #3f7a55;
+  color: var(--text-positive);
 }
 .trend {
   display: block;
@@ -408,16 +408,16 @@ function selectPeriod(value: StatsPeriod): void {
   font-size: 11px;
 }
 .trend.spend-up {
-  color: #a0533f;
+  color: var(--text-negative);
 }
 .trend.spend-down {
-  color: #3f7a55;
+  color: var(--text-positive);
 }
 .kpi-note {
   display: block;
   margin-top: 6px;
   font-size: 11px;
-  color: #8b9085;
+  color: var(--text-stat-note);
 }
 .panel {
   padding: 24px 0 8px;

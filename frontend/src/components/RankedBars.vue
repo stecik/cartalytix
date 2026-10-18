@@ -53,7 +53,7 @@ const maximum = computed(() => Math.max(0, ...props.rows.map((row) => row.value)
   width: 20px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: #9aa196;
+  color: var(--text-rank);
   padding-top: 2px;
 }
 .ranked-body {
@@ -92,7 +92,7 @@ const maximum = computed(() => Math.max(0, ...props.rows.map((row) => row.value)
   transition: width 0.5s ease-out;
 }
 .ranked-bars li:hover .ranked-fill {
-  background: #285744;
+  background: var(--green-hover);
 }
 .ranked-detail {
   font-size: 11px;

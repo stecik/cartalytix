@@ -106,7 +106,7 @@ function formatDate(date: string): string {
   transition: background 0.12s;
 }
 .item-row:hover {
-  background: #eff1e8;
+  background: var(--surface-item-ledger);
 }
 .item-name {
   white-space: normal;

@@ -4,7 +4,7 @@ import { computed, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
 import VChart from "vue-echarts";
 import type { MonthStats } from "../api";
-import { axisLabelStyle, chartColors, tooltipStyle } from "../charts";
+import { getChartTheme } from "../charts";
 import { formatLongMonth, formatMoney, formatMonth } from "../stats";
 
 const props = defineProps<{
@@ -15,6 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{ select: [month: string | null] }>();
 
 const { t, locale } = useI18n();
+const { axisLabelStyle, chartColors, tooltipStyle } = getChartTheme();
 const chart = useTemplateRef<InstanceType<typeof VChart>>("chart");
 
 function escapeHtml(value: string): string {
@@ -39,7 +40,7 @@ const option = computed(() => ({
   tooltip: {
     ...tooltipStyle,
     trigger: "axis",
-    axisPointer: { type: "shadow", shadowStyle: { color: "rgba(23, 62, 52, 0.05)" } },
+    axisPointer: { type: "shadow", shadowStyle: { color: chartColors.pointer } },
     formatter: (params: Array<{ dataIndex: number }>) => {
       const month = props.months[params[0]?.dataIndex ?? 0];
       if (!month) return "";

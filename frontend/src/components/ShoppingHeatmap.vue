@@ -2,11 +2,12 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import VChart from "vue-echarts";
-import { axisLabelStyle, chartColors, tooltipStyle } from "../charts";
+import { getChartTheme } from "../charts";
 import { weekdayNames } from "../stats";
 
 const props = defineProps<{ weeklyHours: number[][] }>();
 const { t, locale } = useI18n();
+const { axisLabelStyle, chartColors, tooltipStyle } = getChartTheme();
 
 const hours = computed(() => {
   const active = props.weeklyHours.flatMap((day) =>

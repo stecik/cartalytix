@@ -4,6 +4,7 @@ import {
   TooltipComponent,
   VisualMapComponent,
 } from "echarts/components";
+import type { TooltipComponentOption } from "echarts/components";
 import { use } from "echarts/core";
 import { SVGRenderer } from "echarts/renderers";
 
@@ -17,28 +18,48 @@ use([
   VisualMapComponent,
 ]);
 
-export const chartColors = {
-  green: "#173e34",
-  greenHover: "#285744",
-  faded: "#c9d3c2",
-  sage: "#8ea99b",
-  muted: "#727970",
-  line: "#dddfd5",
-  paper: "#f7f6f0",
-  heatLow: "#eef1e7",
-};
+interface ChartTheme {
+  chartColors: Record<
+    "green" | "greenHover" | "faded" | "sage" | "muted" | "line" | "paper" |
+    "heatLow" | "area" | "pointer", string
+  >;
+  tooltipStyle: TooltipComponentOption;
+  axisLabelStyle: { color: string; fontFamily: string; fontSize: number };
+}
 
-export const tooltipStyle = {
-  backgroundColor: "#fbfbf6",
-  borderColor: chartColors.line,
-  borderWidth: 1,
-  padding: [10, 14],
-  textStyle: { color: "#243b34", fontFamily: "DM Sans Variable, sans-serif", fontSize: 12 },
-  extraCssText: "box-shadow: 0 8px 24px rgba(23, 62, 52, 0.12); border-radius: 6px;",
-};
-
-export const axisLabelStyle = {
-  color: chartColors.muted,
-  fontFamily: "DM Sans Variable, sans-serif",
-  fontSize: 11,
-};
+export function getChartTheme(): ChartTheme {
+  const style = getComputedStyle(document.documentElement);
+  function color(name: string): string {
+    const value = style.getPropertyValue(name).trim();
+    if (!value) throw new Error(`Missing chart color: ${name}`);
+    return value;
+  }
+  const chartColors = {
+    green: color("--green"),
+    greenHover: color("--green-hover"),
+    faded: color("--chart-muted"),
+    sage: color("--focus"),
+    muted: color("--muted"),
+    line: color("--line"),
+    paper: color("--paper"),
+    heatLow: color("--surface-search-hover"),
+    area: color("--shadow-green-06"),
+    pointer: color("--shadow-green-05"),
+  };
+  return {
+    chartColors,
+    tooltipStyle: {
+      backgroundColor: color("--surface-input"),
+      borderColor: chartColors.line,
+      borderWidth: 1,
+      padding: [10, 14],
+      textStyle: { color: color("--text"), fontFamily: "DM Sans Variable, sans-serif", fontSize: 12 },
+      extraCssText: `box-shadow: 0 8px 24px ${color("--shadow-green-12")}; border-radius: 6px;`,
+    },
+    axisLabelStyle: {
+      color: chartColors.muted,
+      fontFamily: "DM Sans Variable, sans-serif",
+      fontSize: 11,
+    },
+  };
+}

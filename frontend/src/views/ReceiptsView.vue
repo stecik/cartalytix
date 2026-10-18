@@ -189,9 +189,9 @@ function changePage(value: number): void {
 .receipt-filters .filter-search { flex: 1 1 260px; }
 .receipt-filters .filter-amount { width: 120px; }
 .receipt-filters input,
-.receipt-filters select { height: 40px; border: 1px solid #cbd1c3; border-radius: 4px; background: #fbfbf6; padding: 0 12px; font-size: 13px; }
+.receipt-filters select { height: 40px; border: 1px solid var(--border-input); border-radius: 4px; background: var(--surface-input); padding: 0 12px; font-size: 13px; }
 .receipt-filters input:focus,
-.receipt-filters select:focus { border-color: #67856c; box-shadow: 0 0 0 3px #dfe6d9; outline: 0; }
+.receipt-filters select:focus { border-color: var(--border-input-focus); box-shadow: 0 0 0 3px var(--ring-input-focus); outline: 0; }
 .receipt-filters .account-select { min-width: 210px; }
 .reset-filters { height: 40px; }
 @media (max-width: 780px) {

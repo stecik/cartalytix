@@ -171,25 +171,25 @@ function date(value: string): string {
 .receipt-total dd { margin: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .receipt-total > .receipt-rounding { font-size: 12px; font-weight: 400; margin-bottom: 20px; color: var(--muted); }
 .receipt-view-toggle { margin: 0 auto 28px; }
-.receipt-paper-wrap { filter: drop-shadow(0 3px 10px #17311f24); max-width: 400px; margin: 8px auto 48px; }
-.receipt-paper { --tooth: 7px; background: #fffef8; color: #2b2d27; padding: 38px 28px; font-family: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, monospace; font-size: 13px; line-height: 1.55;
+.receipt-paper-wrap { filter: drop-shadow(0 3px 10px var(--shadow-receipt)); max-width: 400px; margin: 8px auto 48px; }
+.receipt-paper { --tooth: 7px; background: var(--surface-receipt); color: var(--text-receipt); padding: 38px 28px; font-family: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, monospace; font-size: 13px; line-height: 1.55;
   mask: conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / calc(2 * var(--tooth)) 51% repeat-x,
     conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / calc(2 * var(--tooth)) 51% repeat-x; }
-.receipt-paper-header { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding-bottom: 18px; border-bottom: 1px dashed #b7baae; }
+.receipt-paper-header { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding-bottom: 18px; border-bottom: 1px dashed var(--border-receipt); }
 .receipt-paper-header img { width: 52px; height: 52px; object-fit: contain; margin-bottom: 6px; }
 .receipt-paper-header h2 { font-family: inherit; font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
-.receipt-paper-header time { font-size: 12px; color: #6d7068; }
+.receipt-paper-header time { font-size: 12px; color: var(--text-receipt-muted); }
 .receipt-paper-items { list-style: none; margin: 0; padding: 14px 0; }
 .receipt-paper-items > li + li { margin-top: 8px; }
 .receipt-paper-line { display: flex; justify-content: space-between; gap: 16px; }
 .receipt-paper-line > span:first-child { overflow-wrap: anywhere; }
 .receipt-paper-line > span:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.receipt-paper-sub { padding-left: 14px; font-size: 12px; color: #6d7068; }
-.receipt-paper-block { padding: 12px 0; border-top: 1px dashed #b7baae; }
-.receipt-paper-empty { padding: 18px 0; text-align: center; color: #6d7068; }
-.receipt-paper-total { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 14px 0; border-top: 3px double #2b2d27; border-bottom: 1px dashed #b7baae; font-size: 17px; font-weight: 700; text-transform: uppercase; }
+.receipt-paper-sub { padding-left: 14px; font-size: 12px; color: var(--text-receipt-muted); }
+.receipt-paper-block { padding: 12px 0; border-top: 1px dashed var(--border-receipt); }
+.receipt-paper-empty { padding: 18px 0; text-align: center; color: var(--text-receipt-muted); }
+.receipt-paper-total { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 14px 0; border-top: 3px double var(--text-receipt); border-bottom: 1px dashed var(--border-receipt); font-size: 17px; font-weight: 700; text-transform: uppercase; }
 .receipt-paper-total strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.receipt-paper-footer { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 16px; font-size: 11px; color: #6d7068; text-transform: uppercase; letter-spacing: 0.5px; }
+.receipt-paper-footer { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 16px; font-size: 11px; color: var(--text-receipt-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 @media (max-width: 390px) { .receipt-paper { padding: 32px 18px; font-size: 12px; } }
-.receipt-quality { background: #f0ebdb; color: #77623d; font-size: 13px; padding: 18px; margin-bottom: 24px; line-height: 1.7; }
+.receipt-quality { background: var(--surface-receipt-quality); color: var(--text-receipt-quality); font-size: 13px; padding: 18px; margin-bottom: 24px; line-height: 1.7; }
 </style>

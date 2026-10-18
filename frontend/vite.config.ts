@@ -2,6 +2,9 @@ import { defineConfig } from "vitest/config";
 import type { Plugin, ViteDevServer } from "vite";
 import vue from "@vitejs/plugin-vue";
 import { VitePWA } from "vite-plugin-pwa";
+import { createPwaPalette } from "./pwaPalette.ts";
+
+const palette = createPwaPalette(import.meta.dirname);
 
 export const developmentWorkerCleanup = {
   name: "retire-production-worker-in-development",
@@ -33,8 +36,10 @@ self.addEventListener("activate", (event) => {
 export default defineConfig({
   plugins: [
     developmentWorkerCleanup,
+    palette.plugin,
     vue(),
     VitePWA({
+      integration: palette.integration,
       registerType: "prompt",
       includeAssets: [
         "icon.svg",
@@ -47,8 +52,7 @@ export default defineConfig({
         short_name: "Cartalytix",
         description: "Your shopping receipts, in one place.",
         lang: "en",
-        theme_color: "#173e34",
-        background_color: "#f7f6f0",
+        ...palette.manifestColors,
         display: "standalone",
         start_url: "/",
         scope: "/",

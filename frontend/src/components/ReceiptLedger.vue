@@ -101,7 +101,7 @@ function formatDate(date: string): string {
 .sort-button { border: 0; padding: 0; background: none; color: inherit; font-size: inherit; display: inline-flex; gap: 4px; }
 .sort-button:hover { color: var(--green); }
 .sort-button span { min-width: 1ch; }
-.receipt-row:hover { background: #e9ecdf70; }
+.receipt-row:hover { background: var(--surface-row-hover); }
 .receipt-row a { display: inline-block; text-underline-offset: 4px; }
 .receipt-row a:hover { text-decoration: underline; }
 </style>

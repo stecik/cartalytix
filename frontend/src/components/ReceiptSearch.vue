@@ -162,15 +162,15 @@ function onEscape(): void {
 .receipt-search input {
   width: 100%;
   height: 40px;
-  border: 1px solid #cbd1c3;
+  border: 1px solid var(--border-input);
   border-radius: 4px;
-  background: #fbfbf6;
+  background: var(--surface-input);
   padding: 0 12px;
   font-size: 13px;
 }
 .receipt-search input:focus {
-  border-color: #67856c;
-  box-shadow: 0 0 0 3px #dfe6d9;
+  border-color: var(--border-input-focus);
+  box-shadow: 0 0 0 3px var(--ring-input-focus);
   outline: 0;
 }
 .suggestions {
@@ -182,10 +182,10 @@ function onEscape(): void {
   margin: 0;
   padding: 6px;
   list-style: none;
-  background: #fbfbf6;
+  background: var(--surface-input);
   border: 1px solid var(--line);
   border-radius: 8px;
-  box-shadow: 0 12px 32px rgba(23, 62, 52, 0.14);
+  box-shadow: 0 12px 32px var(--shadow-green-14);
   max-height: 340px;
   overflow-y: auto;
   animation: arrive 0.12s ease-out;
@@ -222,11 +222,11 @@ function onEscape(): void {
   color: var(--muted);
   padding: 3px 7px;
   border-radius: 999px;
-  background: #eef1e7;
+  background: var(--surface-search-hover);
 }
 .suggestion-kind.merchant {
-  background: #e3ebe3;
-  color: #3f7a55;
+  background: var(--surface-search-selected);
+  color: var(--text-positive);
 }
 .suggestion-count {
   min-width: 34px;

@@ -180,10 +180,10 @@ function formatDate(date: string): string {
   font-variant-numeric: tabular-nums;
 }
 .item-kpis dd.low {
-  color: #3f7a55;
+  color: var(--text-positive);
 }
 .item-kpis dd.high {
-  color: #a0533f;
+  color: var(--text-negative);
 }
 .detail-panel {
   padding-top: 24px;

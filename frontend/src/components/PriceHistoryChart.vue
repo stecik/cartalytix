@@ -3,11 +3,12 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import VChart from "vue-echarts";
 import type { ItemPurchase } from "../api";
-import { axisLabelStyle, chartColors, tooltipStyle } from "../charts";
+import { getChartTheme } from "../charts";
 import { formatMoney, numberLocale } from "../stats";
 
 const props = defineProps<{ purchases: ItemPurchase[]; currency: string }>();
 const { locale } = useI18n();
+const { axisLabelStyle, chartColors, tooltipStyle } = getChartTheme();
 
 const option = computed(() => {
   const points = [...props.purchases].reverse();
@@ -63,7 +64,7 @@ const option = computed(() => {
         symbolSize: 6,
         lineStyle: { width: 2, color: chartColors.green },
         itemStyle: { color: chartColors.green, borderColor: chartColors.paper, borderWidth: 2 },
-        areaStyle: { color: "rgba(23, 62, 52, 0.06)" },
+        areaStyle: { color: chartColors.area },
         data: points.map((point) => [point.purchased_at, Number(point.unit_price)]),
       },
     ],
