@@ -176,6 +176,26 @@ Export: `customer/orders?page=N` (úplnost podle `totalRecords`) a
 implementována; po vypršení spusťte `login` znovu. `report.json` obsahuje
 `schema` (pouze cesty klíčů a typy, bez hodnot) pro návrh normalizace položek.
 
+## Bolt Food
+
+Živě ověřeno 18. 10. 2026: 129 objednávek (7 stránek `page_token`), všechny detaily,
+obnova tokenu `getAccessTokenWithRotation` funguje. Přihlášení telefon + SMS kód
+proběhlo bez captchy. Tokeny přicházejí v odpovědi `verification/confirm`
+(`user_jwt_authentication`). Detail obsahuje `user_baskets`, `total_price_components`,
+dopravu, poplatky, kredity a refundy.
+
+```powershell
+uv run --locked boltfood login --browser chrome
+uv run --locked boltfood export
+```
+
+Přihlášení (telefon, SMS kód, případná captcha) probíhá ručně v okně food.bolt.eu;
+po přihlášení otevřete Objednávky a detail jedné objednávky. Skript zachytí
+refresh token (Credential Manager `Cartalytix.BoltFood`) a šablony požadavků
+webu (`work/boltfood-session.json`). `work/boltfood-flow.json` obsahuje jen názvy
+cest, parametrů a klíčů a příznak `challenge_seen`, tedy zda Bolt požadoval captchu.
+Web i export narážejí na 429 (`code=1005`); export čeká mezi požadavky 1 s.
+
 ## Odhlášení
 
 `uv run cartalytix logout` odstraní pouze lokální refresh token. Neukončuje
