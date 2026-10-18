@@ -2,7 +2,7 @@ import { BarChart, HeatmapChart, LineChart } from "echarts/charts";
 import {
   GridComponent,
   TooltipComponent,
-  VisualMapComponent,
+  VisualMapContinuousComponent,
 } from "echarts/components";
 import type { TooltipComponentOption } from "echarts/components";
 import { use } from "echarts/core";
@@ -15,7 +15,7 @@ use([
   HeatmapChart,
   GridComponent,
   TooltipComponent,
-  VisualMapComponent,
+  VisualMapContinuousComponent,
 ]);
 
 interface ChartTheme {
