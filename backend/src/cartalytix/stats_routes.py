@@ -9,7 +9,7 @@ from typing import Annotated
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query
-from sqlalchemy import ColumnElement, Select, func, select
+from sqlalchemy import ColumnElement, Integer, Select, String, cast, func, select
 
 from cartalytix.dependencies import Db, Owner
 from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem
@@ -33,9 +33,23 @@ def _money(amount: Decimal) -> str:
     return format(amount.quantize(CENTS, rounding=ROUND_HALF_UP), ".2f")
 
 
-def _local(value: datetime) -> datetime:
-    aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value
-    return aware.astimezone(PRAGUE)
+def _local_parts(
+    dialect: str,
+) -> tuple[ColumnElement[str], ColumnElement[int], ColumnElement[int]]:
+    """Month key, Monday-based weekday and hour of the purchase in Prague wall time."""
+    if dialect == "postgresql":
+        local = func.timezone(PRAGUE.key, Receipt.purchased_at)
+        return (
+            func.to_char(local, "YYYY-MM", type_=String),
+            cast(func.extract("isodow", local), Integer) - 1,
+            cast(func.extract("hour", local), Integer),
+        )
+    local = func.cartalytix_prague_time(Receipt.purchased_at, type_=String)
+    return (
+        func.strftime("%Y-%m", local, type_=String),
+        (cast(func.strftime("%w", local), Integer) + 6) % 7,
+        cast(func.strftime("%H", local), Integer),
+    )
 
 
 def _month_key(value: datetime) -> str:
@@ -51,10 +65,6 @@ def _shift_months(value: datetime, months: int) -> datetime:
 
 def _month_start(value: datetime) -> datetime:
     return value.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-
-def _in_range(value: datetime, start: datetime | None, end: datetime | None) -> bool:
-    return (start is None or value >= start) and (end is None or value < end)
 
 
 def _range_filters(start: datetime | None, end: datetime | None) -> list[ColumnElement[bool]]:
@@ -113,26 +123,27 @@ def overview_stats(
         end, shift = _shift_months(start, 1), 1
     else:
         start, end, shift = period_start, period_end, 12
-    rows_start = None if start is None or period_start is None else min(start, period_start)
-    rows_end = max(end, period_end)
-
     owner_filter = ProviderConnection.owner_id == user.id
-    rows = db.execute(
-        select(Receipt.purchased_at, Receipt.merchant, Receipt.currency, Receipt.total_amount)
-        .join(ProviderConnection)
-        .where(owner_filter, *_range_filters(rows_start, rows_end))
-    ).all()
-
+    selection_filters = [owner_filter, *_range_filters(start, end)]
+    month_key, weekday, hour = _local_parts(db.get_bind().dialect.name)
     amounts: dict[str, Decimal] = defaultdict(Decimal)
     counts: Counter[str] = Counter()
-    selected: list[tuple[datetime, str, str, Decimal]] = []
-    for purchased_at, merchant, currency, total_amount in rows:
-        local = _local(purchased_at)
-        if _in_range(local, start, end):
-            selected.append((local, merchant, currency, total_amount))
-            amounts[currency] += total_amount
-            counts[currency] += 1
+    by_merchant: dict[str, list[MerchantStats]] = defaultdict(list)
+    merchant_amount = func.sum(Receipt.total_amount)
+    for row_currency, merchant, count, amount in db.execute(
+        select(Receipt.currency, Receipt.merchant, func.count(), merchant_amount)
+        .join(ProviderConnection)
+        .where(*selection_filters)
+        .group_by(Receipt.currency, Receipt.merchant)
+        .order_by(merchant_amount.desc(), Receipt.merchant)
+    ):
+        amounts[row_currency] += amount
+        counts[row_currency] += count
+        by_merchant[row_currency].append(
+            MerchantStats(merchant=merchant, amount=_money(amount), receipt_count=count)
+        )
     currency = max(sorted(counts), key=counts.__getitem__) if counts else None
+    merchants = by_merchant[currency] if currency is not None else []
 
     previous: dict[str, tuple[int, Decimal]] = {}
     if start is not None:
@@ -146,7 +157,6 @@ def overview_stats(
                 .group_by(Receipt.currency)
             )
         }
-    selection_filters = [owner_filter, *_range_filters(start, end)]
     discounts: dict[str, Decimal] = {
         row_currency: amount
         for row_currency, amount in db.execute(
@@ -173,24 +183,32 @@ def overview_stats(
         for code in sorted(counts, key=lambda code: (-counts[code], code))
     ]
 
+    # Month buckets follow Prague wall time; the database groups, Python only fills gaps.
+    month_merchants: dict[str, list[MerchantStats]] = defaultdict(list)
     month_amounts: dict[str, Decimal] = defaultdict(Decimal)
     month_counts: Counter[str] = Counter()
-    month_merchant_amounts: dict[str, dict[str, Decimal]] = defaultdict(
-        lambda: defaultdict(Decimal)
-    )
-    month_merchant_counts: dict[str, Counter[str]] = defaultdict(Counter)
-    first_month: datetime | None = period_start
-    for purchased_at, merchant, row_currency, total_amount in rows:
-        local = _local(purchased_at)
-        if row_currency != currency or not _in_range(local, period_start, period_end):
-            continue
-        key = _month_key(local)
-        month_amounts[key] += total_amount
-        month_counts[key] += 1
-        month_merchant_amounts[key][merchant] += total_amount
-        month_merchant_counts[key][merchant] += 1
-        if period_start is None and (first_month is None or local < first_month):
-            first_month = _month_start(local)
+    if currency is not None:
+        month_amount = func.sum(Receipt.total_amount)
+        for key, merchant, count, amount in db.execute(
+            select(month_key, Receipt.merchant, func.count(), month_amount)
+            .join(ProviderConnection)
+            .where(
+                owner_filter,
+                Receipt.currency == currency,
+                *_range_filters(period_start, period_end),
+            )
+            .group_by(month_key, Receipt.merchant)
+            .order_by(month_key, month_amount.desc(), Receipt.merchant)
+        ):
+            month_merchants[key].append(
+                MerchantStats(merchant=merchant, amount=_money(amount), receipt_count=count)
+            )
+            month_amounts[key] += amount
+            month_counts[key] += count
+    first_month = period_start
+    if first_month is None and month_counts:
+        year, number = (int(part) for part in min(month_counts).split("-"))
+        first_month = datetime(year, number, 1, tzinfo=PRAGUE)
     months: list[MonthStats] = []
     cursor = first_month
     while cursor is not None and cursor < period_end and currency is not None:
@@ -200,38 +218,19 @@ def overview_stats(
                 month=key,
                 amount=_money(month_amounts[key]),
                 receipt_count=month_counts[key],
-                merchants=[
-                    MerchantStats(
-                        merchant=merchant,
-                        amount=_money(amount),
-                        receipt_count=month_merchant_counts[key][merchant],
-                    )
-                    for merchant, amount in sorted(
-                        month_merchant_amounts[key].items(), key=lambda pair: (-pair[1], pair[0])
-                    )
-                ],
+                merchants=month_merchants[key],
             )
         )
         cursor = _shift_months(cursor, 1)
 
-    merchant_amounts: dict[str, Decimal] = defaultdict(Decimal)
-    merchant_counts: Counter[str] = Counter()
     weekly_hours = [[0] * 24 for _day in range(7)]
-    for local, merchant, row_currency, total_amount in selected:
-        weekly_hours[local.weekday()][local.hour] += 1
-        if row_currency == currency:
-            merchant_amounts[merchant] += total_amount
-            merchant_counts[merchant] += 1
-    merchants = [
-        MerchantStats(
-            merchant=merchant,
-            amount=_money(merchant_amounts[merchant]),
-            receipt_count=merchant_counts[merchant],
-        )
-        for merchant in sorted(
-            merchant_amounts, key=lambda merchant: (-merchant_amounts[merchant], merchant)
-        )
-    ]
+    for day, hour_of_day, count in db.execute(
+        select(weekday, hour, func.count())
+        .join(ProviderConnection)
+        .where(*selection_filters)
+        .group_by(weekday, hour)
+    ):
+        weekly_hours[int(day)][int(hour_of_day)] = count
 
     frequent_items: list[ItemStats] = []
     top_spend_items: list[ItemStats] = []

@@ -17,7 +17,7 @@ from cartalytix.schemas import (
     ItemsOutput,
     ItemSummaryOutput,
 )
-from cartalytix.search import matches
+from cartalytix.search import name_matches
 
 PURCHASE_LIMIT = 200
 CENTS = Decimal("0.01")
@@ -125,7 +125,7 @@ def items(
     if connection_id is not None:
         filters.append(Receipt.connection_id == connection_id)
     if q and q.strip():
-        filters.append(matches(ReceiptItem.name, q.strip()))
+        filters.append(name_matches(ReceiptItem.name, q.strip()))
     if purchased_from is not None:
         filters.append(Receipt.purchased_at >= purchased_from)
     if purchased_to is not None:

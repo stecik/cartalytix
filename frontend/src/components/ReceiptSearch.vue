@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, ref, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { request } from "../api";
 import type { Suggestion } from "../api";
+import { sourceName } from "../names";
 import { highlight, MIN_SUGGESTION_LENGTH } from "../search";
 
 const DEBOUNCE_MS = 200;
@@ -47,7 +48,9 @@ const suggestions = useQuery({
 });
 
 const items = computed(() => {
-  const found = enabled.value ? (suggestions.data.value?.items ?? []) : [];
+  // Slugged rows are shown and searched by their translated label.
+  const found = (enabled.value ? (suggestions.data.value?.items ?? []) : [])
+    .map((item) => ({ ...item, text: sourceName(item.text, t) }));
   const current = model.value.trim().toLocaleLowerCase();
   return found.length === 1 && found[0]?.text.toLocaleLowerCase() === current ? [] : found;
 });

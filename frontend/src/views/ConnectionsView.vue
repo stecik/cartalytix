@@ -104,20 +104,21 @@ const createConnection = useMutation({
 .connections-title { margin-bottom: 34px; }
 .connections-title h1 { font-size: 29px; line-height: 1.25; font-weight: 600; letter-spacing: -1px; margin-bottom: 9px; }
 .connections-title p { color: var(--muted); font-size: 13px; line-height: 1.7; }
-.connected-store + .connected-store { margin-top: 36px; }
-.store-header { display: flex; align-items: center; gap: 13px; padding-bottom: 20px; }
+.connected-store { overflow: hidden; border: 1px solid #d4ddcf; border-radius: 12px; background: #fdfdf9; }
+.connected-store + .connected-store { margin-top: 28px; }
+.store-header { display: flex; align-items: center; gap: 13px; padding: 20px 22px; border-bottom: 1px solid #d8e0d2; background: #edf1e7; }
 .provider-logo { width: 38px; height: 38px; object-fit: contain; }
 .store-copy { flex: 1; min-width: 0; }
-.store-copy h2 { font-size: 16px; font-weight: 650; letter-spacing: -.3px; }
+.store-copy h2 { font-size: 17px; font-weight: 650; letter-spacing: -.3px; }
 .store-copy p { color: var(--muted); font-size: 12px; margin-top: 3px; }
-.add-account { gap: 6px; white-space: nowrap; padding: 8px 12px; min-height: 38px; }
+.add-account { gap: 6px; white-space: nowrap; padding: 8px 12px; min-height: 38px; background: #fdfdf9; }
 .add-account svg { width: 16px; height: 16px; }
 .account-list, .upcoming-stores ul { list-style: none; margin: 0; padding: 0; }
-.account-list > li { border-top: 1px solid var(--line); }
-.account-list > li:last-child { border-bottom: 1px solid var(--line); }
-.accounts-empty { border-block: 1px solid var(--line); padding: 24px 0; font-size: 13px; line-height: 1.8; color: var(--muted); }
-.upcoming-stores { margin-top: 36px; }
-.upcoming-stores h2 { font-size: 13px; font-weight: 500; color: var(--muted); margin-bottom: 12px; }
+.account-list { padding: 6px 14px; }
+.account-list > li + li { border-top: 1px solid var(--line); }
+.accounts-empty { padding: 24px 22px; font-size: 13px; line-height: 1.8; color: var(--muted); }
+.upcoming-stores { margin-top: 32px; padding: 20px 22px 6px; border: 1px dashed #d4ddcf; border-radius: 12px; }
+.upcoming-stores h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 12px; }
 .upcoming-store { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); font-size: 13px; }
 .upcoming-store img { object-fit: contain; flex-shrink: 0; }
 .upcoming-store span { flex: 1; font-weight: 500; }
@@ -125,5 +126,6 @@ const createConnection = useMutation({
 .connection-form { max-width: 460px; margin: 16px 0 0; }
 .connection-form label { margin-top: 18px; }
 .connection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
-@media (max-width: 390px) { .store-header { gap: 10px; }.add-account { padding: 8px; font-size: 12px; gap: 4px; }.provider-logo { width: 32px; height: 32px; } }
+@media (max-width: 600px) { .store-header { padding: 16px; }.account-list { padding: 4px 8px; }.accounts-empty { padding: 22px 16px; }.upcoming-stores { padding: 18px 16px 4px; }.connected-store + .connected-store { margin-top: 22px; } }
+@media (max-width: 390px) { .store-header { gap: 10px; padding: 14px 12px; }.store-copy h2 { font-size: 15px; }.add-account { padding: 8px; font-size: 12px; gap: 4px; }.provider-logo { width: 32px; height: 32px; } }
 </style>

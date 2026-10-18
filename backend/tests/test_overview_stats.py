@@ -187,7 +187,8 @@ def test_stats_query_count_is_bounded(client: TestClient, engine: Engine) -> Non
     event.listen(engine, "before_cursor_execute", track)
     assert client.get(URL).status_code == 200
     small = len(queries)
-    assert small <= 6
+    # User lookup plus fixed aggregates; receipts are never loaded row by row.
+    assert small <= 8
     event.remove(engine, "before_cursor_execute", track)
     now = datetime.now(UTC)
     for number in range(20):

@@ -11,8 +11,8 @@ describe("display names", () => {
 
   it("translates connector adjustment rows and keeps source names", () => {
     const { t } = createAppI18n("cs").global;
-    expect(sourceName("Discounts and credits", t)).toBe("Slevy a kredity");
-    expect(sourceName("Shipping and fees", t)).toBe("Doprava a poplatky");
+    expect(sourceName("discounts_and_credits", t)).toBe("Slevy a kredity");
+    expect(sourceName("shipping_and_fees", t)).toBe("Doprava a poplatky");
     expect(sourceName("Sleva 15 %", t)).toBe("Sleva 15 %");
   });
 });

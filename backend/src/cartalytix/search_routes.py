@@ -10,7 +10,7 @@ from sqlalchemy.orm import InstrumentedAttribute, Session
 from cartalytix.dependencies import Db, Owner
 from cartalytix.models import ProviderConnection, Receipt, ReceiptItem
 from cartalytix.schemas import SuggestionKind, SuggestionOutput, SuggestionsOutput
-from cartalytix.search import like_pattern, search_text
+from cartalytix.search import like_pattern, search_text, system_names
 
 MIN_TERM_LENGTH = 3
 # word_similarity cut-off tuned on real receipt names: keeps "mozarela" -> "Mozzarella" (0.55)
@@ -37,6 +37,10 @@ def _suggest(
         else_=0,
     )
     condition: ColumnElement[bool] = contains
+    slugs = system_names(term) if column.class_ is ReceiptItem else []
+    if slugs:
+        contains = or_(contains, column.in_(slugs))
+        condition = contains
     similarity: ColumnElement[float] = literal(0.0, Float)
     if fuzzy:
         needle = search_text(literal(term))

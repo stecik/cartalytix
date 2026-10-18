@@ -45,7 +45,7 @@ from cartalytix.schemas import (
     UserOutput,
     UserSettingsInput,
 )
-from cartalytix.search import matches
+from cartalytix.search import matches, name_matches
 from cartalytix.search_routes import router as search_router
 from cartalytix.security import token_hash, verify_password
 from cartalytix.settings import Settings
@@ -334,7 +334,7 @@ def create_app(
                     matches(Receipt.merchant, term),
                     exists().where(
                         ReceiptItem.receipt_id == Receipt.id,
-                        matches(ReceiptItem.name, term),
+                        name_matches(ReceiptItem.name, term),
                     ),
                 )
             )

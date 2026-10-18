@@ -2,10 +2,10 @@ import type { Connection } from "./api";
 import { providerLogos } from "./providerLogos";
 
 const providerNames: Record<string, string> = { lidl: "Lidl", mixit: "Mixit", fermato: "Fermato" };
-// Connector-generated adjustment rows are stored in English; source names stay as printed.
+// Connector-generated adjustment rows are stored as slugs; source names stay as printed.
 const sourceNameKeys: Record<string, string> = {
-  "Shipping and fees": "shippingAndFees",
-  "Discounts and credits": "discountsAndCredits",
+  shipping_and_fees: "shippingAndFees",
+  discounts_and_credits: "discountsAndCredits",
 };
 
 export function providerName(code: string): string {

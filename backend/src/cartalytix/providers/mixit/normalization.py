@@ -10,8 +10,9 @@ from cartalytix.providers.mixit.client import MixitError
 PARSER_VERSION = "mixit-cz-1"
 FINAL_STATES = frozenset({"shipped", "completed"})
 CURRENCIES = {"Kč": "CZK", "CZK": "CZK", "€": "EUR", "EUR": "EUR"}
-SHIPPING_NAME = "Shipping and fees"
-DISCOUNT_NAME = "Discounts and credits"
+# Slugs, translated by the UI; see cartalytix.search.SYSTEM_NAMES.
+SHIPPING_NAME = "shipping_and_fees"
+DISCOUNT_NAME = "discounts_and_credits"
 
 
 def amount(value: object) -> Decimal | None:
