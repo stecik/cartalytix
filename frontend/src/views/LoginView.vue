@@ -27,6 +27,7 @@ const errorKey = computed(() => {
   if (login.error.value instanceof ApiError) {
     if (login.error.value.status === 401) return "invalidCredentials";
     if (login.error.value.status === 429) return "rateLimited";
+    if (login.error.value.code === "account_disabled") return "accountDisabledLogin";
   }
   return "loginFailed";
 });

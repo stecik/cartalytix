@@ -50,7 +50,7 @@ def test_settings_reject_unknown_values(client: TestClient) -> None:
 def test_theme_defaults_to_system(client: TestClient) -> None:
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "owner@example.com", "password": "correct horse battery"},
+        json={"email": "owner@example.com", "password": "Correct-horse-battery"},
         headers=ORIGIN,
     )
     assert response.status_code == 200

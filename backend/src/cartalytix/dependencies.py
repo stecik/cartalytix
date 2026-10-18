@@ -29,6 +29,7 @@ def current_user(request: Request, db: Db) -> User:
             .where(
                 UserSession.token_hash == token_hash(token),
                 UserSession.expires_at > datetime.now(UTC),
+                User.is_disabled.is_(False),
             )
         )
         if user is not None:
@@ -36,4 +37,32 @@ def current_user(request: Request, db: Db) -> User:
     raise HTTPException(401, "authentication_required")
 
 
-Owner = Annotated[User, Depends(current_user)]
+# Any signed-in account, including one that still has to replace its credentials.
+SessionUser = Annotated[User, Depends(current_user)]
+
+
+def active_user(user: SessionUser) -> User:
+    if user.must_change_password:
+        raise HTTPException(403, "password_change_required")
+    return user
+
+
+ActiveUser = Annotated[User, Depends(active_user)]
+
+
+def data_owner(user: ActiveUser) -> User:
+    if user.is_admin:
+        raise HTTPException(403, "admin_forbidden")
+    return user
+
+
+Owner = Annotated[User, Depends(data_owner)]
+
+
+def administrator(user: ActiveUser) -> User:
+    if not user.is_admin:
+        raise HTTPException(403, "admin_required")
+    return user
+
+
+Admin = Annotated[User, Depends(administrator)]

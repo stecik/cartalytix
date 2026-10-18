@@ -55,8 +55,8 @@ ISSUER = f"{PUBLIC}/api/v1/oauth"
 ORIGIN = {"Origin": PUBLIC}
 CODEX_REDIRECT = "http://127.0.0.1:47123/callback"
 CHATGPT_REDIRECT = "https://chatgpt.com/connector/oauth/abc_123"
-OWNER = ("owner@example.com", "correct horse battery")
-OTHER = ("other@example.com", "other secret password")
+OWNER = ("owner@example.com", "Correct-horse-battery")
+OTHER = ("other@example.com", "Other-secret-password")
 TOOLS = {
     "search_receipts",
     "get_receipt",

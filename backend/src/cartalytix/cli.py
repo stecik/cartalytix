@@ -10,12 +10,14 @@ from cartalytix.i18n import translate as _
 from cartalytix.models import User
 from cartalytix.providers.lidl.browser import link_connection, server_origin
 from cartalytix.providers.lidl.client import LidlError
-from cartalytix.security import hash_password
+from cartalytix.security import PASSWORD_RULE, hash_password, is_strong_password
 from cartalytix.settings import Settings
 
 
 def provision_user(settings: Settings, email: str, password: str) -> None:
     normalized = validate_email(email, check_deliverability=False).normalized.casefold()
+    if not is_strong_password(password):
+        raise ValueError(_(PASSWORD_RULE))
     password_hash = hash_password(password)
     engine = create_engine(settings.database_url, pool_pre_ping=True)
     try:
@@ -49,7 +51,9 @@ def main() -> None:
         return
     settings = Settings()
     email = input(_("Email: ")).strip()
-    password = getpass(_("Password (at least 12 characters): "))
+    password = getpass(
+        _("Password (at least 8 characters with uppercase, lowercase and special characters): ")
+    )
     confirmation = getpass(_("Confirm password: "))
     if password != confirmation:
         parser.error(_("Passwords do not match"))

@@ -34,6 +34,31 @@ export async function authenticate(
   return user;
 }
 
+export interface CredentialsChange {
+  /** Omitted for the forced change right after signing in with an issued password. */
+  current_password?: string;
+  new_password: string;
+  email?: string;
+}
+
+/** Mirrors the API policy: 8+ characters with uppercase, lowercase and a special character. */
+export function isStrongPassword(value: string): boolean {
+  return value.length >= 8 && value.length <= 1024
+    && /\p{Lu}/u.test(value) && /\p{Ll}/u.test(value) && /[^\p{L}\p{N}]/u.test(value);
+}
+
+export async function changeCredentials(
+  client: QueryClient,
+  change: CredentialsChange,
+): Promise<User> {
+  const user = await request<User>("/auth/credentials", {
+    method: "POST",
+    body: JSON.stringify(change),
+  });
+  client.setQueryData(sessionOptions.queryKey, user);
+  return user;
+}
+
 export async function signOut(client: QueryClient): Promise<void> {
   try {
     await request<void>("/auth/logout", { method: "POST" });

@@ -26,17 +26,17 @@ def test_migration_and_closed_registration(tmp_path: Path) -> None:
     settings = Settings(environment="development", database_url=f"sqlite:///{tmp_path / 'app.db'}")
     config = migration_config(settings.database_url)
     command.upgrade(config, "head")
-    provision_user(settings, "Owner@EXAMPLE.COM", "correct horse battery")
+    provision_user(settings, "Owner@EXAMPLE.COM", "Correct-horse-battery")
     engine = create_engine(settings.database_url)
     try:
         with Session(engine) as db:
             owner = db.scalar(select(User))
             assert owner is not None
             assert owner.email == "owner@example.com"
-            assert verify_password(owner.password_hash, "correct horse battery")
+            assert verify_password(owner.password_hash, "Correct-horse-battery")
         with pytest.raises(ValueError, match="User already exists"):
-            provision_user(settings, "owner@example.com", "correct horse battery")
-        with pytest.raises(ValueError, match="12 to 1024"):
+            provision_user(settings, "owner@example.com", "Correct-horse-battery")
+        with pytest.raises(ValueError, match="8 to 1024"):
             provision_user(settings, "new@example.com", "short")
         with engine.connect() as connection:
             assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []

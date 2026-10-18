@@ -15,11 +15,15 @@ import SegmentedToggle from "../components/SegmentedToggle.vue";
 
 const { t, locale } = useI18n();
 const queryClient = useQueryClient();
+const session = useQuery(sessionOptions);
+// Administrators only manage accounts, so purchase-related preferences are hidden.
+const isAdmin = computed(() => session.data.value?.is_admin === true);
 // The connector is disabled (404) unless the instance has a public URL configured.
 const grants = useQuery({
   queryKey: ["mcp-grants"],
   queryFn: ({ signal }) => request<{ items: McpGrant[] }>("/mcp/grants", { signal }),
   retry: false,
+  enabled: computed(() => !isAdmin.value),
 });
 const connectorUrl = `${window.location.origin}/mcp`;
 const revoking = ref<McpGrant | null>(null);
@@ -33,7 +37,6 @@ const revoke = useMutation({
 function connectedOn(value: string): string {
   return new Intl.DateTimeFormat(locale.value === "cs" ? "cs-CZ" : "en-GB", { dateStyle: "medium" }).format(new Date(value));
 }
-const session = useQuery(sessionOptions);
 const settings = useUserSettings();
 const pwaInstall = inject(pwaInstallKey);
 const showInstallHelp = ref(false);
@@ -94,7 +97,7 @@ const views = computed(() => [
           <AppSelect v-model="theme" class="settings-select" :options="themes" :label="t('appearance')" />
         </div>
       </div>
-      <div class="settings-row">
+      <div v-if="!isAdmin" class="settings-row">
         <div class="settings-copy">
           <h3>{{ t("receiptDisplay") }}</h3>
           <p id="receipt-display-hint">{{ t(receiptView === "rendered" ? "receiptViewRenderedHint" : "receiptViewDetailedHint") }}</p>
@@ -131,7 +134,7 @@ const views = computed(() => [
         <p role="status">{{ t("installHelp") }}</p>
       </div>
     </section>
-    <section v-if="Array.isArray(grants.data.value?.items)" class="settings-section" aria-labelledby="mcp-heading">
+    <section v-if="!isAdmin && Array.isArray(grants.data.value?.items)" class="settings-section" aria-labelledby="mcp-heading">
       <header class="settings-section-heading">
         <h2 id="mcp-heading">{{ t("mcpApps") }}</h2>
         <span class="settings-save-note">{{ t("mcpReadOnly") }}</span>

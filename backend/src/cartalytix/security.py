@@ -7,9 +7,24 @@ _hasher = PasswordHasher()
 _dummy_hash = _hasher.hash("unavailable-account-constant-timing-check")
 
 
+PASSWORD_RULE = (
+    "Password must contain 8 to 1024 characters, including an uppercase letter, "
+    "a lowercase letter and a special character"
+)
+
+
+def is_strong_password(password: str) -> bool:
+    return (
+        8 <= len(password) <= 1024
+        and any(character.isupper() for character in password)
+        and any(character.islower() for character in password)
+        and any(not character.isalnum() for character in password)
+    )
+
+
 def hash_password(password: str) -> str:
-    if len(password) < 12 or len(password) > 1024:
-        raise ValueError("Password must contain 12 to 1024 characters")
+    if not is_strong_password(password):
+        raise ValueError(PASSWORD_RULE)
     return _hasher.hash(password)
 
 

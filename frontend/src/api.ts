@@ -6,6 +6,23 @@ export interface User {
   locale: string;
   receipt_view: "rendered" | "detailed";
   theme: ThemePreference;
+  is_admin: boolean;
+  must_change_password: boolean;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  is_admin: boolean;
+  is_disabled: boolean;
+  must_change_password: boolean;
+  created_at: string;
+}
+
+/** Generated password; the API returns it only in this one response. */
+export interface AdminUserPassword {
+  user: AdminUser;
+  password: string;
 }
 
 export interface Receipt {

@@ -35,6 +35,47 @@ class UserOutput(BaseModel):
     locale: str
     receipt_view: str
     theme: Theme
+    is_admin: bool
+    must_change_password: bool
+
+
+class CredentialsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Not needed for the forced change right after signing in with an issued password.
+    current_password: str | None = Field(default=None, max_length=1024)
+    new_password: str = Field(min_length=1, max_length=1024)
+    email: EmailStr | None = None
+
+
+class AdminUserOutput(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    email: str
+    is_admin: bool
+    is_disabled: bool
+    must_change_password: bool
+    created_at: datetime
+
+
+class AdminUsersOutput(BaseModel):
+    items: list[AdminUserOutput]
+
+
+class AdminUserCreateInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: EmailStr
+
+
+class AdminUserUpdateInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    is_disabled: bool
+
+
+class AdminUserPasswordOutput(BaseModel):
+    """Generated password, returned exactly once so the administrator can hand it over."""
+
+    user: AdminUserOutput
+    password: str
 
 
 class UserSettingsInput(BaseModel):

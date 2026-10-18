@@ -74,7 +74,7 @@ def _owner(db: Session) -> User:
     # The owner comes only from the verified token; tools never accept a user id.
     token = get_access_token()
     user = db.get(User, UUID(token.subject)) if token and token.subject else None
-    if user is None:
+    if user is None or user.is_disabled or user.is_admin or user.must_change_password:
         raise ToolError("authentication_required")
     return user
 

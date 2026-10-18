@@ -12,6 +12,7 @@ defineProps<{
     | "trash"
     | "chevron"
     | "plus"
+    | "accounts"
     | "mark";
 }>();
 </script>
@@ -50,6 +51,9 @@ defineProps<{
     <template v-else-if="name === 'trash'"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5" /></template>
     <path v-else-if="name === 'chevron'" d="m8 10 4 4 4-4" />
     <path v-else-if="name === 'plus'" d="M12 5v14M5 12h14" />
+    <template v-else-if="name === 'accounts'">
+      <circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6" />
+    </template>
     <path v-else d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5" />
   </svg>
 </template>

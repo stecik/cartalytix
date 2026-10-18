@@ -35,13 +35,22 @@ const logout = useMutation({
   mutationFn: () => signOut(client),
   onSuccess: () => router.replace("/login"),
 });
-const links = [
+const userLinks = [
   { to: "/", name: "overview" },
   { to: "/receipts", name: "receipts" },
   { to: "/items", name: "items" },
   { to: "/connections", name: "connections" },
   { to: "/settings", name: "settings" },
 ] as const;
+const adminLinks = [
+  { to: "/accounts", name: "accounts" },
+  { to: "/settings", name: "settings" },
+] as const;
+const links = computed(() => {
+  const user = session.data.value;
+  if (!user || user.must_change_password) return [];
+  return user.is_admin ? adminLinks : userLinks;
+});
 const settings = useUserSettings();
 watch(
   () => session.data.value?.theme,
@@ -177,7 +186,7 @@ watch(
         <RouterView />
       </main>
     </div>
-    <nav v-if="!isLogin" :aria-label="t('navigation')" class="mobile-nav">
+    <nav v-if="!isLogin && links.length" :aria-label="t('navigation')" class="mobile-nav">
       <RouterLink
         v-for="link in links"
         :key="link.to"

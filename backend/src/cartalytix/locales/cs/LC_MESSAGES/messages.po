@@ -37,8 +37,8 @@ msgstr "Správa místních účtů aplikace"
 msgid "Email: "
 msgstr "E-mail: "
 
-msgid "Password (at least 12 characters): "
-msgstr "Heslo (alespoň 12 znaků): "
+msgid "Password (at least 8 characters with uppercase, lowercase and special characters): "
+msgstr "Heslo (alespoň 8 znaků, velké a malé písmeno a speciální znak): "
 
 msgid "Confirm password: "
 msgstr "Potvrzení hesla: "
@@ -72,3 +72,36 @@ msgstr "Účet Lidl propojen. Spusťte synchronizaci v aplikaci."
 
 msgid "Sign in only in the Lidl browser window; never paste passwords or codes."
 msgstr "Přihlaste se pouze v okně Lidlu; hesla ani kódy nikam nekopírujte."
+
+msgid "This account is disabled"
+msgstr "Tento účet je zablokovaný"
+
+msgid "Change your password to continue"
+msgstr "Pro pokračování si změňte heslo"
+
+msgid "Current password is incorrect"
+msgstr "Současné heslo není správné"
+
+msgid "Choose a password different from the current one"
+msgstr "Zvolte heslo odlišné od současného"
+
+msgid "Choose a new email address"
+msgstr "Zvolte novou e-mailovou adresu"
+
+msgid "An account with this email already exists"
+msgstr "Účet s tímto e-mailem již existuje"
+
+msgid "Administrators manage accounts only"
+msgstr "Administrátoři pouze spravují účty"
+
+msgid "Administrator access required"
+msgstr "Je vyžadován přístup administrátora"
+
+msgid "Administrator accounts cannot be changed here"
+msgstr "Účty administrátorů zde nelze měnit"
+
+msgid "Account not found"
+msgstr "Účet nebyl nalezen"
+
+msgid "Password must contain 8 to 1024 characters, including an uppercase letter, a lowercase letter and a special character"
+msgstr "Heslo musí mít 8 až 1024 znaků a obsahovat velké písmeno, malé písmeno a speciální znak"

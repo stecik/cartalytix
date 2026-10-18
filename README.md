@@ -97,19 +97,28 @@ delays but does not lose them.
 ## Local setup
 
 Requires Docker Compose. Node and Vite run in the frontend container.
-Copy `.env.example` to `.env` and set a random URL-safe `POSTGRES_PASSWORD`.
-There are no default application credentials or public registration.
+Copy `.env.example` to `.env`. Set a random URL-safe `POSTGRES_PASSWORD` and a
+strong `CARTALYTIX_BOOTSTRAP_PASSWORD`.
+There is no public registration.
 
 ```powershell
 uv --directory backend sync --locked --extra browser
 uv --directory backend run --no-sync python -c "from pathlib import Path; from cryptography.fernet import Fernet; p=Path('../.secrets/lidl.key'); p.parent.mkdir(exist_ok=True); p.open('xb').write(Fernet.generate_key())"
 docker compose build
 docker compose up -d
-docker compose exec api uv run --no-sync cartalytix create-user
 ```
 
-Enter the account password at the terminal prompt; never put it in a command or
-chat. After initial setup, start development with `docker compose build` and
+On first start with an empty database, sign in as `admin@example.com` with
+`CARTALYTIX_BOOTSTRAP_PASSWORD`. The first sign-in requires a new e-mail and
+password. Remove the bootstrap password from the environment after setup.
+The administrator only manages accounts
+(Account management tab): it creates users with a generated one-time password,
+resets passwords, disables and deletes accounts, and never sees store data.
+Users created or reset by the administrator must change the password at first
+sign-in. `cartalytix create-user` still provisions a regular user from the
+terminal; enter its password at the prompt, never in a command or chat.
+
+After initial setup, start development with `docker compose build` and
 `docker compose up -d`; no override files are needed. Migrations run before
 the API and workers start.
 

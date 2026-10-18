@@ -66,10 +66,10 @@ class UnlimitedLimiter:
 def client(engine: Engine) -> Iterator[TestClient]:
     with Session(engine) as db:
         owner = User(
-            email="owner@example.com", password_hash=hash_password("correct horse battery")
+            email="owner@example.com", password_hash=hash_password("Correct-horse-battery")
         )
         other = User(
-            email="other@example.com", password_hash=hash_password("other secret password")
+            email="other@example.com", password_hash=hash_password("Other-secret-password")
         )
         db.add_all([owner, other])
         db.flush()
@@ -112,7 +112,7 @@ def application(client: TestClient) -> FastAPI:
 def login(client: TestClient) -> None:
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "owner@example.com", "password": "correct horse battery"},
+        json={"email": "owner@example.com", "password": "Correct-horse-battery"},
         headers={"Origin": "http://testserver"},
     )
     assert response.status_code == 200
@@ -264,7 +264,7 @@ def test_login_fails_closed(client: TestClient, limiter: object, status: int) ->
     application(client).state.limiter = limiter
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "owner@example.com", "password": "correct horse battery"},
+        json={"email": "owner@example.com", "password": "Correct-horse-battery"},
         headers={"Origin": "http://testserver"},
     )
     assert response.status_code == status

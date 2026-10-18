@@ -50,6 +50,12 @@ class User(Base):
         String(16), default="rendered", server_default="rendered"
     )
     theme: Mapped[str] = mapped_column(String(16), default="system", server_default="system")
+    # Administrators only manage accounts; they never own connections or receipts.
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    is_disabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     connections: Mapped[list[ProviderConnection]] = relationship(lazy="raise")
 

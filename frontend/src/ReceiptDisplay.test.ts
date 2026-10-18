@@ -9,7 +9,7 @@ import { createAppI18n } from "./i18n";
 import { providerLogos } from "./providerLogos";
 import type { User } from "./api";
 
-const user: User = { id: "user-1", email: "owner@example.com", locale: "en", receipt_view: "rendered", theme: "system" };
+const user: User = { id: "user-1", email: "owner@example.com", locale: "en", receipt_view: "rendered", theme: "system", is_admin: false, must_change_password: false };
 const receipt = { id: "receipt-1", connection_id: "account-1", provider: "lidl", external_id: "R-42",
   purchased_at: "2026-10-17T10:00:00Z", merchant: "Lidl Praha", total_amount: "20.00", currency: "CZK",
   rounding_amount: "0.20", quality_issues: [], source_format: "htmlPrintedReceipt",
