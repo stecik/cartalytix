@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { accountName, providerName, SHOPTET_SHOPS } from "../names";
 import { ApiError, request } from "../api";
@@ -80,9 +80,12 @@ const manage = useMutation({
 const busy = computed(() => manage.isPending.value || save.isPending.value || sync.isPending.value);
 const managementDisabled = computed(() => running.value || linking.value || busy.value);
 const historyOpen = computed(() => expanded.value && tab.value === "history");
+const HISTORY_LIMIT = 10;
+const historyOffset = ref(0);
 const history = useQuery({
-  queryKey: computed(() => ["connection-runs", props.connection.id]),
-  queryFn: ({ signal }) => request<{ items: SyncRun[] }>(`${endpoint.value}/runs?limit=20`, { signal }),
+  queryKey: computed(() => ["connection-runs", props.connection.id, historyOffset.value]),
+  queryFn: ({ signal }) => request<{ items: SyncRun[]; total: number }>(`${endpoint.value}/runs?limit=${HISTORY_LIMIT}&offset=${historyOffset.value}`, { signal }),
+  placeholderData: keepPreviousData,
   enabled: historyOpen,
   refetchInterval: () => historyOpen.value && active.value ? 3000 : false,
 });
@@ -175,7 +178,13 @@ const actionError = computed(() => {
             <p v-if="run.status === 'failed'" class="sync-error">{{ t(errorKey(run.error_code)) }}</p>
           </li>
 </ol>
-          <p v-if="history.data.value?.items.length === 20" class="section-note">{{ t('latestSyncRuns', { count: 20 }) }}</p>
+          <div v-if="(history.data.value?.total ?? 0) > HISTORY_LIMIT" class="pagination">
+            <span>{{ t('pageRange', { start: historyOffset + 1, end: Math.min(historyOffset + HISTORY_LIMIT, history.data.value?.total ?? 0), total: history.data.value?.total ?? 0 }) }}</span>
+            <div>
+              <button type="button" class="button secondary" :disabled="historyOffset === 0 || history.isFetching.value" @click="historyOffset = Math.max(0, historyOffset - HISTORY_LIMIT)">{{ t('previous') }}</button>
+              <button type="button" class="button secondary" :disabled="historyOffset + HISTORY_LIMIT >= (history.data.value?.total ?? 0) || history.isFetching.value" @click="historyOffset += HISTORY_LIMIT">{{ t('next') }}</button>
+            </div>
+          </div>
         </QueryState>
       </section>
       <section v-if="tab === 'manage'" :id="`panel-manage-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-manage-${connection.id}`" tabindex="0">

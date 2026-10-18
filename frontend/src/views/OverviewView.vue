@@ -235,7 +235,7 @@ function selectPeriod(value: StatsPeriod): void {
             <div class="section-heading">
               <h2>{{ t("spendingByStore") }}</h2>
             </div>
-            <RankedBars v-if="merchantRows.length" :rows="merchantRows" />
+            <RankedBars v-if="merchantRows.length" :rows="merchantRows" :page-size="10" />
             <p v-else class="panel-empty">{{ t("noStatsData") }}</p>
           </section>
           <section class="panel">
@@ -253,14 +253,14 @@ function selectPeriod(value: StatsPeriod): void {
             <div class="section-heading">
               <h2>{{ t("frequentItems") }}</h2>
             </div>
-            <RankedBars v-if="frequentRows.length" :rows="frequentRows" />
+            <RankedBars v-if="frequentRows.length" :rows="frequentRows" :page-size="10" />
             <p v-else class="panel-empty">{{ t("noStatsData") }}</p>
           </section>
           <section class="panel">
             <div class="section-heading">
               <h2>{{ t("topSpendItems") }}</h2>
             </div>
-            <RankedBars v-if="spendRows.length" :rows="spendRows" />
+            <RankedBars v-if="spendRows.length" :rows="spendRows" :page-size="10" />
             <p v-else class="panel-empty">{{ t("noStatsData") }}</p>
           </section>
         </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 export interface RankedRow {
   key: string;
@@ -9,14 +10,20 @@ export interface RankedRow {
   detail: string;
 }
 
-const props = defineProps<{ rows: RankedRow[] }>();
+const props = defineProps<{ rows: RankedRow[]; pageSize?: number }>();
+const { t } = useI18n();
+const offset = ref(0);
+// Bars share one scale across pages, so the leader stays the reference.
 const maximum = computed(() => Math.max(0, ...props.rows.map((row) => row.value)));
+const limit = computed(() => props.pageSize ?? props.rows.length);
+const visible = computed(() => props.rows.slice(offset.value, offset.value + limit.value));
+watch(() => props.rows, () => { offset.value = 0; });
 </script>
 
 <template>
   <ol class="ranked-bars">
-    <li v-for="(row, index) in rows" :key="row.key">
-      <span class="rank">{{ index + 1 }}</span>
+    <li v-for="(row, index) in visible" :key="row.key">
+      <span class="rank">{{ offset + index + 1 }}</span>
       <div class="ranked-body">
         <div class="ranked-line">
           <span class="ranked-label" :title="row.label">{{ row.label }}</span>
@@ -32,6 +39,17 @@ const maximum = computed(() => Math.max(0, ...props.rows.map((row) => row.value)
       </div>
     </li>
   </ol>
+  <div v-if="rows.length > limit" class="pagination">
+    <span>{{ t("pageRange", { start: offset + 1, end: Math.min(offset + limit, rows.length), total: rows.length }) }}</span>
+    <div>
+      <button type="button" class="button secondary" :disabled="offset === 0" @click="offset = Math.max(0, offset - limit)">
+        {{ t("previous") }}
+      </button>
+      <button type="button" class="button secondary" :disabled="offset + limit >= rows.length" @click="offset += limit">
+        {{ t("next") }}
+      </button>
+    </div>
+  </div>
 </template>
 
 <style scoped>

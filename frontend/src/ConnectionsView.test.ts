@@ -205,6 +205,25 @@ describe("Lidl connections", () => {
     wrapper.unmount(); client.clear();
   });
 
+  it("pages sync history from the API", async () => {
+    const { wrapper, client, fetcher } = render([account]);
+    await flushPromises();
+    await wrapper.get(".account-toggle").trigger("click");
+    const run = (index: number) => ({ id: `run-${index}`, created_at: "2026-10-17T10:00:00Z", finished_at: null, status: "completed", receipts_imported: index, receipts_skipped: 0 });
+    fetcher.mockResolvedValueOnce(Response.json({ items: Array.from({ length: 10 }, (_, index) => run(index)), total: 23, limit: 10, offset: 0 }));
+    await wrapper.get('[data-tab="history"]').trigger("click");
+    await flushPromises();
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/providers/lidl/connections/account-1/runs?limit=10&offset=0", expect.anything());
+    expect(wrapper.get(".pagination span").text()).toBe("1–10 of 23");
+    fetcher.mockResolvedValueOnce(Response.json({ items: [run(20)], total: 23, limit: 10, offset: 10 }));
+    await wrapper.findAll(".pagination button").find((button) => button.text() === "Next")!.trigger("click");
+    await flushPromises();
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/providers/lidl/connections/account-1/runs?limit=10&offset=10", expect.anything());
+    expect(wrapper.get(".pagination span").text()).toBe("11–20 of 23");
+    expect(wrapper.findAll(".sync-history-list li")).toHaveLength(1);
+    wrapper.unmount(); client.clear();
+  });
+
   it("blocks destructive actions during an active sync", async () => {
     const run = { id: "run", connection_id: account.id, status: "running", error_code: null, created_at: "2026-10-17T10:00:00Z", receipts_imported: 1, receipts_skipped: 0, receipts_seen: 1, pages_count: 1 };
     const { wrapper, client } = render([{ ...account, latest_sync: run }]);

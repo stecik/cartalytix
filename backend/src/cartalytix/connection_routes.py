@@ -298,12 +298,22 @@ def sync_runs(
     owner: Owner,
     db: Db,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> SyncRunsOutput:
     owned_connection(db, identifier, owner.id, provider.value)
+    total = db.scalar(
+        select(func.count()).select_from(SyncRun).where(SyncRun.connection_id == identifier)
+    )
     runs = db.scalars(
         select(SyncRun)
         .where(SyncRun.connection_id == identifier)
         .order_by(SyncRun.created_at.desc(), SyncRun.id.desc())
         .limit(limit)
+        .offset(offset)
     )
-    return SyncRunsOutput(items=[SyncRunOutput.model_validate(run) for run in runs])
+    return SyncRunsOutput(
+        items=[SyncRunOutput.model_validate(run) for run in runs],
+        total=total or 0,
+        limit=limit,
+        offset=offset,
+    )

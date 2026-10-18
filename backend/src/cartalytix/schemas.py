@@ -109,6 +109,9 @@ class SyncRunOutput(BaseModel):
 
 class SyncRunsOutput(BaseModel):
     items: list[SyncRunOutput]
+    total: int
+    limit: int
+    offset: int
 
 
 class ConnectionOutput(BaseModel):

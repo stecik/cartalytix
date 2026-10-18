@@ -23,7 +23,7 @@ from cartalytix.schemas import (
 )
 
 PRAGUE = ZoneInfo("Europe/Prague")
-TOP_ITEMS = 10
+TOP_ITEMS = 50
 CENTS = Decimal("0.01")
 
 router = APIRouter(prefix="/api/v1/overview", tags=["overview"])

@@ -322,7 +322,12 @@ def test_latest_run_is_batched_and_history_limit_enforced(
     history = authorized.get(f"{PREFIX}/{identifiers[0]}/runs?limit=1")
     assert len(history.json().get("items")) == 1
     assert history.json().get("items")[0].get("status") == "failed"
+    assert history.json().get("total") == 2
+    older = authorized.get(f"{PREFIX}/{identifiers[0]}/runs?limit=1&offset=1").json()
+    assert [run.get("status") for run in older.get("items")] == ["completed"]
+    assert (older.get("total"), older.get("limit"), older.get("offset")) == (2, 1, 1)
     assert authorized.get(f"{PREFIX}/{identifiers[0]}/runs?limit=51").status_code == 422
+    assert authorized.get(f"{PREFIX}/{identifiers[0]}/runs?offset=-1").status_code == 422
 
 
 def test_oauth_exchange_holds_no_orm_transaction(
