@@ -48,6 +48,7 @@ class User(Base):
     receipt_view: Mapped[str] = mapped_column(
         String(16), default="rendered", server_default="rendered"
     )
+    theme: Mapped[str] = mapped_column(String(16), default="system", server_default="system")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     connections: Mapped[list[ProviderConnection]] = relationship(lazy="raise")
 

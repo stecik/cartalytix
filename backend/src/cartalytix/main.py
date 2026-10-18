@@ -268,6 +268,8 @@ def create_app(
             user.locale = payload.locale
         if payload.receipt_view is not None:
             user.receipt_view = payload.receipt_view
+        if payload.theme is not None:
+            user.theme = payload.theme
         db.commit()
         return user
 

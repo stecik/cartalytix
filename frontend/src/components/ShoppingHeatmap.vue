@@ -7,7 +7,6 @@ import { weekdayNames } from "../stats";
 
 const props = defineProps<{ weeklyHours: number[][] }>();
 const { t, locale } = useI18n();
-const { axisLabelStyle, chartColors, tooltipStyle } = getChartTheme();
 
 const hours = computed(() => {
   const active = props.weeklyHours.flatMap((day) =>
@@ -19,6 +18,7 @@ const hours = computed(() => {
 });
 
 const option = computed(() => {
+  const { axisLabelStyle, chartColors, tooltipStyle } = getChartTheme();
   const days = weekdayNames(locale.value);
   const firstHour = hours.value[0] ?? 0;
   const data = props.weeklyHours.flatMap((day, weekday) =>

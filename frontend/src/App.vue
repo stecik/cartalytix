@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, provide, ref, watch } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
@@ -8,6 +8,8 @@ import { clearSession, sessionOptions, signOut } from "./auth";
 import AppIcon from "./components/AppIcon.vue";
 import AppSelect from "./components/AppSelect.vue";
 import { useUserSettings } from "./settings";
+import { pwaInstallKey } from "./pwaInstall";
+import { isThemePreference, setTheme } from "./theme";
 
 interface InstallPrompt extends Event {
   prompt: () => Promise<void>;
@@ -41,6 +43,11 @@ const links = [
   { to: "/settings", name: "settings" },
 ] as const;
 const settings = useUserSettings();
+watch(
+  () => session.data.value?.theme,
+  (value) => { if (isThemePreference(value)) setTheme(value); },
+  { immediate: true },
+);
 watch(
   () => session.data.value?.locale,
   (value) => {
@@ -78,6 +85,8 @@ async function install(): Promise<void> {
   await installPrompt.value.userChoice;
   installPrompt.value = null;
 }
+
+provide(pwaInstallKey, { available: computed(() => installPrompt.value !== null), install });
 
 window.addEventListener("online", setOnline);
 window.addEventListener("offline", setOnline);

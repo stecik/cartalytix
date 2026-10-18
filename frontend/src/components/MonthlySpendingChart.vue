@@ -15,7 +15,6 @@ const props = defineProps<{
 const emit = defineEmits<{ select: [month: string | null] }>();
 
 const { t, locale } = useI18n();
-const { axisLabelStyle, chartColors, tooltipStyle } = getChartTheme();
 const chart = useTemplateRef<InstanceType<typeof VChart>>("chart");
 
 function escapeHtml(value: string): string {
@@ -27,81 +26,84 @@ const withYear = computed(() => {
   return years.size > 1;
 });
 
-const option = computed(() => ({
-  animationDuration: 500,
-  grid: {
-    top: 24,
-    right: 8,
-    bottom: 28,
-    left: 8,
-    outerBoundsMode: "same",
-    outerBoundsContain: "axisLabel",
-  },
-  tooltip: {
-    ...tooltipStyle,
-    trigger: "axis",
-    axisPointer: { type: "shadow", shadowStyle: { color: chartColors.pointer } },
-    formatter: (params: Array<{ dataIndex: number }>) => {
-      const month = props.months[params[0]?.dataIndex ?? 0];
-      if (!month) return "";
-      return [
-        `<strong>${formatLongMonth(month.month, locale.value)}</strong>`,
-        ...month.merchants.map((merchant) =>
-          `${escapeHtml(merchant.merchant)}: <strong>${formatMoney(merchant.amount, props.currency, locale.value)}</strong> · ${t("receiptCount", merchant.receipt_count)}`),
-        `${t("totalSpent")}: <strong>${formatMoney(month.amount, props.currency, locale.value)}</strong>`,
-        t("receiptCount", month.receipt_count),
-      ].join("<br>");
+const option = computed(() => {
+  const { axisLabelStyle, chartColors, tooltipStyle } = getChartTheme();
+  return {
+    animationDuration: 500,
+    grid: {
+      top: 24,
+      right: 8,
+      bottom: 28,
+      left: 8,
+      outerBoundsMode: "same",
+      outerBoundsContain: "axisLabel",
     },
-  },
-  xAxis: {
-    type: "category",
-    data: props.months.map((month) => formatMonth(month.month, locale.value, withYear.value)),
-    axisTick: { show: false },
-    axisLine: { lineStyle: { color: chartColors.line } },
-    axisLabel: { ...axisLabelStyle, hideOverlap: true },
-  },
-  yAxis: [
-    {
-      type: "value",
-      splitNumber: 4,
-      splitLine: { lineStyle: { color: chartColors.line, type: "dashed" } },
-      axisLabel: {
-        ...axisLabelStyle,
-        formatter: (value: number) => formatMoney(value, props.currency, locale.value, true),
+    tooltip: {
+      ...tooltipStyle,
+      trigger: "axis",
+      axisPointer: { type: "shadow", shadowStyle: { color: chartColors.pointer } },
+      formatter: (params: Array<{ dataIndex: number }>) => {
+        const month = props.months[params[0]?.dataIndex ?? 0];
+        if (!month) return "";
+        return [
+          `<strong>${formatLongMonth(month.month, locale.value)}</strong>`,
+          ...month.merchants.map((merchant) =>
+            `${escapeHtml(merchant.merchant)}: <strong>${formatMoney(merchant.amount, props.currency, locale.value)}</strong> · ${t("receiptCount", merchant.receipt_count)}`),
+          `${t("totalSpent")}: <strong>${formatMoney(month.amount, props.currency, locale.value)}</strong>`,
+          t("receiptCount", month.receipt_count),
+        ].join("<br>");
       },
     },
-    { type: "value", show: false, splitLine: { show: false } },
-  ],
-  series: [
-    {
-      name: t("chartSpending"),
-      type: "bar",
-      barMaxWidth: 38,
-      data: props.months.map((month) => ({
-        value: Number(month.amount),
-        itemStyle: {
-          color:
-            props.selected === null || props.selected === month.month
-              ? chartColors.green
-              : chartColors.faded,
-          borderRadius: [4, 4, 0, 0],
+    xAxis: {
+      type: "category",
+      data: props.months.map((month) => formatMonth(month.month, locale.value, withYear.value)),
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: chartColors.line } },
+      axisLabel: { ...axisLabelStyle, hideOverlap: true },
+    },
+    yAxis: [
+      {
+        type: "value",
+        splitNumber: 4,
+        splitLine: { lineStyle: { color: chartColors.line, type: "dashed" } },
+        axisLabel: {
+          ...axisLabelStyle,
+          formatter: (value: number) => formatMoney(value, props.currency, locale.value, true),
         },
-      })),
-      emphasis: { itemStyle: { color: chartColors.greenHover } },
-    },
-    {
-      name: t("purchases"),
-      type: "line",
-      yAxisIndex: 1,
-      smooth: true,
-      symbol: "circle",
-      symbolSize: 6,
-      lineStyle: { width: 2, color: chartColors.sage },
-      itemStyle: { color: chartColors.sage, borderColor: chartColors.paper, borderWidth: 2 },
-      data: props.months.map((month) => month.receipt_count),
-    },
-  ],
-}));
+      },
+      { type: "value", show: false, splitLine: { show: false } },
+    ],
+    series: [
+      {
+        name: t("chartSpending"),
+        type: "bar",
+        barMaxWidth: 38,
+        data: props.months.map((month) => ({
+          value: Number(month.amount),
+          itemStyle: {
+            color:
+              props.selected === null || props.selected === month.month
+                ? chartColors.green
+                : chartColors.faded,
+            borderRadius: [4, 4, 0, 0],
+          },
+        })),
+        emphasis: { itemStyle: { color: chartColors.greenHover } },
+      },
+      {
+        name: t("purchases"),
+        type: "line",
+        yAxisIndex: 1,
+        smooth: true,
+        symbol: "circle",
+        symbolSize: 6,
+        lineStyle: { width: 2, color: chartColors.sage },
+        itemStyle: { color: chartColors.sage, borderColor: chartColors.paper, borderWidth: 2 },
+        data: props.months.map((month) => month.receipt_count),
+      },
+    ],
+  };
+});
 
 function onClick(event: ElementEvent): void {
   const instance = chart.value;

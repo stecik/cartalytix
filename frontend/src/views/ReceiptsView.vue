@@ -186,7 +186,7 @@ function changePage(value: number): void {
 <style scoped>
 .receipt-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 36px; }
 .receipt-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
-.receipt-filters .filter-search { flex: 1 1 260px; }
+.receipt-filters .filter-search { flex: 1 1 140px; min-width: 0; }
 .receipt-filters .filter-amount { width: 120px; }
 .receipt-filters input,
 .receipt-filters select { height: 40px; border: 1px solid var(--border-input); border-radius: 4px; background: var(--surface-input); padding: 0 12px; font-size: 13px; }

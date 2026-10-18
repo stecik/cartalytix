@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_validator
 
 
 class LoginInput(BaseModel):
@@ -22,18 +22,33 @@ class ReceiptView(StrEnum):
     DETAILED = "detailed"
 
 
+class Theme(StrEnum):
+    SYSTEM = "system"
+    LIGHT = "light"
+    DARK = "dark"
+
+
 class UserOutput(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     email: str
     locale: str
     receipt_view: str
+    theme: Theme
 
 
 class UserSettingsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     locale: Locale | None = None
     receipt_view: ReceiptView | None = None
+    theme: Theme | None = None
+
+    @field_validator("theme")
+    @classmethod
+    def require_theme(cls, value: Theme | None) -> Theme:
+        if value is None:
+            raise ValueError("Theme must not be null")
+        return value
 
 
 class SyncRunOutput(BaseModel):

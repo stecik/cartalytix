@@ -9,7 +9,7 @@ import { createAppI18n } from "./i18n";
 import { providerLogos } from "./providerLogos";
 import type { User } from "./api";
 
-const user: User = { id: "user-1", email: "owner@example.com", locale: "en", receipt_view: "rendered" };
+const user: User = { id: "user-1", email: "owner@example.com", locale: "en", receipt_view: "rendered", theme: "system" };
 const receipt = { id: "receipt-1", connection_id: "account-1", provider: "lidl", external_id: "R-42",
   purchased_at: "2026-10-17T10:00:00Z", merchant: "Lidl Praha", total_amount: "20.00", currency: "CZK",
   rounding_amount: "0.20", quality_issues: [], source_format: "htmlPrintedReceipt",
@@ -92,7 +92,7 @@ describe("settings", () => {
     await flushPromises();
     expect(fetcher).toHaveBeenLastCalledWith("/api/v1/auth/me", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ receipt_view: "detailed" }) }));
     expect(client.getQueryData<User>(["session"])?.receipt_view).toBe("detailed");
-    await wrapper.get('button[aria-haspopup="listbox"]').trigger("click");
+    await wrapper.get('button[aria-label="Language"]').trigger("click");
     await wrapper.get('[role="option"]:last-child').trigger("click");
     await flushPromises();
     expect(fetcher).toHaveBeenLastCalledWith("/api/v1/auth/me", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ locale: "cs" }) }));

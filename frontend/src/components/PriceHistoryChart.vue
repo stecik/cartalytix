@@ -8,9 +8,9 @@ import { formatMoney, numberLocale } from "../stats";
 
 const props = defineProps<{ purchases: ItemPurchase[]; currency: string }>();
 const { locale } = useI18n();
-const { axisLabelStyle, chartColors, tooltipStyle } = getChartTheme();
 
 const option = computed(() => {
+  const { axisLabelStyle, chartColors, tooltipStyle } = getChartTheme();
   const points = [...props.purchases].reverse();
   const dates = new Intl.DateTimeFormat(numberLocale(locale.value), {
     day: "numeric",

@@ -1,8 +1,11 @@
+import type { ThemePreference } from "./theme";
+
 export interface User {
   id: string;
   email: string;
   locale: string;
   receipt_view: "rendered" | "detailed";
+  theme: ThemePreference;
 }
 
 export interface Receipt {

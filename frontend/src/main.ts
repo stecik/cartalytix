@@ -5,10 +5,13 @@ import { ApiError } from "./api";
 import { clearSession } from "./auth";
 import { createAppI18n } from "./i18n";
 import { createAppRouter } from "./router";
-import "./colors.css";
+import { initializeTheme } from "./theme";
 import "./style.css";
 import "@fontsource-variable/dm-sans/wght.css";
 import "@fontsource-variable/manrope/wght.css";
+
+const stopTheme = initializeTheme();
+if (import.meta.hot) import.meta.hot.dispose(stopTheme);
 
 const client = new QueryClient({
   defaultOptions: {

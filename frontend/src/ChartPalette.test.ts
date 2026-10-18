@@ -4,6 +4,8 @@ import MonthlySpendingChart from "./components/MonthlySpendingChart.vue";
 import PriceHistoryChart from "./components/PriceHistoryChart.vue";
 import ShoppingHeatmap from "./components/ShoppingHeatmap.vue";
 import { createAppI18n } from "./i18n";
+import { setTheme } from "./theme";
+import { nextTick } from "vue";
 
 const chartStub = { name: "ChartProbe", props: ["option"], template: "<div />" };
 const global = {
@@ -12,6 +14,7 @@ const global = {
 };
 
 beforeEach(() => {
+  setTheme("light");
   const palette: Record<string, string> = {
     green: "rgb(11, 22, 33)",
     "green-hover": "rgb(22, 33, 44)",
@@ -32,9 +35,34 @@ beforeEach(() => {
   }
 });
 
-afterEach(() => document.documentElement.removeAttribute("style"));
+afterEach(() => {
+  document.documentElement.removeAttribute("style");
+  document.documentElement.removeAttribute("data-theme");
+  localStorage.clear();
+});
 
 describe("chart palette", () => {
+  it("recolors mounted charts when appearance changes", async () => {
+    const charts = [
+      mount(MonthlySpendingChart, { global, props: {
+        months: [{ month: "2026-10", amount: "100", receipt_count: 1, merchants: [] }], currency: "CZK", selected: null,
+      } }),
+      mount(PriceHistoryChart, { global, props: { purchases: [], currency: "CZK" } }),
+      mount(ShoppingHeatmap, { global, props: { weeklyHours: [[1]] } }),
+    ];
+    try {
+      document.documentElement.style.setProperty("--muted", "rgb(200, 210, 220)");
+      document.documentElement.style.setProperty("--surface-input", "rgb(20, 30, 40)");
+      setTheme("dark");
+      await nextTick();
+      for (const chart of charts) {
+        const option = chart.getComponent({ name: "ChartProbe" }).props("option");
+        expect(option.xAxis.axisLabel.color).toBe("rgb(200, 210, 220)");
+        expect(option.tooltip.backgroundColor).toBe("rgb(20, 30, 40)");
+      }
+    } finally { for (const chart of charts) chart.unmount(); }
+  });
+
   it("uses CSS colors for spending, selection, axes and tooltips", async () => {
     const wrapper = mount(MonthlySpendingChart, { global, props: {
       months: [{ month: "2026-10", amount: "100", receipt_count: 1, merchants: [] }],

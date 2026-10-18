@@ -50,6 +50,28 @@ async function generate(root: string): Promise<void> {
 }
 
 describe("PWA palette assets", () => {
+  it("keeps generated branding on the base palette when dark overrides follow it", async () => {
+    const root = await fixture();
+    const palettePath = join(root, "src/colors.css");
+    const base = await readFile(palettePath, "utf8");
+    await writeFile(palettePath, `${base}
+      :root[data-theme="dark"] {
+        --green-rgb: 133, 190, 158;
+        --paper-base: #111a16;
+        --white: #1d2923;
+      }
+      .unrelated { --green-rgb: 1, 2, 3; }
+    `);
+    await generate(root);
+    const output = join(root, "dist");
+    expect(JSON.parse(await readFile(join(output, "manifest.webmanifest"), "utf8")))
+      .toMatchObject({ theme_color: "rgb(12, 34, 56)", background_color: "#abcdef" });
+    expect(await readFile(join(output, "icon.svg"), "utf8"))
+      .toContain('fill="rgb(12, 34, 56)"');
+    expect(await readFile(join(output, "text-cursor.svg"), "utf8"))
+      .toContain('stroke="rgba(255, 255, 255, 1)"');
+  }, 30_000);
+
   it("resolves aliases for generated metadata, manifest, SVG and PNG assets", async () => {
     const root = await fixture();
     await generate(root);

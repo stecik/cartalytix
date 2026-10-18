@@ -98,7 +98,7 @@ textarea {
   transform: translateY(-150%);
   padding: 12px 20px;
   background: var(--green);
-  color: var(--white);
+  color: var(--text-skip-link);
 }
 .skip-link:focus {
   transform: translateY(0);
@@ -173,7 +173,7 @@ textarea {
 }
 .desktop-nav .active:hover {
   background: var(--surface-nav-active-hover);
-  color: var(--white);
+  color: var(--text-nav-active-hover);
 }
 .app-main {
   margin-left: 244px;
@@ -623,8 +623,8 @@ th:last-child {
   min-height: 100svh;
 }
 .login-story {
-  background: var(--green);
-  color: var(--paper);
+  background: var(--surface-story);
+  color: var(--text-story-title);
   padding: 42px 55px 32px;
   display: flex;
   flex-direction: column;
@@ -684,7 +684,7 @@ th:last-child {
   color: var(--text-receipt-art);
   background: var(--surface-receipt-art);
   box-shadow:
-    17px 18px 0 -3px var(--green),
+    17px 18px 0 -3px var(--surface-story),
     17px 18px 0 -2px var(--shadow-receipt-art);
 }
 .receipt-art::before {

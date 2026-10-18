@@ -10,8 +10,12 @@ type ManifestColors = { theme_color: string; background_color: string };
 type Asset = { source: string | Uint8Array; contentType: string };
 
 function paletteReader(css: string): (name: string) => string {
+  const basePalette = Array.from(
+    css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/^\s*:root\s*\{([^{}]*)\}/gm),
+    (match) => match[1]!,
+  ).join("\n");
   const declarations = new Map(
-    Array.from(css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(--[\w-]+)\s*:\s*([^;\r\n]+);/g),
+    Array.from(basePalette.matchAll(/(--[\w-]+)\s*:\s*([^;\r\n]+);/g),
       (match) => [match[1]!, match[2]!.trim()]),
   );
   function resolve(name: string, ancestors: string[] = []): string {

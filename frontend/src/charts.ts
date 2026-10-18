@@ -7,6 +7,7 @@ import {
 import type { TooltipComponentOption } from "echarts/components";
 import { use } from "echarts/core";
 import { SVGRenderer } from "echarts/renderers";
+import { resolvedTheme } from "./theme";
 
 use([
   SVGRenderer,
@@ -28,6 +29,8 @@ interface ChartTheme {
 }
 
 export function getChartTheme(): ChartTheme {
+  // Chart options track the current palette when evaluated in a computed value.
+  void resolvedTheme.value;
   const style = getComputedStyle(document.documentElement);
   function color(name: string): string {
     const value = style.getPropertyValue(name).trim();
