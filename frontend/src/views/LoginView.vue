@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { ApiError } from "../api";
-import { authenticate } from "../auth";
+import { authenticate, returnPath } from "../auth";
 import AppIcon from "../components/AppIcon.vue";
 
 const { t } = useI18n();
@@ -17,7 +17,7 @@ const login = useMutation({
   mutationFn: () => authenticate(client, email.value.trim(), password.value),
   onSuccess: async () => {
     password.value = "";
-    await router.replace("/");
+    await router.replace(returnPath(route.query.redirect));
   },
   onError: () => {
     password.value = "";

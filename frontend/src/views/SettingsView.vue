@@ -1,17 +1,38 @@
 <script setup lang="ts">
 import { computed, inject, ref } from "vue";
-import { useQuery } from "@tanstack/vue-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
-import type { User } from "../api";
+import { request } from "../api";
+import type { McpGrant, User } from "../api";
 import { sessionOptions } from "../auth";
 import { useUserSettings } from "../settings";
 import { pwaInstallKey } from "../pwaInstall";
 import { isThemePreference, themePreference } from "../theme";
+import AppDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
 import AppSelect from "../components/AppSelect.vue";
 import SegmentedToggle from "../components/SegmentedToggle.vue";
 
 const { t, locale } = useI18n();
+const queryClient = useQueryClient();
+// The connector is disabled (404) unless the instance has a public URL configured.
+const grants = useQuery({
+  queryKey: ["mcp-grants"],
+  queryFn: ({ signal }) => request<{ items: McpGrant[] }>("/mcp/grants", { signal }),
+  retry: false,
+});
+const connectorUrl = `${window.location.origin}/mcp`;
+const revoking = ref<McpGrant | null>(null);
+const revoke = useMutation({
+  mutationFn: (id: string) => request<void>(`/mcp/grants/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  onSuccess: async () => {
+    revoking.value = null;
+    await queryClient.invalidateQueries({ queryKey: ["mcp-grants"] });
+  },
+});
+function connectedOn(value: string): string {
+  return new Intl.DateTimeFormat(locale.value === "cs" ? "cs-CZ" : "en-GB", { dateStyle: "medium" }).format(new Date(value));
+}
 const session = useQuery(sessionOptions);
 const settings = useUserSettings();
 const pwaInstall = inject(pwaInstallKey);
@@ -110,6 +131,37 @@ const views = computed(() => [
         <p role="status">{{ t("installHelp") }}</p>
       </div>
     </section>
+    <section v-if="Array.isArray(grants.data.value?.items)" class="settings-section" aria-labelledby="mcp-heading">
+      <header class="settings-section-heading">
+        <h2 id="mcp-heading">{{ t("mcpApps") }}</h2>
+        <span class="settings-save-note">{{ t("mcpReadOnly") }}</span>
+      </header>
+      <div class="settings-row">
+        <div class="settings-copy">
+          <h3>{{ t("mcpConnectorUrl") }}</h3>
+          <p>{{ t("mcpConnectorHint") }}</p>
+        </div>
+        <code class="settings-connector-url">{{ connectorUrl }}</code>
+      </div>
+      <div v-for="grant in grants.data.value?.items" :key="grant.id" class="settings-row">
+        <div class="settings-copy">
+          <h3>{{ grant.client_name }}</h3>
+          <p>{{ t("mcpConnectedOn", { date: connectedOn(grant.created_at) }) }}</p>
+        </div>
+        <button type="button" class="button secondary settings-install" @click="revoking = grant">{{ t("mcpRevoke") }}</button>
+      </div>
+      <div v-if="grants.data.value?.items.length === 0" class="settings-row">
+        <p class="settings-copy">{{ t("mcpNoApps") }}</p>
+      </div>
+    </section>
+    <AppDialog v-if="revoking" :title="t('mcpRevokeTitle')" :busy="revoke.isPending.value" @close="revoking = null">
+      <p>{{ t("mcpRevokeHelp", { client: revoking.client_name }) }}</p>
+      <p v-if="revoke.isError.value" class="form-alert" role="alert">{{ t("mcpRevokeFailed") }}</p>
+      <div class="dialog-actions">
+        <button class="button secondary" data-action="cancel" type="button" :disabled="revoke.isPending.value" @click="revoking = null">{{ t("cancel") }}</button>
+        <button class="button danger" type="button" :disabled="revoke.isPending.value" @click="revoking && revoke.mutate(revoking.id)">{{ t("mcpRevoke") }}</button>
+      </div>
+    </AppDialog>
   </div>
 </template>
 
@@ -139,6 +191,8 @@ const views = computed(() => [
 .settings-install svg { width: 18px; height: 18px; }
 .settings-install-help { margin: 0 24px 24px; padding: 14px 16px; border-left: 2px solid var(--border-account-panel); border-radius: 0 6px 6px 0; background: var(--surface-account-panel); }
 .settings-install-help p { color: var(--muted); font-size: 12px; line-height: 1.8; }
+.settings-connector-url { min-width: 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
+.settings-row > p.settings-copy { color: var(--muted); font-size: 12px; }
 @media (max-width: 780px) { .settings-row { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 16px; }.settings-install { justify-self: start; } }
 @media (max-width: 600px) { .settings-section-heading { padding: 16px; }.settings-row { margin-inline: 16px; padding-block: 20px; }.settings-install-help { margin: 0 16px 20px; }.settings-section + .settings-section { margin-top: 22px; } }
 </style>

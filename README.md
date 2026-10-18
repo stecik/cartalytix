@@ -147,6 +147,61 @@ interrupt imports or require relinking. Every sync verifies all available list
 pages, downloads missing receipt details and keeps source JSON for rejected
 documents; arithmetic/precision failures do not enter spending aggregates.
 
+## MCP connector (ChatGPT, Codex)
+
+Each user connects their own Cartalytix account to ChatGPT or Codex through the
+read-only MCP endpoint `/mcp` (Streamable HTTP). There is no OpenAI API key and no
+central service. The backend is its own OAuth 2.1 authorization server: dynamic
+client registration, PKCE S256, `resource`-bound tokens, scope `cartalytix:read`.
+Tokens are opaque, stored only as SHA-256 hashes in PostgreSQL (access 1 h, rotated
+refresh 30 days), so they work across workers and restarts. The owner comes only
+from the verified token; tools never accept a user id. Users revoke access under
+**Settings → Connected AI apps**.
+
+### Deployment
+
+1. Set `CARTALYTIX_PUBLIC_URL=https://cartalytix.example.com` for the API (add it to the
+   Compose backend environment). Without it the connector is disabled. URLs are
+   derived from this setting, never from the `Host` header.
+2. `CARTALYTIX_TOKEN_KEY_FILE` is required (registered client secrets are
+   Fernet-encrypted); `https://cartalytix.example.com` must be in `CARTALYTIX_ALLOWED_ORIGINS`.
+3. Migration `0010_mcp_oauth` runs with the usual `migrate` service.
+4. Nginx must forward to the API, besides `/api/`:
+   - `/mcp`
+   - `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/mcp`
+   - `/.well-known/oauth-authorization-server` and
+     `/.well-known/oauth-authorization-server/api/v1/oauth`
+5. Keep the original host: `proxy_set_header Host $host;` (other hosts get `421`).
+
+The OAuth issuer is `https://cartalytix.example.com/api/v1/oauth`; the consent page is the
+frontend route `/oauth/consent`. Client registration accepts only ChatGPT
+redirects (`https://chatgpt.com/connector_platform_oauth_redirect`,
+`https://chatgpt.com/connector/oauth/{id}`) and loopback HTTP redirects (Codex).
+
+### ChatGPT
+
+1. Open `chatgpt.com/plugins` → **+** → **Add custom MCP server**.
+2. Server URL `https://cartalytix.example.com/mcp`, authentication **OAuth**; leave static
+   client credentials empty (the client registers itself).
+3. Confirm the warning, **Create**, then install the plugin.
+4. On first use sign in with the Cartalytix account and choose **Allow access**.
+
+Custom MCP servers may require developer mode depending on the ChatGPT plan.
+
+### Codex
+
+```powershell
+codex mcp add cartalytix --url https://cartalytix.example.com/mcp
+codex mcp login cartalytix
+codex mcp list
+```
+
+`add` detects OAuth and starts the login itself; `login` repeats it. Sign in and
+allow access in the browser; `codex mcp list` then shows `Auth: OAuth`.
+
+For local testing use `CARTALYTIX_PUBLIC_URL=http://localhost:8080` (HTTP is
+allowed only for localhost outside production); Vite proxies the MCP paths.
+
 ## Checks
 
 ```powershell

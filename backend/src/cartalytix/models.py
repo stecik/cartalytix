@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -57,6 +58,65 @@ class UserSession(Base):
     __tablename__ = "user_sessions"
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class OAuthClient(Base):
+    """Dynamically registered MCP client (RFC 7591); the secret is encrypted at rest."""
+
+    __tablename__ = "oauth_clients"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    registration: Mapped[dict[str, Any]] = mapped_column(JSON)
+    encrypted_secret: Mapped[bytes | None] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class OAuthAuthorizationRequest(Base):
+    """Validated /authorize request waiting for the user's login and consent."""
+
+    __tablename__ = "oauth_authorization_requests"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    client_id: Mapped[str] = mapped_column(ForeignKey("oauth_clients.id"), index=True)
+    params: Mapped[dict[str, Any]] = mapped_column(JSON)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class OAuthGrant(Base):
+    """A user's consent for one MCP client; revoking it removes every token issued under it."""
+
+    __tablename__ = "oauth_grants"
+    __table_args__ = (UniqueConstraint("owner_id", "client_id"),)
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    client_id: Mapped[str] = mapped_column(ForeignKey("oauth_clients.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class OAuthCode(Base):
+    __tablename__ = "oauth_codes"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    client_id: Mapped[str] = mapped_column(ForeignKey("oauth_clients.id"), index=True)
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    params: Mapped[dict[str, Any]] = mapped_column(JSON)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    grant_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("oauth_grants.id", ondelete="SET NULL"), index=True
+    )
+
+
+class OAuthToken(Base):
+    """Opaque access or refresh token, stored only as a SHA-256 hash."""
+
+    __tablename__ = "oauth_tokens"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    grant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("oauth_grants.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16))
+    scopes: Mapped[list[str]] = mapped_column(JSON)
+    resource: Mapped[str] = mapped_column(String(512))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 

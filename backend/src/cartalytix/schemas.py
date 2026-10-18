@@ -327,6 +327,31 @@ class SuggestionsOutput(BaseModel):
     items: list[SuggestionOutput]
 
 
+class McpAuthorizationOutput(BaseModel):
+    client_name: str
+    redirect_host: str
+    scopes: list[str]
+
+
+class McpConsentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    approve: bool
+
+
+class McpConsentOutput(BaseModel):
+    redirect_url: str
+
+
+class McpGrantOutput(BaseModel):
+    id: UUID
+    client_name: str
+    created_at: datetime
+
+
+class McpGrantsOutput(BaseModel):
+    items: list[McpGrantOutput]
+
+
 class ProviderOutput(BaseModel):
     code: str
     name: str

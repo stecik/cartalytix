@@ -92,6 +92,10 @@ export default defineConfig({
         timeout: 180_000,
         proxyTimeout: 180_000,
       },
+      // MCP connector endpoints and their OAuth discovery documents.
+      "^/(mcp|\\.well-known/oauth-(protected-resource|authorization-server))(/|$)": {
+        target: process.env.API_PROXY_TARGET ?? "http://127.0.0.1:8000",
+      },
     },
   },
   test: { environment: "jsdom", clearMocks: true, restoreMocks: true },

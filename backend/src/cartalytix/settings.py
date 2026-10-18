@@ -1,7 +1,7 @@
 from ipaddress import ip_network
 from typing import Literal
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,9 +24,25 @@ class Settings(BaseSettings):
     login_attempts: int = Field(default=10, ge=1, le=100)
     login_window_seconds: int = Field(default=900, ge=60)
     token_key_file: str | None = None
+    bootstrap_password: SecretStr | None = None
+    # Public origin of this instance; enables the MCP connector. Never derived from Host headers.
+    public_url: AnyHttpUrl | None = None
+
+    @field_validator("public_url", mode="before")
+    @classmethod
+    def optional_public_url(cls, value: object) -> object:
+        # Compose passes an unset variable as an empty string.
+        return None if value == "" else value
 
     @model_validator(mode="after")
     def secure_production(self) -> Settings:
+        if self.public_url is not None:
+            url = self.public_url
+            if url.path not in (None, "", "/") or url.query or url.fragment or url.username:
+                raise ValueError("Public URL must be an origin without path, query or credentials")
+            local = url.host in {"localhost", "127.0.0.1", "[::1]"}
+            if url.scheme != "https" and (self.environment == "production" or not local):
+                raise ValueError("Public URL must use HTTPS")
         for proxy in self.trusted_proxy_hosts:
             network = ip_network(proxy, strict=False)
             if network.prefixlen == 0:

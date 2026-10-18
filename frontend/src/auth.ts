@@ -43,6 +43,11 @@ export async function signOut(client: QueryClient): Promise<void> {
   await clearSession(client);
 }
 
+/** In-app path to return to after sign-in; anything else falls back to the overview. */
+export function returnPath(value: unknown): string {
+  return typeof value === "string" && /^\/(?![/\\])/.test(value) ? value : "/";
+}
+
 export async function clearSession(client: QueryClient): Promise<void> {
   await client.cancelQueries();
   client.clear();

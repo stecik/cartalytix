@@ -16,8 +16,8 @@ afterEach(() => {
   document.documentElement.removeAttribute("data-theme");
 });
 
-function render(available: boolean, user: User | null = null) {
-  vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(Response.json(user)));
+function render(available: boolean, user: User | null = null, api?: typeof fetch) {
+  vi.stubGlobal("fetch", api ?? vi.fn<typeof fetch>().mockResolvedValue(Response.json(user)));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(sessionOptions.queryKey, user);
   const install = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
@@ -76,6 +76,33 @@ describe("settings appearance", () => {
       expect(localStorage.getItem("cartalytix-theme")).toBe(fail ? "light" : "dark");
       expect(client.getQueryData<User>(sessionOptions.queryKey)?.theme).toBe(fail ? "light" : "dark");
       expect(wrapper.find('[role="alert"]').exists()).toBe(fail);
+    } finally { wrapper.unmount(); client.clear(); }
+  });
+});
+
+describe("settings connected AI apps", () => {
+  it("lists MCP grants and revokes one after confirmation", async () => {
+    let items = [{ id: "grant-1", client_name: "ChatGPT", created_at: "2026-10-01T10:00:00Z" }];
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      if (String(input).endsWith("/mcp/grants/grant-1") && init?.method === "DELETE") {
+        items = [];
+        return new Response(null, { status: 204 });
+      }
+      return String(input).endsWith("/mcp/grants") ? Response.json({ items }) : Response.json(null);
+    });
+    const { wrapper, client } = render(false, null, fetchMock);
+    try {
+      await flushPromises();
+      expect(wrapper.get("#mcp-heading").text()).toBe("Connected AI apps");
+      expect(wrapper.text()).toContain("ChatGPT");
+      expect(wrapper.text()).toContain("/mcp");
+      const revoke = wrapper.findAll("button").find((button) => button.text() === "Revoke access");
+      await revoke?.trigger("click");
+      await wrapper.get(".app-dialog button.danger").trigger("click");
+      await flushPromises();
+      expect(fetchMock).toHaveBeenCalledWith("/api/v1/mcp/grants/grant-1", expect.objectContaining({ method: "DELETE" }));
+      expect(wrapper.find(".app-dialog").exists()).toBe(false);
+      expect(wrapper.text()).toContain("No apps are connected.");
     } finally { wrapper.unmount(); client.clear(); }
   });
 });

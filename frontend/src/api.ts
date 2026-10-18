@@ -188,6 +188,18 @@ export interface ReceiptPage {
   offset: number;
 }
 
+export interface McpAuthorization {
+  client_name: string;
+  redirect_host: string;
+  scopes: string[];
+}
+
+export interface McpGrant {
+  id: string;
+  client_name: string;
+  created_at: string;
+}
+
 export class ApiError extends Error {
   constructor(public readonly status: number, public readonly code?: string) {
     super(`HTTP ${status}`);

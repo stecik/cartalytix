@@ -9,6 +9,7 @@ import ItemsView from "./views/ItemsView.vue";
 import ItemDetailView from "./views/ItemDetailView.vue";
 import ConnectionsView from "./views/ConnectionsView.vue";
 import SettingsView from "./views/SettingsView.vue";
+import OAuthConsentView from "./views/OAuthConsentView.vue";
 
 export function createAppRouter(client: QueryClient) {
   const router = createRouter({
@@ -22,6 +23,7 @@ export function createAppRouter(client: QueryClient) {
       { path: "/items/detail", name: "item-detail", component: ItemDetailView },
       { path: "/connections", name: "connections", component: ConnectionsView },
       { path: "/settings", name: "settings", component: SettingsView },
+      { path: "/oauth/consent", name: "oauth-consent", component: OAuthConsentView },
       { path: "/:pathMatch(.*)*", redirect: "/" },
     ],
     scrollBehavior: () => ({ top: 0 }),
@@ -31,7 +33,8 @@ export function createAppRouter(client: QueryClient) {
       const user = await client.fetchQuery(sessionOptions);
       if (!user) {
         await clearSession(client);
-        if (to.name !== "login") return { name: "login" };
+        if (to.name !== "login")
+          return { name: "login", query: to.fullPath === "/" ? {} : { redirect: to.fullPath } };
       }
       if (user && to.name === "login") return { name: "overview" };
     } catch {

@@ -2,13 +2,14 @@ name: cartalytix
 
 x-backend: &backend
   build: ./backend
-  environment:
+  environment: &backend_environment
     CARTALYTIX_ENVIRONMENT: ${CARTALYTIX_ENVIRONMENT:-development}
     CARTALYTIX_DATABASE_URL: postgresql+psycopg://cartalytix:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/cartalytix
     CARTALYTIX_REDIS_URL: redis://redis:6379/0
     CARTALYTIX_ALLOWED_ORIGINS: '${CARTALYTIX_ALLOWED_ORIGINS:-["http://localhost:8080","http://127.0.0.1:8080","http://localhost:5173","http://127.0.0.1:5173"]}'
     CARTALYTIX_COOKIE_SECURE: ${CARTALYTIX_COOKIE_SECURE:-false}
     CARTALYTIX_TRUSTED_PROXY_HOSTS: '${CARTALYTIX_TRUSTED_PROXY_HOSTS:-[]}'
+    CARTALYTIX_PUBLIC_URL: ${CARTALYTIX_PUBLIC_URL:-}
     CARTALYTIX_TOKEN_KEY_FILE: /run/secrets/lidl_token_key
   secrets:
     - lidl_token_key
@@ -30,6 +31,9 @@ services:
 
   api:
     <<: *backend
+    environment:
+      <<: *backend_environment
+      CARTALYTIX_BOOTSTRAP_PASSWORD: ${CARTALYTIX_BOOTSTRAP_PASSWORD:-}
     shm_size: 256m
     command: ["uv", "run", "--no-sync", "uvicorn", "cartalytix.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
     ports:
