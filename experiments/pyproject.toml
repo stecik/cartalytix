@@ -9,13 +9,14 @@ dependencies = ["httpx>=0.28,<0.29", "keyring>=25,<26", "playwright>=1.55,<2"]
 cartalytix = "cartalytix.cli:main"
 mixit = "mixit.cli:main"
 boltfood = "boltfood.cli:main"
+wolt = "wolt.cli:main"
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["cartalytix", "mixit", "boltfood"]
+packages = ["cartalytix", "mixit", "boltfood", "wolt"]
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.12,<1"]

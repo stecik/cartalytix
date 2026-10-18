@@ -196,6 +196,26 @@ webu (`work/boltfood-session.json`). `work/boltfood-flow.json` obsahuje jen náz
 cest, parametrů a klíčů a příznak `challenge_seen`, tedy zda Bolt požadoval captchu.
 Web i export narážejí na 429 (`code=1005`); export čeká mezi požadavky 1 s.
 
+## Wolt
+
+Živě ověřeno 18. 10. 2026: přihlášení magic linkem z e-mailu (web nenabízí telefon),
+obnova tokenu `grant_type=refresh_token` funguje, 21 objednávek a všechny detaily.
+Historie `order-tracking-api/v1/order_history/?limit=50`, detail
+`order_history/purchase/{id}`. Součet položek = `items_price`; vzorec celku
+(doprava, poplatky, slevy, kredity) zatím neověřen.
+
+```powershell
+uv run --locked wolt login --browser chrome
+uv run --locked wolt export
+uv run --locked wolt refresh-check
+```
+
+Přihlášení probíhá ručně v okně wolt.com. Po otevření historie a detailu objednávky
+okno zavřete. `work/wolt-flow.json` obsahuje jen názvy cest, parametrů a klíčů a
+schémata odpovědí s objednávkami bez hodnot; raw odpovědi jsou v `data/wolt/`.
+Refresh token (Credential Manager `Cartalytix.Wolt`) se posílá jen na
+`authentication.wolt.com`. Export se doplní podle zachyceného schématu.
+
 ## Odhlášení
 
 `uv run cartalytix logout` odstraní pouze lokální refresh token. Neukončuje
