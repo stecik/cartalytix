@@ -16,6 +16,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response as StarletteResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from cartalytix.bolt_routes import router as bolt_router
 from cartalytix.connection_routes import connection_outputs
 from cartalytix.connection_routes import router as connection_router
 from cartalytix.dependencies import COOKIE_NAME, Db, Owner
@@ -47,6 +48,7 @@ PROVIDERS = (
     ("lidl", "Lidl"),
     ("mixit", "Mixit"),
     ("fermato", "Fermato"),
+    ("bolt", "Bolt Food"),
     ("albert", "Albert"),
     ("globus", "Globus"),
     ("rohlik", "Rohlik"),
@@ -151,6 +153,7 @@ def create_app(
     app.include_router(lidl_router)
     app.include_router(mixit_router)
     app.include_router(fermato_router)
+    app.include_router(bolt_router)
     app.include_router(stats_router)
     app.include_router(search_router)
     app.include_router(receipt_router)

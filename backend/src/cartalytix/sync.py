@@ -25,6 +25,9 @@ from cartalytix.models import (
     ReceiptItem,
     SyncRun,
 )
+from cartalytix.providers.bolt.client import BoltClient
+from cartalytix.providers.bolt.normalization import PARSER_VERSION as BOLT_PARSER_VERSION
+from cartalytix.providers.bolt.normalization import validate_order as validate_bolt_order
 from cartalytix.providers.common import ProviderError, ProviderPayload
 from cartalytix.providers.fermato.client import FermatoClient
 from cartalytix.providers.fermato.normalization import PARSER_VERSION as FERMATO_PARSER_VERSION
@@ -115,6 +118,16 @@ PROVIDERS: dict[str, ProviderSpec] = {
         id_key="code",
         detail_id=lambda detail: detail.get("id"),
         normalize=validate_fermato_order,
+    ),
+    "bolt": ProviderSpec(
+        merchant="Bolt Food",
+        parser_version=BOLT_PARSER_VERSION,
+        client=BoltClient,
+        list_key="orders",
+        total_key="totalRecords",
+        id_key="order_id",
+        detail_id=lambda detail: str(detail.get("order_id")),
+        normalize=validate_bolt_order,
     ),
 }
 
@@ -318,14 +331,17 @@ def _page(
     ):
         raise SyncError("history_incomplete")
     if any(
-        not isinstance(ticket, dict)
-        or not isinstance(ticket.get(spec.id_key), str)
-        or not ticket.get(spec.id_key)
-        or len(ticket.get(spec.id_key)) > 256
-        for ticket in tickets
+        not isinstance(ticket, dict) or not _valid_id(ticket.get(spec.id_key)) for ticket in tickets
     ):
         raise SyncError("history_incomplete")
     return tickets, total
+
+
+def _valid_id(value: object) -> bool:
+    # Bolt uses numeric order ids; they are stored as their decimal string form.
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value >= 0
+    return isinstance(value, str) and 0 < len(value) <= 256
 
 
 def _history(
@@ -371,7 +387,7 @@ def _history(
     check = client.page(1)
     _raw(engine, connection_id, f"list:{run_id}:check", check, spec.parser_version)
     tickets, check_total = _page(check, spec)
-    if ([ticket.get(spec.id_key) for ticket in tickets], check_total) != first_signature:
+    if ([str(ticket.get(spec.id_key)) for ticket in tickets], check_total) != first_signature:
         raise SyncError("history_incomplete")
     return summaries
 
@@ -551,7 +567,14 @@ def run_sync(
                 if normalized.get("issues"):
                     quality_failed = True
                     continue
-                _save_receipt(engine, connection_id, identifier, raw_id, normalized, spec.merchant)
+                _save_receipt(
+                    engine,
+                    connection_id,
+                    identifier,
+                    raw_id,
+                    normalized,
+                    normalized.get("merchant") or spec.merchant,
+                )
                 with Session(engine) as db, db.begin():
                     run = db.get(SyncRun, run_id)
                     if run is not None:

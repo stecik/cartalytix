@@ -89,6 +89,7 @@ class ProviderCode(StrEnum):
     LIDL = "lidl"
     MIXIT = "mixit"
     FERMATO = "fermato"
+    BOLT = "bolt"
 
 
 class ConnectionInput(BaseModel):
@@ -114,6 +115,21 @@ class LidlLoginInput(BaseModel):
     model_config = {"extra": "forbid"}
     email: EmailStr
     password: SecretStr = Field(min_length=1, max_length=1024)
+
+
+class BoltLoginInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    phone: str = Field(pattern=r"^\+[1-9]\d{7,14}$")
+
+
+class BoltLoginOutput(BaseModel):
+    flow_id: str
+
+
+class BoltVerificationInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    flow_id: SecretStr = Field(min_length=1, max_length=2048)
+    code: SecretStr = Field(min_length=1, max_length=16)
 
 
 class MixitLoginInput(BaseModel):
