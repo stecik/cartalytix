@@ -216,6 +216,28 @@ schémata odpovědí s objednávkami bez hodnot; raw odpovědi jsou v `data/wolt
 Refresh token (Credential Manager `Cartalytix.Wolt`) se posílá jen na
 `authentication.wolt.com`. Export se doplní podle zachyceného schématu.
 
+## Kaufland Card
+
+Živě ověřeno 19. 10. 2026 (CZ): přihlášení v okně account.kaufland.com (cidaas,
+OAuth2 + PKCE, klient mobilní aplikace, návrat `com.kaufland.kaufland://oauth/callback`),
+obnova tokenu funguje, access token platí 24 h. Účet měl v historii 1 účtenku;
+stránkování přes 50 účtenek zatím neověřeno.
+Seznam `GET https://p.crm-dynamics.schwarz/api/v2/customers/{sub}/transactions`
+(`start`, `limit=50`, `country=CZ`, `version=2`, hlavičky `client-id`, `app-platform`,
+`app-version`) vrací rovnou celé účtenky: `positions` (název, GTIN, množství,
+jednotková a řádková cena), `refundPositions`, `promotions`, `taxes`, `store`,
+`sum`, `saving`. Částky v haléřích. Součet `positions[].total` = `sum`.
+
+```powershell
+uv run --locked kaufland login --browser chrome
+uv run --locked kaufland export
+uv run --locked kaufland refresh-check
+```
+
+E-mail, heslo i kód zadávejte jen v okně Kaufland. Refresh token a `sub` jsou
+v Credential Manageru (`Cartalytix.Kaufland`). Export do `data/kaufland/CZ/<profil>/`.
+V historii jsou jen nákupy s naskenovanou Kaufland Card.
+
 ## Odhlášení
 
 `uv run cartalytix logout` odstraní pouze lokální refresh token. Neukončuje
