@@ -157,6 +157,7 @@ class ProviderCode(StrEnum):
     NEJKAFE = "nejkafe"
     BOLT = "bolt"
     WOLT = "wolt"
+    KAUFLAND = "kaufland"
 
 
 class ShoptetShop(StrEnum):

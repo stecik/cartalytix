@@ -204,8 +204,11 @@ def _manage_connection(
             raise HTTPException(409, "connection_busy")
         # The row lock also serializes scheduling/enqueueing against lifecycle changes.
         connection = owned_connection(db, identifier, owner_id, provider, lock=True)
-        if action in {"disconnect", "remove"} and provider == ProviderCode.LIDL:
-            sessions = cast(LoginSessions, request.app.state.lidl_logins)
+        if action in {"disconnect", "remove"} and provider in {
+            ProviderCode.LIDL,
+            ProviderCode.KAUFLAND,
+        }:
+            sessions = cast(LoginSessions, getattr(request.app.state, f"{provider}_logins"))
             try:
                 sessions.cancel_connection(owner_id, identifier)
             except LoginError as error:

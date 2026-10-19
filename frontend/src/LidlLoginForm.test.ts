@@ -80,4 +80,23 @@ describe("Lidl account login", () => {
     expect(failed.html()).not.toContain("private-");
     failed.unmount();
   });
+
+  it("serves Kaufland Card with its own endpoint and wording", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      Response.json({ error: { code: "credentials_rejected", message: "private-provider-text" } }, { status: 422 }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const wrapper = mount(LidlLoginForm, {
+      props: { connectionId: "account-2", provider: "kaufland" },
+      global: { plugins: [createAppI18n("en")] },
+    });
+    expect(wrapper.text()).toContain("Kaufland Card email");
+    await wrapper.get('input[type="email"]').setValue("owner@example.com");
+    await wrapper.get('input[type="password"]').setValue("private-password");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/providers/kaufland/connections/account-2/login", expect.objectContaining({ method: "POST" }));
+    expect(wrapper.get('[role="alert"]').text()).toContain("Kaufland rejected");
+    wrapper.unmount();
+  });
 });

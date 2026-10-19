@@ -24,11 +24,13 @@ from cartalytix.connection_routes import router as connection_router
 from cartalytix.dependencies import COOKIE_NAME, ActiveUser, Db, Owner, SessionUser
 from cartalytix.i18n import translate
 from cartalytix.item_routes import router as item_router
+from cartalytix.kaufland_routes import router as kaufland_router
 from cartalytix.lidl_routes import router as lidl_router
 from cartalytix.mcp_server import create_mcp
 from cartalytix.mixit_routes import router as mixit_router
 from cartalytix.models import ProviderConnection, User, UserSession
 from cartalytix.oauth import router as oauth_router
+from cartalytix.providers.kaufland.client import KauflandLogin
 from cartalytix.providers.lidl.login_sessions import LoginSessions
 from cartalytix.receipt_routes import router as receipt_router
 from cartalytix.schemas import (
@@ -61,6 +63,7 @@ PROVIDERS = (
     ("nejkafe", "Nejkafe"),
     ("bolt", "Bolt Food"),
     ("wolt", "Wolt"),
+    ("kaufland", "Kaufland"),
     ("albert", "Albert"),
     ("globus", "Globus"),
     ("rohlik", "Rohlik"),
@@ -128,6 +131,7 @@ def create_app(
     )
     redis = Redis.from_url(config.redis_url, socket_connect_timeout=2, socket_timeout=2)
     lidl_logins = LoginSessions()
+    kaufland_logins = LoginSessions(factory=KauflandLogin)
     mcp = create_mcp(database, config) if config.public_url is not None else None
     # Bearer-authenticated endpoints called by MCP clients, not by the cookie-based web app.
     token_paths = {"/mcp", *(f"/api/v1/oauth/{name}" for name in ("token", "register", "revoke"))}
@@ -138,6 +142,7 @@ def create_app(
             while True:
                 await asyncio.sleep(30)
                 await asyncio.to_thread(lidl_logins.cleanup)
+                await asyncio.to_thread(kaufland_logins.cleanup)
 
         sweeper = asyncio.create_task(expire_logins())
         try:
@@ -149,6 +154,7 @@ def create_app(
             with suppress(asyncio.CancelledError):
                 await sweeper
             _app.state.lidl_logins.close()
+            _app.state.kaufland_logins.close()
             redis.close()
             if engine is None:
                 database.dispose()
@@ -160,6 +166,7 @@ def create_app(
     app.state.redis = redis
     app.state.settings = config
     app.state.lidl_logins = lidl_logins
+    app.state.kaufland_logins = kaufland_logins
     app.state.limiter = limiter or RedisLoginLimiter(redis, config)
     app.state.mcp_urls = mcp.urls if mcp else None
     app.include_router(connection_router)
@@ -167,6 +174,7 @@ def create_app(
     app.include_router(mixit_router)
     app.include_router(bolt_router)
     app.include_router(wolt_router)
+    app.include_router(kaufland_router)
     app.include_router(shoptet_router)
     app.include_router(stats_router)
     app.include_router(search_router)
