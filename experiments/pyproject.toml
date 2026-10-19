@@ -3,13 +3,19 @@ name = "cartalytix"
 version = "0.1.0"
 description = "Experimental, local-only Czech Lidl Plus receipt export"
 requires-python = ">=3.12"
-dependencies = ["httpx>=0.28,<0.29", "keyring>=25,<26", "playwright>=1.55,<2"]
+dependencies = [
+    "httpx>=0.28,<0.29",
+    "keyring>=25,<26",
+    "pdfminer-six>=20260107,<20270000",
+    "playwright>=1.55,<2",
+]
 
 [project.scripts]
 cartalytix = "cartalytix.cli:main"
 mixit = "mixit.cli:main"
 boltfood = "boltfood.cli:main"
 wolt = "wolt.cli:main"
+globus = "globus.cli:main"
 kaufland = "kaufland.cli:main"
 
 [build-system]
@@ -17,7 +23,7 @@ requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["cartalytix", "mixit", "boltfood", "wolt", "kaufland"]
+packages = ["cartalytix", "mixit", "boltfood", "wolt", "kaufland", "globus"]
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.12,<1"]
