@@ -601,6 +601,7 @@ class ProviderOutput(BaseModel):
     code: str
     name: str
     status: Literal["available", "not_implemented"] = "not_implemented"
+    connection_count: int = 0
 
 
 class ProvidersOutput(BaseModel):

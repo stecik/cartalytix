@@ -10,15 +10,15 @@ const account = {
   next_sync_at: null, latest_sync: null, receipt_count: 7,
 };
 
-function render(items: object[] = []) {
+const defaultProviders = [
+  { code: "lidl", name: "Lidl", status: "available", connection_count: 0 },
+  { code: "albert", name: "Albert", status: "not_implemented", connection_count: 0 },
+];
+
+function render(items: object[] = [], providers: object[] = defaultProviders) {
   const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
     const path = String(input);
-    if (path.endsWith("/providers")) {
-      return Response.json({ items: [
-        { code: "lidl", name: "Lidl", status: "available" },
-        { code: "albert", name: "Albert", status: "not_implemented" },
-      ] });
-    }
+    if (path.endsWith("/providers")) return Response.json({ items: providers });
     if (init?.method === "POST" && path.endsWith("/connections")) {
       return Response.json({ ...account, ...JSON.parse(String(init.body)), status: "not_connected" }, { status: 201 });
     }
@@ -46,6 +46,26 @@ describe("Lidl connections", () => {
     const albert = wrapper.findAll(".upcoming-store").find((row) => row.text().includes("Albert"));
     expect(albert?.text()).toContain("Coming soon");
     expect(albert?.find("button").exists()).toBe(false);
+    wrapper.unmount(); client.clear();
+  });
+
+  it("lists connected stores first, offers the five most used others and searches the rest", async () => {
+    const store = (code: string, name: string, connection_count: number) => ({ code, name, status: "available", connection_count });
+    const { wrapper, client } = render([{ ...account, provider: "wolt" }], [
+      store("wolt", "Wolt", 1), store("globus", "Globus", 9), store("bolt", "Bolt Food", 2), store("mixit", "Mixit", 2),
+      store("kaufland", "Kaufland", 7), store("lidl", "Lidl", 30), store("fermato", "Fermato", 0), store("foodora", "Foodora", 0),
+      { code: "albert", name: "Albert", status: "not_implemented", connection_count: 0 },
+    ]);
+    await flushPromises();
+    expect(wrapper.findAll(".connected-store h2").map((heading) => heading.text())).toEqual(["Wolt"]);
+    const offered = () => wrapper.findAll(".store-option span").map((name) => name.text());
+    expect(offered()).toEqual(["Lidl Plus", "Globus", "Kaufland", "Bolt Food", "Mixit"]);
+    await wrapper.get('input[data-search="stores"]').setValue("FOOD");
+    expect(offered()).toEqual(["Bolt Food", "Foodora"]);
+    expect(wrapper.find(".upcoming-store").exists()).toBe(false);
+    await wrapper.get('input[data-search="stores"]').setValue("albert");
+    expect(wrapper.find(".store-option").exists()).toBe(false);
+    expect(wrapper.get(".upcoming-store").text()).toContain("Albert");
     wrapper.unmount(); client.clear();
   });
 

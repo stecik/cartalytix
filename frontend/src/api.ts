@@ -269,6 +269,7 @@ export interface Provider {
   code: string;
   name: string;
   status: string;
+  connection_count: number;
 }
 
 export interface Connection {

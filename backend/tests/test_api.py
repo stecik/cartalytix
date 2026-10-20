@@ -292,3 +292,6 @@ def test_health_and_disabled_providers(client: TestClient) -> None:
     providers = client.get("/api/v1/providers").json().get("items")
     assert len(providers) == 12
     assert all(provider.get("status") == "not_implemented" for provider in providers)
+    counts = {provider.get("code"): provider.get("connection_count") for provider in providers}
+    assert counts.get("lidl") == 2
+    assert counts.get("albert") == 0

@@ -4,6 +4,10 @@ function fold(character: string): string {
   return character.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 }
 
+export function matches(text: string, term: string): boolean {
+  return [...text].map(fold).join("").includes([...term.trim()].map(fold).join(""));
+}
+
 export interface Segment {
   text: string;
   match: boolean;

@@ -10,7 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from redis import Redis
 from redis.exceptions import RedisError
-from sqlalchemy import Engine, create_engine, delete, select, text
+from sqlalchemy import Engine, create_engine, delete, func, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response as StarletteResponse
@@ -362,7 +362,16 @@ def create_app(
         )
 
     @app.get("/api/v1/providers", response_model=ProvidersOutput)
-    def providers() -> ProvidersOutput:
+    def providers(db: Db) -> ProvidersOutput:
+        counts: dict[str, int] = dict(
+            db.execute(
+                select(ProviderConnection.provider, func.count()).group_by(
+                    ProviderConnection.provider
+                )
+            )
+            .tuples()
+            .all()
+        )
         return ProvidersOutput(
             items=[
                 ProviderOutput(
@@ -371,6 +380,7 @@ def create_app(
                     status="available"
                     if code in ProviderCode and config.token_key_file
                     else "not_implemented",
+                    connection_count=counts.get(code, 0),
                 )
                 for code, name in PROVIDERS
             ]
