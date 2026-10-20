@@ -27,8 +27,28 @@ def accounting(
     owner_id: UUID, receipt_ids: list[UUID] | Select[UUID] | None = None
 ) -> tuple[CTE, CTE]:
     """Return item and receipt amounts; exclusions never change original allocation weights."""
+    # Receipt-level sums are index lookups carried down the item chain: joining the item rows back
+    # to receipt CTEs made the planner, misled by small row estimates, rescan them per item.
+    discount_total = (
+        select(func.sum(Discount.amount))
+        .where(Discount.receipt_id == Receipt.id)
+        .correlate(Receipt)
+        .scalar_subquery()
+    )
+    unlinked_discount = (
+        select(func.coalesce(func.sum(Discount.amount), 0))
+        .where(Discount.receipt_id == Receipt.id, Discount.item_id.is_(None))
+        .correlate(Receipt)
+        .scalar_subquery()
+    )
     receipt_query = (
-        select(Receipt.id, Receipt.total_amount, Receipt.is_excluded)
+        select(
+            Receipt.id,
+            Receipt.total_amount,
+            Receipt.is_excluded,
+            discount_total.label("discount_amount"),
+            unlinked_discount.label("unlinked_discount"),
+        )
         .join(ProviderConnection, Receipt.connection_id == ProviderConnection.id)
         .where(ProviderConnection.owner_id == owner_id)
     )
@@ -41,18 +61,6 @@ def accounting(
         .where(Discount.item_id.is_not(None))
         .group_by(Discount.item_id)
         .cte("accounting_item_discounts")
-    )
-    receipt_discounts = (
-        select(
-            Discount.receipt_id,
-            func.sum(Discount.amount).label("amount"),
-            func.sum(case((Discount.item_id.is_(None), Discount.amount), else_=0)).label(
-                "unlinked_amount"
-            ),
-        )
-        .join(owned_receipts, Discount.receipt_id == owned_receipts.c.id)
-        .group_by(Discount.receipt_id)
-        .cte("accounting_receipt_discounts")
     )
     linked_discount = func.coalesce(item_discounts.c.amount, 0)
     base_amount = ReceiptItem.total_amount - linked_discount
@@ -70,6 +78,8 @@ def accounting(
                 ReceiptItem.is_excluded.is_(False),
                 ~product_excluded(owner_id),
             ).label("is_included"),
+            owned_receipts.c.total_amount.label("receipt_total"),
+            owned_receipts.c.unlinked_discount,
         )
         .join(Receipt, ReceiptItem.receipt_id == Receipt.id)
         .join(owned_receipts, Receipt.id == owned_receipts.c.id)
@@ -112,42 +122,37 @@ def accounting(
     previous_share = (
         weighted_items.c.cumulative_weight - weighted_items.c.weight
     ) / weighted_items.c.weight_total
-    receipt_discount = func.coalesce(receipt_discounts.c.unlinked_amount, 0)
+    receipt_discount = weighted_items.c.unlinked_discount
     discount_share = cast(
         func.round(receipt_discount * cumulative_share, 2)
         - func.round(receipt_discount * previous_share, 2),
         MONEY,
     )
     # Reconciliation differences stay separate from discounts and follow fixed original weights.
-    residual = owned_receipts.c.total_amount - (weighted_items.c.base_total - receipt_discount)
+    residual = weighted_items.c.receipt_total - (weighted_items.c.base_total - receipt_discount)
     residual_share = cast(
         func.round(residual * cumulative_share, 2) - func.round(residual * previous_share, 2), MONEY
     )
     net_amount = cast(
         weighted_items.c.base_amount + weighted_items.c.deposit_amount - discount_share, MONEY
     )
-    item_amounts = (
-        select(
-            weighted_items.c.id,
-            weighted_items.c.receipt_id,
-            weighted_items.c.position,
-            net_amount.label("net_amount"),
-            case(
-                (weighted_items.c.is_included, net_amount + residual_share), else_=Decimal(0)
-            ).label("included_amount"),
-            case(
-                (weighted_items.c.is_included, weighted_items.c.linked_discount + discount_share),
-                else_=Decimal(0),
-            ).label("included_discount_amount"),
-            case(
-                (weighted_items.c.is_included, net_amount + residual_share), else_=Decimal(0)
-            ).label("receipt_component_amount"),
-            weighted_items.c.is_included,
-        )
-        .join(owned_receipts, weighted_items.c.receipt_id == owned_receipts.c.id)
-        .outerjoin(receipt_discounts, weighted_items.c.receipt_id == receipt_discounts.c.receipt_id)
-        .cte("accounting_item_amounts")
-    )
+    item_amounts = select(
+        weighted_items.c.id,
+        weighted_items.c.receipt_id,
+        weighted_items.c.position,
+        net_amount.label("net_amount"),
+        case((weighted_items.c.is_included, net_amount + residual_share), else_=Decimal(0)).label(
+            "included_amount"
+        ),
+        case(
+            (weighted_items.c.is_included, weighted_items.c.linked_discount + discount_share),
+            else_=Decimal(0),
+        ).label("included_discount_amount"),
+        case((weighted_items.c.is_included, net_amount + residual_share), else_=Decimal(0)).label(
+            "receipt_component_amount"
+        ),
+        weighted_items.c.is_included,
+    ).cte("accounting_item_amounts")
     item_totals = (
         select(
             item_amounts.c.receipt_id,
@@ -169,7 +174,7 @@ def accounting(
             case(
                 (owned_receipts.c.is_excluded, Decimal(0)),
                 else_=func.coalesce(
-                    item_totals.c.discount_amount, receipt_discounts.c.amount, Decimal(0)
+                    item_totals.c.discount_amount, owned_receipts.c.discount_amount, Decimal(0)
                 ),
             ).label("included_discount_amount"),
             and_(
@@ -178,7 +183,6 @@ def accounting(
             ).label("is_included"),
         )
         .outerjoin(item_totals, owned_receipts.c.id == item_totals.c.receipt_id)
-        .outerjoin(receipt_discounts, owned_receipts.c.id == receipt_discounts.c.receipt_id)
         .cte("accounting_receipt_amounts")
     )
     return item_amounts, receipt_amounts

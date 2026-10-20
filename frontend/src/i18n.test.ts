@@ -23,4 +23,13 @@ describe("localization", () => {
     expect(i18n.global.t("receiptCount", 3)).toBe("3 účtenky");
     expect(i18n.global.t("receiptCount", 5)).toBe("5 účtenek");
   });
+
+  it("gives every Czech plural the four forms its plural rule selects", () => {
+    for (const key of Object.keys(messages.en) as Array<keyof typeof messages.en>) {
+      if (!messages.en[key].includes(" | ")) continue;
+      expect(messages.cs[key].split(" | "), key).toHaveLength(4);
+    }
+    const i18n = createAppI18n("cs");
+    expect(i18n.global.t("exclusionCount", 113)).toBe("113 vyřazení");
+  });
 });

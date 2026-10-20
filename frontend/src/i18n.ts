@@ -668,7 +668,7 @@ const cs: Catalog = {
   globalExclusionRemoved: "Globální vyřazení zrušeno.",
   occurrenceExclusionRemoved: "Jednorázové vyřazení zrušeno.",
   otherExclusionsRemain: "Další vyřazení zůstávají:",
-  exclusionCount: "Žádná vyřazení | {count} vyřazení | {count} vyřazení",
+  exclusionCount: "Žádná vyřazení | {count} vyřazení | {count} vyřazení | {count} vyřazení",
   noMatchingExclusions: "Žádná vyřazení neodpovídají těmto filtrům.",
   exclusionRegistryHint: "Celé vyřazené účtenky najdete samostatně:",
   excludedReceipts: "Zobrazit vyřazené účtenky",
