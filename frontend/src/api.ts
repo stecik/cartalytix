@@ -7,6 +7,7 @@ export interface User {
   receipt_view: "rendered" | "detailed";
   theme: ThemePreference;
   dashboard_period: PresetPeriod;
+  dashboard_category_slices: number;
   is_admin: boolean;
   must_change_password: boolean;
 }
@@ -252,7 +253,16 @@ export interface Stats {
   merchants: MerchantStats[];
   frequent_items: ItemStats[];
   top_spend_items: ItemStats[];
+  categories: CategoryStats[];
   weekly_hours: number[][];
+}
+
+/** One category's share of the period; null id and name stand for uncategorized products. */
+export interface CategoryStats {
+  category_id: string | null;
+  name: string | null;
+  purchase_count: number;
+  amount: string;
 }
 
 export interface Provider {

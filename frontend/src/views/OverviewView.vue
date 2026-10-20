@@ -29,6 +29,9 @@ const SpendingChart = defineAsyncComponent(
 const ShoppingHeatmap = defineAsyncComponent(
   () => import("../components/ShoppingHeatmap.vue"),
 );
+const CategoryBreakdown = defineAsyncComponent(
+  () => import("../components/CategoryBreakdown.vue"),
+);
 
 const PERIODS: readonly StatsPeriod[] = [...PRESET_PERIODS, "custom"];
 
@@ -136,8 +139,14 @@ const merchantRows = computed<RankedRow[]>(() =>
     value: Number(merchant.amount),
     display: money(merchant.amount),
     detail: t("receiptCount", merchant.receipt_count),
+    to: { name: "receipts", query: { q: merchant.merchant } },
   })),
 );
+// Item statistics cover the main currency only, so it completes the product identity.
+function itemRoute(name: string): RankedRow["to"] {
+  const currency = stats.data.value?.currency;
+  return currency ? { name: "item-detail", query: { name, currency } } : undefined;
+}
 const frequentRows = computed<RankedRow[]>(() =>
   (stats.data.value?.frequent_items ?? []).map((item) => ({
     key: item.name,
@@ -145,6 +154,7 @@ const frequentRows = computed<RankedRow[]>(() =>
     value: item.receipt_count,
     display: `${formatCount(item.receipt_count)}×`,
     detail: money(item.amount),
+    to: itemRoute(item.name),
   })),
 );
 const spendRows = computed<RankedRow[]>(() =>
@@ -154,6 +164,7 @@ const spendRows = computed<RankedRow[]>(() =>
     value: Number(item.amount),
     display: money(item.amount),
     detail: t("receiptCount", item.receipt_count),
+    to: itemRoute(item.name),
   })),
 );
 
@@ -275,6 +286,18 @@ function selectDate(edge: "from" | "to", value: string): void {
             @select="bucket = $event"
           />
           <p v-else class="panel-empty">{{ t("noStatsData") }}</p>
+        </section>
+
+        <section v-if="stats.data.value.currency && stats.data.value.categories.length" class="panel">
+          <div class="section-heading">
+            <h2>{{ t("categories") }}</h2>
+            <span class="panel-hint">{{ t("categorySharesHint") }}</span>
+          </div>
+          <CategoryBreakdown
+            :categories="stats.data.value.categories"
+            :currency="stats.data.value.currency"
+            :slices="session.data.value?.dashboard_category_slices ?? 9"
+          />
         </section>
 
         <div class="panel-grid">

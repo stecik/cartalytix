@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from hashlib import sha256
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -11,7 +12,15 @@ from test_api import client as client
 from test_api import engine as engine
 from test_api import login
 
-from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem
+from cartalytix.models import (
+    Category,
+    CategoryMembership,
+    CategoryProduct,
+    Discount,
+    ProviderConnection,
+    Receipt,
+    ReceiptItem,
+)
 
 PRAGUE = ZoneInfo("Europe/Prague")
 URL = "/api/v1/overview/stats"
@@ -225,6 +234,56 @@ def test_merchants_and_top_items(client: TestClient, engine: Engine) -> None:
     assert "Kaviár" not in {item.get("name") for item in frequent}
 
 
+def categorize(engine: Engine, category: str, products: list[str], connection: str) -> None:
+    with Session(engine) as db:
+        owner_id = db.scalar(
+            select(ProviderConnection.owner_id).where(ProviderConnection.name == connection)
+        )
+        assert owner_id is not None
+        row = Category(owner_id=owner_id, name=category, name_key=category.casefold())
+        db.add(row)
+        for product in products:
+            identity = CategoryProduct(
+                connection_id=connection_id(engine, connection),
+                name=product,
+                name_hash=sha256(product.encode()).hexdigest(),
+                currency="CZK",
+                assignment_source="manual",
+            )
+            db.add(identity)
+            db.flush()
+            db.add(CategoryMembership(category_id=row.id, product_id=identity.id))
+        db.commit()
+
+
+def test_category_shares_by_purchases_and_spending(client: TestClient, engine: Engine) -> None:
+    now = datetime.now(UTC)
+    add_receipt(engine, "a", now, "30.00", items=[("Rohlík", "5.00"), ("Sýr", "25.00")])
+    add_receipt(engine, "b", now, "35.00", items=[("Rohlík", "5.00"), ("Víno", "30.00")])
+    add_receipt(engine, "old", now - timedelta(days=400), "9.00", items=[("Rohlík", "9.00")])
+    add_receipt(engine, "d", now, "500.00", items=[("Kaviár", "500.00")], connection="Private Lidl")
+    login(client)
+    assert client.get(URL).json().get("categories") == []
+
+    categorize(engine, "Pečivo", ["Rohlík"], "My Lidl")
+    categorize(engine, "Nápoje", ["Víno"], "My Lidl")
+    categorize(engine, "Luxus", ["Kaviár"], "Private Lidl")
+    categories = client.get(URL).json().get("categories", [])
+    by_name = {category.get("name"): category for category in categories}
+    assert set(by_name) == {"Nápoje", "Pečivo", None}
+    assert {name: row.get("purchase_count") for name, row in by_name.items()} == {
+        "Nápoje": 1,
+        "Pečivo": 2,
+        None: 1,
+    }
+    assert by_name.get("Nápoje", {}).get("amount") == "30.00"
+    assert by_name.get("Pečivo", {}).get("amount") == "10.00"
+    assert by_name.get(None, {}).get("category_id") is None
+    everything = client.get(f"{URL}?period=all").json().get("categories", [])
+    pecivo = next(row for row in everything if row.get("name") == "Pečivo")
+    assert pecivo.get("purchase_count") == 3
+
+
 def test_stats_query_count_is_bounded(client: TestClient, engine: Engine) -> None:
     login(client)
     queries: list[str] = []
@@ -243,7 +302,7 @@ def test_stats_query_count_is_bounded(client: TestClient, engine: Engine) -> Non
     assert client.get(URL).status_code == 200
     small = len(queries)
     # User lookup plus fixed aggregates; receipts are never loaded row by row.
-    assert small <= 8
+    assert small <= 9
     event.remove(engine, "before_cursor_execute", track)
     now = datetime.now(UTC)
     for number in range(20):

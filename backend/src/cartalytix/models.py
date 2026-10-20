@@ -51,6 +51,8 @@ class User(Base):
     )
     theme: Mapped[str] = mapped_column(String(16), default="system", server_default="system")
     dashboard_period: Mapped[str] = mapped_column(String(16), default="12m", server_default="12m")
+    # Segments of the dashboard category charts, the last one folding the remaining categories.
+    dashboard_category_slices: Mapped[int] = mapped_column(Integer, default=9, server_default="9")
     # Administrators only manage accounts; they never own connections or receipts.
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     is_disabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))

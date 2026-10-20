@@ -5,7 +5,7 @@ import type { User } from "./api";
 import { sessionOptions } from "./auth";
 import { setTheme, themePreference } from "./theme";
 
-export type UserSettings = Partial<Pick<User, "locale" | "receipt_view" | "theme" | "dashboard_period">>;
+export type UserSettings = Partial<Pick<User, "locale" | "receipt_view" | "theme" | "dashboard_period" | "dashboard_category_slices">>;
 
 export function useUserSettings() {
   const client = useQueryClient();

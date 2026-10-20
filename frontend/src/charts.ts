@@ -1,4 +1,4 @@
-import { BarChart, HeatmapChart, LineChart } from "echarts/charts";
+import { BarChart, HeatmapChart, LineChart, PieChart } from "echarts/charts";
 import {
   GridComponent,
   TooltipComponent,
@@ -14,6 +14,7 @@ use([
   BarChart,
   LineChart,
   HeatmapChart,
+  PieChart,
   GridComponent,
   TooltipComponent,
   VisualMapContinuousComponent,
@@ -22,8 +23,10 @@ use([
 interface ChartTheme {
   chartColors: Record<
     "green" | "greenHover" | "faded" | "sage" | "muted" | "line" | "paper" |
-    "heatLow" | "area" | "pointer", string
+    "heatLow" | "area" | "pointer" | "uncategorized", string
   >;
+  /** Fixed categorical order; anything past it folds into a neutral "other". */
+  categoryColors: string[];
   tooltipStyle: TooltipComponentOption;
   axisLabelStyle: { color: string; fontFamily: string; fontSize: number };
 }
@@ -48,9 +51,11 @@ export function getChartTheme(): ChartTheme {
     heatLow: color("--surface-search-hover"),
     area: color("--shadow-green-06"),
     pointer: color("--shadow-green-05"),
+    uncategorized: color("--chart-uncategorized"),
   };
   return {
     chartColors,
+    categoryColors: [1, 2, 3, 4, 5, 6, 7, 8].map((slot) => color(`--chart-category-${slot}`)),
     tooltipStyle: {
       backgroundColor: color("--surface-input"),
       borderColor: chartColors.line,
@@ -65,6 +70,11 @@ export function getChartTheme(): ChartTheme {
       fontSize: 11,
     },
   };
+}
+
+/** Tooltip formatters return HTML, so names from receipts or users must be escaped. */
+export function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
 }
 
 export interface StepPoint {

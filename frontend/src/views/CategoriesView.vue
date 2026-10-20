@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
+import { useRoute, useRouter } from "vue-router";
 import { request } from "../api";
 import type { Category, CategoryAssignmentResponse, CategoryAssignmentResult, CategoryItem, CategoryItemKey, CategoryItemPage, CategoryItemSnapshot, CategoryPage } from "../api";
 import AppDialog from "../components/AppDialog.vue";
@@ -11,6 +12,8 @@ import QueryState from "../components/QueryState.vue";
 
 interface UndoAssignment { items: CategoryItemSnapshot[]; expected_category_id: string | null }
 const { t } = useI18n();
+const route = useRoute();
+const router = useRouter();
 const client = useQueryClient();
 const categorySearch = ref("");
 const categoryQuery = ref("");
@@ -27,8 +30,16 @@ const categories = useQuery({
 });
 const search = ref("");
 const query = ref("");
-const filter = ref("");
-const filterName = ref("");
+// The active filter lives in the URL so other pages can link to one category.
+function routeValue(key: "category" | "name"): string {
+  const value = route.query[key];
+  return typeof value === "string" ? value : "";
+}
+const filter = computed(() => routeValue("category"));
+const filterName = computed(() => routeValue("name"));
+function setFilter(categoryId: string, name = ""): void {
+  void router.replace({ query: categoryId ? { category: categoryId, ...(name ? { name } : {}) } : {} });
+}
 const activeCategoryLabel = computed(() => filter.value === "uncategorized" ? t("uncategorized") : filter.value ? filterName.value : t("allCategories"));
 const cursors = ref<string[]>([""]);
 const cursor = computed(() => cursors.value.at(-1) ?? "");
@@ -85,8 +96,7 @@ function nextPage(): void {
 }
 function chooseFilter(categoryId: string, name = ""): void {
   if (busy.value) return;
-  filter.value = categoryId;
-  filterName.value = name;
+  setFilter(categoryId, name);
   categoryBrowserOpen.value = false;
 }
 async function refresh(): Promise<void> {
@@ -102,7 +112,7 @@ const save = useMutation({
     method: category ? "PATCH" : "POST", body: JSON.stringify({ name: name.trim() }),
   }),
   onSuccess: async (category) => {
-    if (category.id === filter.value) filterName.value = category.name;
+    if (category.id === filter.value) setFilter(category.id, category.name);
     editing.value = null; await refresh();
   },
   onSettled: () => { changing.value = false; },
@@ -120,7 +130,7 @@ const remove = useMutation({
   mutationFn: (category: Category) => request<void>("/categories/" + encodeURIComponent(category.id), { method: "DELETE" }),
   onSuccess: async (_result, category) => {
     deleting.value = null;
-    if (filter.value === category.id) filter.value = "";
+    if (filter.value === category.id) setFilter("");
     selected.value = [];
     await refresh();
   },

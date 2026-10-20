@@ -4,7 +4,7 @@ import { computed, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
 import VChart from "vue-echarts";
 import type { BucketStats, StatsGranularity } from "../api";
-import { getChartTheme } from "../charts";
+import { escapeHtml, getChartTheme } from "../charts";
 import { formatDay, formatLongDay, formatLongMonth, formatMoney, formatMonth } from "../stats";
 
 const props = defineProps<{
@@ -17,10 +17,6 @@ const emit = defineEmits<{ select: [bucket: string | null] }>();
 
 const { t, locale } = useI18n();
 const chart = useTemplateRef<InstanceType<typeof VChart>>("chart");
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
-}
 
 const withYear = computed(() => {
   const years = new Set(props.buckets.map((bucket) => bucket.key.slice(0, 4)));

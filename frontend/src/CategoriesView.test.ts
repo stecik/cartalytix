@@ -1,6 +1,7 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { QueryClient, VueQueryPlugin } from "@tanstack/vue-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMemoryHistory, createRouter } from "vue-router";
 import { createAppI18n } from "./i18n";
 import CategoriesView from "./views/CategoriesView.vue";
 
@@ -28,9 +29,11 @@ function api(productsOnPage = products) {
   return fetcher;
 }
 
-async function render() {
+async function render(path = "/categories") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  const wrapper = mount(CategoriesView, { attachTo: document.body, global: { plugins: [createAppI18n("en"), [VueQueryPlugin, { queryClient: client }]] } });
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/categories", name: "categories", component: CategoriesView }] });
+  await router.push(path);
+  const wrapper = mount(CategoriesView, { attachTo: document.body, global: { plugins: [router, createAppI18n("en"), [VueQueryPlugin, { queryClient: client }]] } });
   mounted.push({ wrapper, client });
   await flushPromises();
   return wrapper;
@@ -212,5 +215,12 @@ describe("categories editor", () => {
     expect(wrapper.get('thead input').attributes("disabled")).toBeDefined();
     finish(Response.json({ matched: 1, changed: 1, protected: 0, dry_run: false, previous_items: [{ connection_id: "store-1", name: "Milk", currency: "CZK", category_id: null }] })); await flushPromises();
     expect(wrapper.get('[data-action="create-category"]').attributes("disabled")).toBeUndefined();
+  });
+  it("opens one category from a link", async () => {
+    const fetcher = api(); const wrapper = await render("/categories?category=food&name=Food");
+    const urls = fetcher.mock.calls.map(([input]) => String(input)).filter((url) => url.startsWith("/api/v1/category-items?"));
+    expect(urls.at(-1)).toContain("category_id=food");
+    expect(wrapper.get('[data-filter="food"]').attributes("aria-current")).toBe("true");
+    expect(wrapper.text()).toContain("Food");
   });
 });

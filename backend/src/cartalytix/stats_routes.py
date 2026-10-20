@@ -9,15 +9,24 @@ from typing import Annotated
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import ColumnElement, Integer, Select, String, cast, func, select
+from sqlalchemy import ColumnElement, Integer, Select, String, and_, cast, func, select
+from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import CTE
 
 from cartalytix.accounting import accounting
 from cartalytix.dependencies import Db, Owner
-from cartalytix.models import ProviderConnection, Receipt, ReceiptItem
+from cartalytix.models import (
+    Category,
+    CategoryMembership,
+    CategoryProduct,
+    ProviderConnection,
+    Receipt,
+    ReceiptItem,
+)
 from cartalytix.schemas import (
     STATS_BUCKET_PATTERN,
     BucketStats,
+    CategoryStats,
     CurrencyStats,
     ItemStats,
     MerchantStats,
@@ -154,6 +163,41 @@ def _top_items(
         .order_by(order.desc(), ReceiptItem.name)
         .limit(TOP_ITEMS)
     )
+
+
+def _category_stats(
+    db: Session, filters: list[ColumnElement[bool]], item_amounts: CTE
+) -> list[CategoryStats]:
+    """Purchased lines and spending per category; empty until something is categorized."""
+    amount = func.sum(item_amounts.c.included_amount)
+    rows = db.execute(
+        select(Category.id, Category.name, func.count(ReceiptItem.id), amount)
+        .select_from(ReceiptItem)
+        .join(Receipt, ReceiptItem.receipt_id == Receipt.id)
+        .join(ProviderConnection, Receipt.connection_id == ProviderConnection.id)
+        .join(item_amounts, ReceiptItem.id == item_amounts.c.id)
+        .outerjoin(
+            CategoryProduct,
+            and_(
+                CategoryProduct.connection_id == Receipt.connection_id,
+                CategoryProduct.name == ReceiptItem.name,
+                CategoryProduct.currency == Receipt.currency,
+            ),
+        )
+        .outerjoin(CategoryMembership, CategoryMembership.product_id == CategoryProduct.id)
+        .outerjoin(Category, Category.id == CategoryMembership.category_id)
+        .where(*filters, item_amounts.c.is_included)
+        .group_by(Category.id, Category.name)
+        .order_by(amount.desc(), Category.name)
+    ).all()
+    if all(category_id is None for category_id, *_rest in rows):
+        return []
+    return [
+        CategoryStats(
+            category_id=category_id, name=name, purchase_count=count, amount=_money(total)
+        )
+        for category_id, name, count, total in rows
+    ]
 
 
 def _item_stats(rows: Iterable[tuple[str, int, Decimal]]) -> list[ItemStats]:
@@ -314,8 +358,10 @@ def overview_stats(
 
     frequent_items: list[ItemStats] = []
     top_spend_items: list[ItemStats] = []
+    categories: list[CategoryStats] = []
     if currency is not None:
         item_filters = [owner_filter, *_range_filters(start, end), Receipt.currency == currency]
+        categories = _category_stats(db, item_filters, item_amounts)
         frequent_items = _item_stats(
             db.execute(
                 _top_items(
@@ -339,5 +385,6 @@ def overview_stats(
         merchants=merchants,
         frequent_items=frequent_items,
         top_spend_items=top_spend_items,
+        categories=categories,
         weekly_hours=weekly_hours,
     )

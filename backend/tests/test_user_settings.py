@@ -101,6 +101,24 @@ def test_dashboard_period_defaults_to_last_12_months(client: TestClient, engine:
     assert periods.get("other@example.com") == "12m"
 
 
+def test_dashboard_category_slices_default_and_bounds(client: TestClient, engine: Engine) -> None:
+    login(client)
+    assert client.get("/api/v1/auth/me").json().get("dashboard_category_slices") == 9
+    for invalid in [2, 10, "many"]:
+        response = client.patch(
+            "/api/v1/auth/me", json={"dashboard_category_slices": invalid}, headers=ORIGIN
+        )
+        assert response.status_code == 422
+    response = client.patch(
+        "/api/v1/auth/me", json={"dashboard_category_slices": 5}, headers=ORIGIN
+    )
+    assert response.json().get("dashboard_category_slices") == 5
+    with Session(engine) as db:
+        slices = dict(db.execute(select(User.email, User.dashboard_category_slices)).all())
+    assert slices.get("owner@example.com") == 5
+    assert slices.get("other@example.com") == 9
+
+
 @pytest.mark.parametrize("period", ["custom", "week", None])
 def test_dashboard_period_rejects_non_presets(client: TestClient, period: str | None) -> None:
     login(client)

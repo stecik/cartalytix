@@ -16,6 +16,16 @@
   --light: #ebeee4;
   --focus: #8ea99b;
   --chart-muted: #c9d3c2;
+  /* Categorical order validated for adjacent CVD separation; values carry visible labels. */
+  --chart-category-1: #2a78d6;
+  --chart-category-2: #eb6834;
+  --chart-category-3: #1baf7a;
+  --chart-category-4: #eda100;
+  --chart-category-5: #e87ba4;
+  --chart-category-6: #008300;
+  --chart-category-7: #6250d6;
+  --chart-category-8: #e34948;
+  --chart-uncategorized: #e4e6dd;
   --shadow-green-05: rgba(var(--green-rgb), 0.05);
   --shadow-green-06: rgba(var(--green-rgb), 0.06);
   --shadow-green-12: rgba(var(--green-rgb), 0.12);
@@ -126,6 +136,15 @@
   --light: #233028;
   --focus: #87b6a0;
   --chart-muted: #6f8e78;
+  --chart-category-1: #3987e5;
+  --chart-category-2: #d95926;
+  --chart-category-3: #199e70;
+  --chart-category-4: #c98500;
+  --chart-category-5: #d55181;
+  --chart-category-6: #008300;
+  --chart-category-7: #9085e9;
+  --chart-category-8: #e66767;
+  --chart-uncategorized: #2c3b32;
   --surface-sidebar: #161f1b;
   --text-sidebar-label: #a1b19f;
   --text-nav: #b1bfb1;

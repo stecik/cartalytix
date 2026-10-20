@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import type { RouteLocationRaw } from "vue-router";
 
 export interface RankedRow {
   key: string;
@@ -8,6 +9,8 @@ export interface RankedRow {
   value: number;
   display: string;
   detail: string;
+  /** Where the row's label leads, such as the item detail. */
+  to?: RouteLocationRaw;
 }
 
 const props = defineProps<{ rows: RankedRow[]; pageSize?: number }>();
@@ -26,7 +29,8 @@ watch(() => props.rows, () => { offset.value = 0; });
       <span class="rank">{{ offset + index + 1 }}</span>
       <div class="ranked-body">
         <div class="ranked-line">
-          <span class="ranked-label" :title="row.label">{{ row.label }}</span>
+          <RouterLink v-if="row.to" class="ranked-label ranked-link" :to="row.to" :title="row.label">{{ row.label }}</RouterLink>
+          <span v-else class="ranked-label" :title="row.label">{{ row.label }}</span>
           <strong class="ranked-value">{{ row.display }}</strong>
         </div>
         <div class="ranked-track" aria-hidden="true">
@@ -88,6 +92,13 @@ watch(() => props.rows, () => { offset.value = 0; });
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.ranked-link {
+  color: inherit;
+}
+.ranked-link:hover {
+  color: var(--green);
+  text-decoration: underline;
 }
 .ranked-value {
   font-weight: 600;

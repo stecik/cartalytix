@@ -23,6 +23,13 @@ vi.mock("./components/ShoppingHeatmap.vue", () => ({
   __esModule: true,
   default: { props: ["weeklyHours"], setup: () => () => h("div", { class: "heatmap-stub" }) },
 }));
+vi.mock("./components/CategoryBreakdown.vue", () => ({
+  __esModule: true,
+  default: {
+    props: ["categories", "currency"],
+    setup: (props: { categories: unknown[] }) => () => h("div", { class: "categories-stub" }, String(props.categories.length)),
+  },
+}));
 
 const stats: Stats = {
   period: "12m", bucket: null, granularity: "month", currency: "CZK",
@@ -37,10 +44,11 @@ const stats: Stats = {
   merchants: [{ merchant: "Lidl", amount: "1200.00", receipt_count: 10 }],
   frequent_items: [{ name: "<b>Rohlík</b>", receipt_count: 8, amount: "24.00" }],
   top_spend_items: [{ name: "Víno", receipt_count: 2, amount: "400.00" }],
+  categories: [],
   weekly_hours: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
 };
 const overview = { receipt_count: 11, connection_count: 1, totals: [], latest_receipts: [] };
-const user: User = { id: "u", email: "u@example.com", locale: "en", receipt_view: "rendered", theme: "system", dashboard_period: "12m", is_admin: false, must_change_password: false };
+const user: User = { id: "u", email: "u@example.com", locale: "en", receipt_view: "rendered", theme: "system", dashboard_period: "12m", dashboard_category_slices: 9, is_admin: false, must_change_password: false };
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
@@ -49,7 +57,8 @@ async function mountOverview(dashboardPeriod: User["dashboard_period"] = "12m") 
     Response.json(String(input).startsWith("/api/v1/overview/stats") ? stats : overview));
   vi.stubGlobal("fetch", fetcher);
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: "/", component: OverviewView }, { path: "/receipts", component: { template: "<div />" } },
+    { path: "/", component: OverviewView }, { path: "/receipts", name: "receipts", component: { template: "<div />" } },
+    { path: "/items/detail", name: "item-detail", component: { template: "<div />" } },
   ] });
   await router.push("/");
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -82,7 +91,20 @@ describe("overview dashboard", () => {
     expect(wrapper.find(".ranked-bars b").exists()).toBe(false);
     expect(text).toContain("Víno");
     expect(wrapper.get(".chart-stub").text()).toBe("2 month");
+    expect(wrapper.find(".categories-stub").exists()).toBe(false);
     wrapper.unmount(); client.clear();
+  });
+
+  it("shows category shares once something is categorized", async () => {
+    stats.categories = [
+      { category_id: "c1", name: "Pečivo", purchase_count: 5, amount: "50.00" },
+      { category_id: null, name: null, purchase_count: 3, amount: "30.00" },
+    ];
+    try {
+      const { wrapper, client } = await mountOverview();
+      expect(wrapper.get(".categories-stub").text()).toBe("2");
+      wrapper.unmount(); client.clear();
+    } finally { stats.categories = []; }
   });
 
   it("opens with the user's default period", async () => {

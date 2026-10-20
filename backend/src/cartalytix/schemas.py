@@ -47,6 +47,7 @@ class UserOutput(BaseModel):
     receipt_view: str
     theme: Theme
     dashboard_period: StatsPeriod
+    dashboard_category_slices: int
     is_admin: bool
     must_change_password: bool
 
@@ -96,6 +97,8 @@ class UserSettingsInput(BaseModel):
     receipt_view: ReceiptView | None = None
     theme: Theme | None = None
     dashboard_period: StatsPeriod | None = None
+    # Eight distinguishable category colors plus one segment for the rest.
+    dashboard_category_slices: int | None = Field(default=None, ge=3, le=9)
 
     @field_validator("theme")
     @classmethod
@@ -387,6 +390,15 @@ class ItemStats(BaseModel):
     amount: str
 
 
+class CategoryStats(BaseModel):
+    """Spending of one category; null id and name stand for uncategorized products."""
+
+    category_id: UUID | None
+    name: str | None
+    purchase_count: int
+    amount: str
+
+
 class StatsOutput(BaseModel):
     period: StatsPeriod
     bucket: str | None
@@ -397,6 +409,7 @@ class StatsOutput(BaseModel):
     merchants: list[MerchantStats]
     frequent_items: list[ItemStats]
     top_spend_items: list[ItemStats]
+    categories: list[CategoryStats]
     weekly_hours: list[list[int]]
 
 

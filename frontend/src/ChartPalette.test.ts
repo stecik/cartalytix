@@ -29,6 +29,15 @@ beforeEach(() => {
     "shadow-green-05": "rgba(11, 22, 33, 0.05)",
     "shadow-green-06": "rgba(11, 22, 33, 0.06)",
     "shadow-green-12": "rgba(11, 22, 33, 0.12)",
+    "chart-category-1": "rgb(1, 2, 3)",
+    "chart-category-2": "rgb(4, 5, 6)",
+    "chart-category-3": "rgb(7, 8, 9)",
+    "chart-category-4": "rgb(10, 11, 12)",
+    "chart-category-5": "rgb(16, 17, 18)",
+    "chart-category-6": "rgb(19, 20, 21)",
+    "chart-category-7": "rgb(22, 23, 24)",
+    "chart-category-8": "rgb(25, 26, 27)",
+    "chart-uncategorized": "rgb(13, 14, 15)",
   };
   for (const [name, value] of Object.entries(palette)) {
     document.documentElement.style.setProperty(`--${name}`, value);

@@ -87,6 +87,16 @@ const dashboardPeriod = computed({
     if (period) settings.mutate({ dashboard_period: period });
   },
 });
+// Eight distinguishable category colors plus one segment for the rest.
+const CATEGORY_SLICES = [3, 4, 5, 6, 7, 8, 9] as const;
+const categorySlices = computed({
+  get: (): string => String(session.data.value?.dashboard_category_slices ?? 9),
+  set: (value: string) => {
+    const slices = CATEGORY_SLICES.find((option) => String(option) === value);
+    if (slices) settings.mutate({ dashboard_category_slices: slices });
+  },
+});
+const categorySliceOptions = CATEGORY_SLICES.map((value) => ({ value: String(value), label: String(value) }));
 const dashboardPeriods = computed(() =>
   PRESET_PERIODS.map((value) => ({ value, label: t(`period_${value}`) })),
 );
@@ -133,6 +143,15 @@ const views = computed(() => [
         </div>
         <div class="settings-control">
           <AppSelect v-model="dashboardPeriod" class="settings-select" :options="dashboardPeriods" :label="t('dashboardPeriod')" />
+        </div>
+      </div>
+      <div v-if="!isAdmin" class="settings-row">
+        <div class="settings-copy">
+          <h3>{{ t("dashboardCategorySlices") }}</h3>
+          <p>{{ t("dashboardCategorySlicesHint") }}</p>
+        </div>
+        <div class="settings-control">
+          <AppSelect v-model="categorySlices" class="settings-select" :options="categorySliceOptions" :label="t('dashboardCategorySlices')" />
         </div>
       </div>
       <div class="settings-row">

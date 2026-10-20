@@ -341,6 +341,8 @@ def create_app(
             user.theme = payload.theme
         if payload.dashboard_period is not None:
             user.dashboard_period = payload.dashboard_period
+        if payload.dashboard_category_slices is not None:
+            user.dashboard_category_slices = payload.dashboard_category_slices
         db.commit()
         return user
 
