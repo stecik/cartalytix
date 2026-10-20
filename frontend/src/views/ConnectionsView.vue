@@ -43,7 +43,7 @@ const providers = useQuery({
 const available = computed(() => providers.data.value?.items.filter((provider) => provider.status === "available") ?? []);
 const upcoming = computed(() => providers.data.value?.items.filter((provider) => provider.status !== "available") ?? []);
 const accounts = (provider: string): Connection[] => connections.data.value?.items.filter((connection) => connection.provider === provider) ?? [];
-const addTitles: Record<string, string> = { lidl: "addLidlAccount", mixit: "addMixitAccount", fermato: "addFermatoAccount", nejkafe: "addNejkafeAccount", bolt: "addBoltAccount", wolt: "addWoltAccount", kaufland: "addKauflandAccount", globus: "addGlobusAccount" };
+const addTitles: Record<string, string> = { lidl: "addLidlAccount", mixit: "addMixitAccount", fermato: "addFermatoAccount", nejkafe: "addNejkafeAccount", bolt: "addBoltAccount", wolt: "addWoltAccount", kaufland: "addKauflandAccount", globus: "addGlobusAccount", foodora: "addFoodoraAccount" };
 function openAdd(provider: string): void { name.value = ""; createConnection.reset(); adding.value = provider; }
 const createConnection = useMutation({
   mutationFn: (provider: string) => request<Connection>(`/providers/${provider}/connections`, {

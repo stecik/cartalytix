@@ -21,6 +21,12 @@ AS $$ SELECT lower(public.unaccent('public.unaccent'::regdictionary, value)) $$
 SYSTEM_NAMES = {
     "shipping_and_fees": ("Shipping and fees", "Doprava a poplatky"),
     "discounts_and_credits": ("Discounts and credits", "Slevy a kredity"),
+    "delivery_fee": ("Delivery fee", "Doprava"),
+    "service_fee": ("Service fee", "Servisní poplatek"),
+    "container_charges": ("Packaging", "Obaly"),
+    "rider_tip": ("Rider tip", "Spropitné kurýrovi"),
+    "discount": ("Discount", "Sleva"),
+    "voucher": ("Voucher", "Voucher"),
 }
 
 

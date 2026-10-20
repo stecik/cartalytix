@@ -158,7 +158,13 @@ class ProviderCode(StrEnum):
     BOLT = "bolt"
     WOLT = "wolt"
     KAUFLAND = "kaufland"
+    FOODORA = "foodora"
     GLOBUS = "globus"
+
+
+class FoodoraAuthorizeInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    access_token: SecretStr = Field(min_length=1, max_length=8192)
 
 
 class ShoptetShop(StrEnum):

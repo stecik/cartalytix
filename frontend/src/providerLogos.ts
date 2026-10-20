@@ -9,8 +9,9 @@ import nejkafeLogo from "./assets/nejkafe-logo.png";
 import boltLogo from "./assets/bolt-logo.png";
 import woltLogo from "./assets/wolt-logo.png";
 import kauflandLogo from "./assets/kaufland-logo.svg";
+import foodoraLogo from "./assets/foodora-logo.png";
 
 export const providerLogos: Record<string, string> = {
-  lidl: lidlLogo, mixit: mixitLogo, fermato: fermatoLogo, nejkafe: nejkafeLogo, bolt: boltLogo, wolt: woltLogo, kaufland: kauflandLogo, albert: albertLogo, globus: globusLogo,
+  lidl: lidlLogo, mixit: mixitLogo, fermato: fermatoLogo, nejkafe: nejkafeLogo, bolt: boltLogo, wolt: woltLogo, kaufland: kauflandLogo, foodora: foodoraLogo, albert: albertLogo, globus: globusLogo,
   rohlik: rohlikLogo, kosik: kosikLogo,
 };

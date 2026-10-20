@@ -29,6 +29,9 @@ from cartalytix.providers.bolt.client import BoltClient
 from cartalytix.providers.bolt.normalization import PARSER_VERSION as BOLT_PARSER_VERSION
 from cartalytix.providers.bolt.normalization import validate_order as validate_bolt_order
 from cartalytix.providers.common import ProviderError, ProviderPayload
+from cartalytix.providers.foodora.client import FoodoraClient
+from cartalytix.providers.foodora.normalization import PARSER_VERSION as FOODORA_PARSER_VERSION
+from cartalytix.providers.foodora.normalization import validate_order as validate_foodora_order
 from cartalytix.providers.globus.client import GlobusClient
 from cartalytix.providers.globus.normalization import PARSER_VERSION as GLOBUS_PARSER_VERSION
 from cartalytix.providers.globus.normalization import (
@@ -164,6 +167,16 @@ PROVIDERS: dict[str, ProviderSpec] = {
         id_key="id",
         detail_id=lambda detail: detail.get("id"),
         normalize=validate_kaufland_receipt,
+    ),
+    "foodora": ProviderSpec(
+        merchant="Foodora",
+        parser_version=FOODORA_PARSER_VERSION,
+        client=FoodoraClient,
+        list_key="orders",
+        total_key="totalRecords",
+        id_key="order_code",
+        detail_id=lambda detail: detail.get("order_code"),
+        normalize=validate_foodora_order,
     ),
     "globus": ProviderSpec(
         merchant="Globus",

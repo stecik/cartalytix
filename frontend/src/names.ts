@@ -1,12 +1,18 @@
 import type { Connection } from "./api";
 import { providerLogos } from "./providerLogos";
 
-const providerNames: Record<string, string> = { lidl: "Lidl", mixit: "Mixit", fermato: "Fermato", nejkafe: "Nejkafe", bolt: "Bolt Food", kaufland: "Kaufland", globus: "Globus" };
+const providerNames: Record<string, string> = { lidl: "Lidl", mixit: "Mixit", fermato: "Fermato", nejkafe: "Nejkafe", bolt: "Bolt Food", kaufland: "Kaufland", globus: "Globus", foodora: "foodora" };
 export const SHOPTET_SHOPS = ["fermato", "nejkafe"];
 // Connector-generated adjustment rows are stored as slugs; source names stay as printed.
 const sourceNameKeys: Record<string, string> = {
   shipping_and_fees: "shippingAndFees",
   discounts_and_credits: "discountsAndCredits",
+  delivery_fee: "deliveryFee",
+  service_fee: "serviceFee",
+  container_charges: "containerCharges",
+  rider_tip: "riderTip",
+  discount: "sourceDiscount",
+  voucher: "sourceVoucher",
 };
 
 export function providerName(code: string): string {
