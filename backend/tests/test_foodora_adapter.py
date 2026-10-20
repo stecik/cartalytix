@@ -2,11 +2,13 @@
 
 import base64
 import json
+import time
 from typing import Any
 
 import httpx
 import pytest
 
+from cartalytix.providers.foodora import client as foodora_client
 from cartalytix.providers.foodora.client import FoodoraClient, FoodoraError, link
 from cartalytix.providers.foodora.normalization import validate_order
 
@@ -119,3 +121,180 @@ def test_client_pages_by_offset_and_serves_details_from_history() -> None:
     with pytest.raises(FoodoraError) as error:
         FoodoraClient(json.dumps({"access_token": jwt(expires=1)}), lambda _value: None)
     assert error.value.code == "auth_required"
+
+
+def session_credential(*, expires: int = 4102444800, subject: str = "42") -> str:
+    return json.dumps(
+        {
+            "access_token": jwt(user_id=subject, expires=expires),
+            "refresh_token": "old-refresh",
+            "device_token": "device",
+            "subject": subject,
+            "expires": expires,
+        }
+    )
+
+
+def test_expired_session_refreshes_and_persists_all_rotations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    saved: list[str] = []
+    calls: list[dict[str, Any]] = []
+    heartbeats: list[None] = []
+    fresh = json.loads(session_credential())
+    fresh["refresh_token"] = "new-refresh"
+
+    def refresh(payload: dict[str, Any]) -> dict[str, Any]:
+        calls.append(payload)
+        return {"session": fresh, "report": {"authenticated": True}}
+
+    monkeypatch.setattr(foodora_client, "execute", refresh)
+    with httpx.Client(transport=transport()) as http:
+        client = FoodoraClient(
+            session_credential(expires=1),
+            saved.append,
+            http=http,
+            delay=0,
+            heartbeat=lambda: heartbeats.append(None),
+        )
+        assert len(client.page(1).get("orders", [])) == 20
+        client.page(2)
+    assert len(calls) == 1
+    assert calls[0].get("command") == "refresh"
+    assert json.loads(saved[0]) == fresh
+    assert len(heartbeats) >= 4
+
+
+def test_401_recovers_once_independently_of_transient_retry_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statuses = [503, 503, 503, 401, 200]
+    refreshes: list[dict[str, Any]] = []
+
+    def refresh(payload: dict[str, Any]) -> dict[str, Any]:
+        refreshes.append(payload)
+        return {"session": json.loads(session_credential()), "report": {"authenticated": True}}
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        status = statuses.pop(0)
+        return httpx.Response(status, json={"data": {"items": []}})
+
+    monkeypatch.setattr(foodora_client, "execute", refresh)
+    monkeypatch.setattr(foodora_client.time, "sleep", lambda _seconds: None)
+    with httpx.Client(transport=httpx.MockTransport(handle)) as http:
+        client = FoodoraClient(session_credential(), lambda _value: None, http=http, delay=0)
+        assert client.page(1).get("orders") == []
+    assert len(refreshes) == 1
+    assert statuses == []
+
+
+def test_repeated_401_has_bounded_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    refreshes: list[dict[str, Any]] = []
+
+    def refresh(payload: dict[str, Any]) -> dict[str, Any]:
+        refreshes.append(payload)
+        return {"session": json.loads(session_credential()), "report": {"authenticated": True}}
+
+    monkeypatch.setattr(foodora_client, "execute", refresh)
+    with httpx.Client(transport=transport(status=401)) as http:
+        client = FoodoraClient(session_credential(), lambda _value: None, http=http, delay=0)
+        with pytest.raises(FoodoraError, match="^auth_required$"):
+            client.page(1)
+    assert len(refreshes) == 1
+
+
+def test_refresh_cannot_replace_account_or_persist_foreign_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    saved: list[str] = []
+
+    def refresh(_payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "session": json.loads(session_credential(subject="99")),
+            "report": {"authenticated": True},
+        }
+
+    monkeypatch.setattr(foodora_client, "execute", refresh)
+    with httpx.Client(transport=transport()) as http:
+        client = FoodoraClient(session_credential(expires=1), saved.append, http=http, delay=0)
+        with pytest.raises(FoodoraError, match="^account_mismatch$"):
+            client.page(1)
+    assert saved == []
+
+
+def test_refresh_challenge_preserves_still_valid_access(monkeypatch: pytest.MonkeyPatch) -> None:
+    expires = int(time.time()) + 60
+
+    def refresh(_payload: dict[str, Any]) -> dict[str, Any]:
+        raise FoodoraError("challenge_required")
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.headers.get("Authorization") == f"Bearer {jwt(expires=expires)}"
+        return httpx.Response(200, json={"data": {"items": []}})
+
+    monkeypatch.setattr(foodora_client, "execute", refresh)
+    with httpx.Client(transport=httpx.MockTransport(handle)) as http:
+        client = FoodoraClient(
+            session_credential(expires=expires), lambda _value: None, http=http, delay=0
+        )
+        assert client.page(1).get("orders") == []
+
+
+def test_history_403_is_not_misclassified_as_expired_session() -> None:
+    with httpx.Client(transport=transport(status=403)) as http:
+        client = FoodoraClient(session_credential(), lambda _value: None, http=http, delay=0)
+        with pytest.raises(FoodoraError, match="^challenge_required$"):
+            client.page(1)
+
+
+@pytest.mark.parametrize("status,code", [(429, "rate_limited"), (503, "provider_unavailable")])
+def test_transient_history_retries_are_bounded(
+    status: int,
+    code: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(status, json={})
+
+    monkeypatch.setattr(foodora_client.time, "sleep", lambda _seconds: None)
+    with httpx.Client(transport=httpx.MockTransport(handle)) as http:
+        client = FoodoraClient(session_credential(), lambda _value: None, http=http, delay=0)
+        with pytest.raises(FoodoraError, match=f"^{code}$"):
+            client.page(1)
+    assert len(requests) == 4
+
+
+def test_legacy_access_cannot_refresh_without_refresh_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def refresh(_payload: dict[str, Any]) -> dict[str, Any]:
+        pytest.fail("Legacy credentials cannot be sent to refresh")
+
+    monkeypatch.setattr(foodora_client, "execute", refresh)
+    with httpx.Client(transport=transport(status=401)) as http:
+        client = FoodoraClient(
+            json.dumps({"access_token": jwt()}), lambda _value: None, http=http, delay=0
+        )
+        with pytest.raises(FoodoraError, match="^auth_required$"):
+            client.page(1)
+
+
+def test_expired_session_does_not_try_history_after_transient_refresh_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def refresh(_payload: dict[str, Any]) -> dict[str, Any]:
+        raise FoodoraError("provider_unavailable")
+
+    def handle(_request: httpx.Request) -> httpx.Response:
+        pytest.fail("Expired access token must be refreshed before history")
+
+    monkeypatch.setattr(foodora_client, "execute", refresh)
+    with httpx.Client(transport=httpx.MockTransport(handle)) as http:
+        client = FoodoraClient(
+            session_credential(expires=1), lambda _value: None, http=http, delay=0
+        )
+        with pytest.raises(FoodoraError, match="^provider_unavailable$"):
+            client.page(1)

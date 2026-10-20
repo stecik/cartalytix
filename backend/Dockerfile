@@ -1,6 +1,8 @@
 FROM ghcr.io/astral-sh/uv:0.12.5 AS uv
+FROM node:24.13.0-bookworm-slim AS node
 FROM python:3.15-slim
 COPY --from=uv /uv /uvx /bin/
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1
 WORKDIR /app
 COPY pyproject.toml uv.lock ./

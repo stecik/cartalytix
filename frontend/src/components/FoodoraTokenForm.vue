@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from "vue";
+import { nextTick, onBeforeUnmount, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ApiError, request } from "../api";
 import type { Connection } from "../api";
@@ -7,63 +7,150 @@ import type { Connection } from "../api";
 const props = defineProps<{ connectionId: string }>();
 const emit = defineEmits<{ connected: [connection: Connection]; cancel: [] }>();
 const { t } = useI18n();
-const token = ref("");
+type VerificationMethod = "EMAIL" | "SMS" | "CALL";
+interface LoginResult {
+  step: "method" | "otp" | "completed";
+  flow_id?: string | null;
+  methods: VerificationMethod[];
+  method?: VerificationMethod | null;
+  connection?: Connection | null;
+}
+
+const email = ref("");
+const password = ref("");
+const code = ref("");
+const flowId = ref<string | null>(null);
+const step = ref<"credentials" | "method" | "otp">("credentials");
+const methods = ref<VerificationMethod[]>([]);
+const method = ref<VerificationMethod>("EMAIL");
 const busy = ref(false);
 const errorKey = ref("");
+const codeInput = ref<HTMLInputElement | null>(null);
+const endpoint = `/providers/foodora/connections/${props.connectionId}/login`;
 let disposed = false;
 
 function loginError(error: unknown): string {
   const value = error instanceof ApiError ? error.code : "";
-  if (["auth_required", "validation_error", "provider_response_invalid"].includes(value ?? "")) return "foodoraTokensRejected";
-  if (value === "connection_busy") return "lidlLoginBusy";
-  if (["authorization_rate_limited", "rate_limited", "provider_unavailable"].includes(value ?? "")) return "foodoraProviderBusy";
+  if (value === "credentials_rejected") return "foodoraCredentialsRejected";
+  if (value === "account_not_found" || value === "password_login_unavailable") return "foodoraPasswordUnavailable";
+  if (value === "otp_rejected") return "foodoraCodeRejected";
+  if (value === "login_expired") return "foodoraLoginExpired";
+  if (value === "challenge_required") return "foodoraVerificationRequired";
+  if (value === "login_busy" || value === "connection_busy") return "lidlLoginBusy";
+  if (["login_rate_limited", "rate_limited", "provider_unavailable", "login_unavailable", "network_error", "service_unavailable"].includes(value ?? "")) return "foodoraProviderBusy";
   if (value === "account_mismatch" || value === "account_identity_unavailable") return "syncIdentityFailed";
   return "foodoraLoginFailed";
 }
 
+function discardFlow(identifier: string): void {
+  void request<void>(`${endpoint}/${identifier}`, { method: "DELETE" }).catch(() => undefined);
+}
+
+function resetFlow(): void {
+  if (flowId.value) discardFlow(flowId.value);
+  flowId.value = null;
+  step.value = "credentials";
+  methods.value = [];
+  code.value = "";
+}
+
+function close(): void {
+  disposed = true;
+  password.value = "";
+  resetFlow();
+}
+
+function cancel(): void {
+  close();
+  emit("cancel");
+}
+
 async function submit(): Promise<void> {
-  if (busy.value) return;
+  if (busy.value || disposed) return;
+  if (step.value === "otp" && !/^\d{4,10}$/.test(code.value)) {
+    code.value = "";
+    errorKey.value = "foodoraCodeRejected";
+    return;
+  }
   busy.value = true;
   errorKey.value = "";
-  // Keep the token out of the mutation/query cache and clear the input before waiting.
-  const body = { access_token: token.value.trim() };
-  token.value = "";
+  const identifier = flowId.value;
+  const action = step.value;
+  // Keep secrets out of query caches and clear inputs before waiting.
+  const body = action === "credentials"
+    ? { email: email.value.trim(), password: password.value }
+    : action === "method" ? { method: method.value } : { code: code.value };
+  password.value = code.value = "";
   try {
-    const connection = await request<Connection>(`/providers/foodora/connections/${props.connectionId}/authorize`, {
+    const path = action === "credentials" ? endpoint : `${endpoint}/${identifier}/${action === "method" ? "send" : "verify"}`;
+    const result = await request<LoginResult>(path, {
       method: "POST", body: JSON.stringify(body),
     });
-    if (!disposed) emit("connected", connection);
+    if (disposed) {
+      if (result.flow_id) discardFlow(result.flow_id);
+      return;
+    }
+    if (result.step === "completed" && result.connection) {
+      flowId.value = null;
+      emit("connected", result.connection);
+    } else if (result.step === "method" && result.flow_id && result.methods.length) {
+      flowId.value = result.flow_id;
+      methods.value = result.methods;
+      method.value = result.methods.includes("EMAIL") ? "EMAIL" : result.methods[0]!;
+      step.value = "method";
+    } else if (result.step === "otp" && result.flow_id) {
+      flowId.value = result.flow_id;
+      step.value = "otp";
+      await nextTick();
+      codeInput.value?.focus();
+    } else {
+      if (result.flow_id && result.flow_id !== identifier) discardFlow(result.flow_id);
+      resetFlow();
+      errorKey.value = "foodoraLoginFailed";
+    }
   } catch (error) {
+    if (disposed) return;
+    const value = error instanceof ApiError ? error.code : "";
+    if (!["otp_rejected", "login_busy", "connection_busy", "login_rate_limited"].includes(value ?? "")) resetFlow();
     errorKey.value = loginError(error);
   } finally {
-    body.access_token = "";
+    if ("password" in body) body.password = "";
+    if ("code" in body) body.code = "";
     busy.value = false;
   }
 }
 
-onBeforeUnmount(() => {
-  disposed = true;
-  token.value = "";
-});
+onBeforeUnmount(close);
 </script>
 
 <template>
   <form class="connection-form" :aria-busy="busy" @submit.prevent="submit">
     <p class="section-note">{{ t("foodoraLoginSafety") }}</p>
-    <ol class="foodora-steps">
-      <li>{{ t("foodoraStepSignIn") }} <a href="https://www.foodora.cz/" target="_blank" rel="noopener noreferrer">foodora.cz</a></li>
-      <li>{{ t("foodoraStepCopy") }}</li>
-    </ol>
-    <label :for="`foodora-token-${connectionId}`">{{ t("foodoraAccessToken") }}</label>
-    <input :id="`foodora-token-${connectionId}`" v-model="token" type="password" autocomplete="off" maxlength="8192" required :disabled="busy" />
+    <template v-if="step === 'credentials'">
+      <label :for="`foodora-email-${connectionId}`">{{ t("foodoraEmail") }}</label>
+      <input :id="`foodora-email-${connectionId}`" v-model="email" type="email" autocomplete="username" maxlength="254" required :disabled="busy" />
+      <label :for="`foodora-password-${connectionId}`">{{ t("foodoraPassword") }}</label>
+      <input :id="`foodora-password-${connectionId}`" v-model="password" type="password" autocomplete="off" maxlength="1024" required :disabled="busy" />
+    </template>
+    <template v-else-if="step === 'method'">
+      <label :for="`foodora-method-${connectionId}`">{{ t("foodoraVerificationMethod") }}</label>
+      <select :id="`foodora-method-${connectionId}`" v-model="method" :disabled="busy">
+        <option v-for="available in methods" :key="available" :value="available">{{ t(`foodoraMethod${available}`) }}</option>
+      </select>
+    </template>
+    <template v-else>
+      <p class="verification-note">{{ t("foodoraCodeInstructions") }}</p>
+      <label :for="`foodora-code-${connectionId}`">{{ t("foodoraVerificationCode") }}</label>
+      <input :id="`foodora-code-${connectionId}`" ref="codeInput" v-model="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{4,10}" minlength="4" maxlength="10" required :disabled="busy" />
+    </template>
     <p v-if="errorKey" class="form-alert" role="alert">{{ t(errorKey) }}</p>
     <div class="connection-actions">
-      <button type="submit" class="button primary" :disabled="busy">{{ t(busy ? "lidlSigningIn" : "foodoraConnect") }}</button>
-      <button type="button" class="button secondary" :disabled="busy" @click="emit('cancel')">{{ t("cancel") }}</button>
+      <button type="submit" class="button primary" :disabled="busy">{{ t(busy ? "lidlSigningIn" : step === "method" ? "foodoraSendCode" : step === "otp" ? "foodoraVerifyCode" : "foodoraConnect") }}</button>
+      <button type="button" class="button secondary" @click="cancel">{{ t("cancel") }}</button>
     </div>
   </form>
 </template>
 
 <style scoped>
-.foodora-steps { margin: 14px 0 4px; padding-left: 20px; font-size: 13px; line-height: 1.7; }
+.verification-note { margin-top: 18px; font-size: 13px; line-height: 1.7; }
 </style>

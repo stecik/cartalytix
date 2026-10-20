@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from cartalytix.dependencies import Db, Owner
 from cartalytix.models import ProviderConnection, Receipt, SyncRun, User
+from cartalytix.providers.foodora.client import FoodoraError
+from cartalytix.providers.foodora.login_sessions import LoginSessions as FoodoraLoginSessions
 from cartalytix.providers.lidl.login_protocol import LoginError
 from cartalytix.providers.lidl.login_sessions import LoginSessions
 from cartalytix.providers.lidl.management import clear_purchases, stop_pending_runs
@@ -213,6 +215,14 @@ def _manage_connection(
                 sessions.cancel_connection(owner_id, identifier)
             except LoginError as error:
                 raise lidl_login_error(error) from None
+        if action in {"disconnect", "remove"} and provider == ProviderCode.FOODORA:
+            try:
+                cast(FoodoraLoginSessions, request.app.state.foodora_logins).cancel_connection(
+                    owner_id, identifier
+                )
+            except FoodoraError as error:
+                status = 409 if error.code == "login_busy" else 422
+                raise HTTPException(status, error.code) from None
         if action == "remove":
             clear_purchases(db, identifier)
             db.execute(delete(SyncRun).where(SyncRun.connection_id == identifier))

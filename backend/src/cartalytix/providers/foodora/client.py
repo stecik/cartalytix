@@ -1,9 +1,4 @@
-"""Read-only foodora.cz adapter: pasted access token, offset-paged order history.
-
-The web login and every token refresh endpoint sit behind PerimeterX bot protection, so the
-server cannot sign in or rotate tokens. The owner pastes the browser session's access token;
-the order history API accepts it until it expires, then the connection needs re-linking.
-"""
+"""Offset-paged Foodora history with identity-pinned session renewal."""
 
 import base64
 import binascii
@@ -16,16 +11,19 @@ from typing import Any
 
 import httpx
 
-from cartalytix.providers.common import ProviderError, ProviderPayload
+from cartalytix.providers.common import ProviderPayload
+from cartalytix.providers.foodora.session import (
+    FoodoraError,
+    FoodoraSession,
+    execute,
+    token_identity,
+    valid_credential,
+)
 
 HISTORY = "https://cz.fd-api.com/api/v5/orders/order_history"
 # Public web client key, sent by the foodora web app on every API request.
 API_KEY = "volo"
 PAGE_SIZE = 20
-
-
-class FoodoraError(ProviderError):
-    pass
 
 
 @dataclass(frozen=True)
@@ -111,15 +109,26 @@ class FoodoraClient:
         delay: float = 0.5,
         heartbeat: Callable[[], None] | None = None,
     ) -> None:
-        # The token cannot be rotated; save_refresh is kept for the shared factory contract.
         if not math.isfinite(delay) or not 0 <= delay <= 60:
             raise ValueError("Invalid request delay")
         try:
-            self._access = str(json.loads(credential).get("access_token", ""))
-        except ValueError, AttributeError:
+            data = json.loads(credential)
+        except ValueError:
             raise FoodoraError("auth_required") from None
-        if not self._access or _expired(_claims(self._access)):
+        if not isinstance(data, dict) or not valid_credential(data.get("access_token")):
             raise FoodoraError("auth_required")
+        self._session = (
+            FoodoraSession.from_payload(data)
+            if any(key in data for key in ("refresh_token", "device_token", "subject"))
+            else None
+        )
+        self._access: str = data.get("access_token")
+        self._subject, self._expires = token_identity(self._access)
+        if self._session is None and self._expires <= time.time():
+            raise FoodoraError("auth_required")
+        self._save_refresh = save_refresh
+        self._prepared = False
+        self._recovery_attempted = False
         self._owns_http = http is None
         self._http = http if http is not None else httpx.Client(timeout=30, follow_redirects=False)
         self._delay = delay
@@ -131,10 +140,59 @@ class FoodoraClient:
         if self._owns_http:
             self._http.close()
 
+    def _refresh(self) -> None:
+        if self._session is None:
+            raise FoodoraError("auth_required")
+        if self._heartbeat is not None:
+            self._heartbeat()
+        try:
+            result = execute(
+                {"command": "refresh", "session": json.loads(self._session.serialize())}
+            )
+            report = result.get("report")
+            if not isinstance(report, dict) or report.get("authenticated") is not True:
+                raise FoodoraError("provider_response_invalid")
+            refreshed = FoodoraSession.from_payload(result.get("session"))
+            if refreshed.subject != self._subject:
+                raise FoodoraError("account_mismatch")
+            if refreshed.expires <= time.time():
+                raise FoodoraError("auth_required")
+            # The bridge has already pinned the subject and verified the token against history.
+            self._save_refresh(refreshed.serialize())
+            self._session = refreshed
+            self._access = refreshed.access_token
+            self._expires = refreshed.expires
+        except FoodoraError as error:
+            if error.code in {"refresh_rejected", "refresh_credentials_missing", "token_invalid"}:
+                raise FoodoraError("auth_required") from None
+            raise
+        finally:
+            if self._heartbeat is not None:
+                self._heartbeat()
+
+    def _prepare(self) -> None:
+        if self._prepared:
+            return
+        self._prepared = True
+        if self._session is None or self._expires > time.time() + 120:
+            return
+        try:
+            self._refresh()
+        except FoodoraError as error:
+            if self._expires <= time.time() or error.code not in {
+                "challenge_required",
+                "rate_limited",
+                "provider_unavailable",
+                "network_error",
+            }:
+                raise
+
     def page(self, number: int) -> dict[str, Any]:
-        if isinstance(number, bool) or number < 1:
+        if isinstance(number, bool) or not isinstance(number, int) or number < 1:
             raise FoodoraError("provider_response_invalid")
-        for attempt in range(4):
+        self._prepare()
+        attempt = 0
+        while True:
             time.sleep(self._delay)
             if self._heartbeat is not None:
                 self._heartbeat()
@@ -144,15 +202,23 @@ class FoodoraClient:
                 if attempt == 3:
                     raise FoodoraError("provider_unavailable") from None
                 time.sleep(min(60, max(self._delay, 1) * (2**attempt)))
+                attempt += 1
                 continue
-            if response.status_code in {401, 403}:
-                raise FoodoraError("auth_required")
+            if response.status_code == 401:
+                if self._recovery_attempted or self._session is None:
+                    raise FoodoraError("auth_required")
+                self._recovery_attempted = True
+                self._refresh()
+                continue
+            if response.status_code == 403:
+                raise FoodoraError("challenge_required")
             if response.status_code == 429 or 500 <= response.status_code <= 599:
                 if attempt == 3:
                     raise FoodoraError(
                         "rate_limited" if response.status_code == 429 else "provider_unavailable"
                     )
                 time.sleep(min(60, max(self._delay, 1) * (2**attempt)))
+                attempt += 1
                 continue
             if response.status_code != 200:
                 raise FoodoraError("provider_unavailable")
@@ -168,7 +234,6 @@ class FoodoraClient:
                     self._orders[order.get("order_code")] = order
             # total_count is only a lookahead estimate; the sync engine stops on an empty page.
             return ProviderPayload({"orders": items}, response.content)
-        raise FoodoraError("provider_unavailable")
 
     def detail(self, order_code: str) -> dict[str, Any]:
         order = self._orders.get(order_code)

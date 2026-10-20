@@ -170,6 +170,44 @@ class FoodoraAuthorizeInput(BaseModel):
     access_token: SecretStr = Field(min_length=1, max_length=8192)
 
 
+class FoodoraMethod(StrEnum):
+    EMAIL = "EMAIL"
+    SMS = "SMS"
+    CALL = "CALL"
+
+
+class FoodoraLoginInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: EmailStr
+    password: SecretStr = Field(min_length=1, max_length=1024)
+
+
+class FoodoraMethodInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    method: FoodoraMethod
+
+
+class FoodoraVerificationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: SecretStr = Field(min_length=4, max_length=10)
+
+    @field_validator("code")
+    @classmethod
+    def require_digits(cls, value: SecretStr) -> SecretStr:
+        code = value.get_secret_value()
+        if not code.isascii() or not code.isdigit():
+            raise ValueError("Invalid verification code")
+        return value
+
+
+class FoodoraLoginOutput(BaseModel):
+    step: Literal["method", "otp", "completed"]
+    flow_id: str | None = None
+    methods: list[FoodoraMethod] = Field(default_factory=list)
+    method: FoodoraMethod | None = None
+    connection: ConnectionOutput | None = None
+
+
 class ShoptetShop(StrEnum):
     FERMATO = "fermato"
     NEJKAFE = "nejkafe"
