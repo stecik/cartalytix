@@ -1,7 +1,7 @@
 import type { Connection } from "./api";
 import { providerLogos } from "./providerLogos";
 
-const providerNames: Record<string, string> = { lidl: "Lidl", mixit: "Mixit", fermato: "Fermato", nejkafe: "Nejkafe", bolt: "Bolt Food", kaufland: "Kaufland" };
+const providerNames: Record<string, string> = { lidl: "Lidl", mixit: "Mixit", fermato: "Fermato", nejkafe: "Nejkafe", bolt: "Bolt Food", kaufland: "Kaufland", globus: "Globus" };
 export const SHOPTET_SHOPS = ["fermato", "nejkafe"];
 // Connector-generated adjustment rows are stored as slugs; source names stay as printed.
 const sourceNameKeys: Record<string, string> = {

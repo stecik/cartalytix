@@ -19,6 +19,7 @@ dependencies = [
   "cryptography>=46",
   "playwright==1.64.0",
   "mcp>=2.3.0",
+  "pdfminer-six>=20260107",
 ]
 
 [project.scripts]

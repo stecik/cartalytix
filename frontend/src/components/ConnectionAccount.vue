@@ -11,6 +11,7 @@ import MixitLoginForm from "./MixitLoginForm.vue";
 import ShoptetLoginForm from "./ShoptetLoginForm.vue";
 import BoltLoginForm from "./BoltLoginForm.vue";
 import WoltLoginForm from "./WoltLoginForm.vue";
+import GlobusLoginForm from "./GlobusLoginForm.vue";
 import AppIcon from "./AppIcon.vue";
 import AppDialog from "./AppDialog.vue";
 
@@ -150,6 +151,7 @@ const actionError = computed(() => {
       <ShoptetLoginForm v-else-if="linking && SHOPTET_SHOPS.includes(connection.provider)" :provider="connection.provider" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <BoltLoginForm v-else-if="linking && connection.provider === 'bolt'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <WoltLoginForm v-else-if="linking && connection.provider === 'wolt'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
+      <GlobusLoginForm v-else-if="linking && connection.provider === 'globus'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <LidlLoginForm v-else-if="linking && connection.provider === 'kaufland'" provider="kaufland" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <LidlLoginForm v-else-if="linking" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <section v-show="tab === 'sync'" :id="`panel-sync-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-sync-${connection.id}`" tabindex="0">

@@ -158,6 +158,7 @@ class ProviderCode(StrEnum):
     BOLT = "bolt"
     WOLT = "wolt"
     KAUFLAND = "kaufland"
+    GLOBUS = "globus"
 
 
 class ShoptetShop(StrEnum):
@@ -208,6 +209,11 @@ class BoltVerificationInput(BaseModel):
 class WoltLoginInput(BaseModel):
     model_config = {"extra": "forbid"}
     link: SecretStr = Field(min_length=1, max_length=2048)
+
+
+class GlobusLoginInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    cookie: SecretStr = Field(min_length=1, max_length=4200)
 
 
 class MixitLoginInput(BaseModel):

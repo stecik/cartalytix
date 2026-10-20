@@ -29,6 +29,11 @@ from cartalytix.providers.bolt.client import BoltClient
 from cartalytix.providers.bolt.normalization import PARSER_VERSION as BOLT_PARSER_VERSION
 from cartalytix.providers.bolt.normalization import validate_order as validate_bolt_order
 from cartalytix.providers.common import ProviderError, ProviderPayload
+from cartalytix.providers.globus.client import GlobusClient
+from cartalytix.providers.globus.normalization import PARSER_VERSION as GLOBUS_PARSER_VERSION
+from cartalytix.providers.globus.normalization import (
+    validate_receipt as validate_globus_receipt,
+)
 from cartalytix.providers.kaufland.client import KauflandClient
 from cartalytix.providers.kaufland.normalization import PARSER_VERSION as KAUFLAND_PARSER_VERSION
 from cartalytix.providers.kaufland.normalization import (
@@ -159,6 +164,16 @@ PROVIDERS: dict[str, ProviderSpec] = {
         id_key="id",
         detail_id=lambda detail: detail.get("id"),
         normalize=validate_kaufland_receipt,
+    ),
+    "globus": ProviderSpec(
+        merchant="Globus",
+        parser_version=GLOBUS_PARSER_VERSION,
+        client=GlobusClient,
+        list_key="receipts",
+        total_key="totalCount",
+        id_key="id",
+        detail_id=lambda detail: detail.get("id"),
+        normalize=validate_globus_receipt,
     ),
 }
 

@@ -22,6 +22,7 @@ from cartalytix.bolt_routes import router as bolt_router
 from cartalytix.connection_routes import connection_outputs
 from cartalytix.connection_routes import router as connection_router
 from cartalytix.dependencies import COOKIE_NAME, ActiveUser, Db, Owner, SessionUser
+from cartalytix.globus_routes import router as globus_router
 from cartalytix.i18n import translate
 from cartalytix.item_routes import router as item_router
 from cartalytix.kaufland_routes import router as kaufland_router
@@ -68,7 +69,6 @@ PROVIDERS = (
     ("globus", "Globus"),
     ("rohlik", "Rohlik"),
     ("kosik", "Kosik"),
-    ("billa", "Billa"),
 )
 
 
@@ -175,6 +175,7 @@ def create_app(
     app.include_router(bolt_router)
     app.include_router(wolt_router)
     app.include_router(kaufland_router)
+    app.include_router(globus_router)
     app.include_router(shoptet_router)
     app.include_router(stats_router)
     app.include_router(search_router)
