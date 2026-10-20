@@ -205,6 +205,7 @@ class Receipt(Base):
     merchant: Mapped[str] = mapped_column(String(256))
     currency: Mapped[str] = mapped_column(String(3))
     total_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    is_excluded: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     rounding_amount: Mapped[Decimal] = mapped_column(
         Numeric(18, 2), default=Decimal(0), server_default="0"
     )
@@ -237,6 +238,7 @@ class ReceiptItem(Base):
     unit: Mapped[str | None] = mapped_column(String(32))
     unit_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     total_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    is_excluded: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     source_code: Mapped[str | None] = mapped_column(String(256))
     is_weight: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     original_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
@@ -252,3 +254,46 @@ class Discount(Base):
     item_id: Mapped[UUID | None] = mapped_column(ForeignKey("receipt_items.id"))
     name: Mapped[str] = mapped_column(Text)
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+
+
+class Category(Base):
+    __tablename__ = "categories"
+    __table_args__ = (UniqueConstraint("owner_id", "name_key"),)
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    name_key: Mapped[str] = mapped_column(String(300))
+
+
+class CategoryProduct(Base):
+    """A durable product identity, independent of replaceable receipt line IDs."""
+
+    __tablename__ = "category_products"
+    __table_args__ = (UniqueConstraint("connection_id", "name_hash", "currency"),)
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    connection_id: Mapped[UUID] = mapped_column(
+        ForeignKey("provider_connections.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(Text)
+    name_hash: Mapped[str] = mapped_column(String(64))
+    currency: Mapped[str] = mapped_column(String(3))
+    assignment_source: Mapped[str] = mapped_column(String(6))
+
+
+class CategoryMembership(Base):
+    __tablename__ = "category_memberships"
+    category_id: Mapped[UUID] = mapped_column(
+        ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True
+    )
+    product_id: Mapped[UUID] = mapped_column(
+        ForeignKey("category_products.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+
+
+class ProductExclusion(Base):
+    __tablename__ = "product_exclusions"
+    __table_args__ = (UniqueConstraint("owner_id", "name", "currency"),)
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(Text)
+    currency: Mapped[str] = mapped_column(String(3))

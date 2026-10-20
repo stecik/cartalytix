@@ -43,7 +43,10 @@ def seed(engine: Engine) -> dict[str, str]:
                 purchased_at=datetime(2026, 3, day, 10, tzinfo=UTC),
                 merchant=merchant,
                 currency=currency,
-                total_amount=Decimal(100),
+                total_amount=sum(
+                    (Decimal(quantity) * Decimal(price) for _, quantity, price, _ in items),
+                    Decimal(0),
+                ),
             )
             db.add(receipt)
             db.flush()
@@ -100,6 +103,8 @@ def test_items_group_purchases_per_product(client: TestClient, engine: Engine) -
         "min_price": "2.00",
         "max_price": "4.00",
         "last_purchased_at": rohlik.get("last_purchased_at"),
+        "is_excluded": False,
+        "included_amount": "43.00",
     }
     assert rohlik.get("last_purchased_at", "").startswith("2026-03-03T10:00:00")
 

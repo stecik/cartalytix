@@ -3,13 +3,13 @@ import { keepPreviousData, useQuery } from "@tanstack/vue-query";
 import { computed, onBeforeUnmount, ref, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { request } from "../api";
-import type { Suggestion } from "../api";
+import type { ExclusionMode, ExclusionScope, Suggestion } from "../api";
 import { sourceName } from "../names";
 import { highlight, MIN_SUGGESTION_LENGTH } from "../search";
 
 const DEBOUNCE_MS = 200;
 
-const props = defineProps<{ kind?: Suggestion["kind"]; placeholder?: string }>();
+const props = defineProps<{ kind?: Suggestion["kind"]; placeholder?: string; exclusion?: ExclusionMode; scope?: ExclusionScope }>();
 const model = defineModel<string>({ required: true });
 const emit = defineEmits<{ select: [text: string] }>();
 
@@ -30,10 +30,10 @@ onBeforeUnmount(() => clearTimeout(timer));
 
 const enabled = computed(() => open.value && term.value.length >= MIN_SUGGESTION_LENGTH);
 const suggestions = useQuery({
-  queryKey: ["receipt-suggestions", term, computed(() => props.kind)],
+  queryKey: ["receipt-suggestions", term, computed(() => props.kind), computed(() => props.exclusion), computed(() => props.scope)],
   queryFn: ({ signal }) =>
     request<{ items: Suggestion[] }>(
-      `/receipts/suggestions?${new URLSearchParams({ q: term.value, ...(props.kind ? { kind: props.kind } : {}) })}`,
+      `/receipts/suggestions?${new URLSearchParams({ q: term.value, ...(props.kind ? { kind: props.kind } : {}), ...(props.exclusion ? { exclusion: props.exclusion } : {}), ...(props.scope ? { scope: props.scope } : {}) })}`,
       { signal },
     ),
   enabled,
@@ -41,7 +41,8 @@ const suggestions = useQuery({
   // Older suggestions stay visible only while the user refines the same term.
   placeholderData: (previous, previousQuery) => {
     const previousTerm = String(previousQuery?.queryKey[1] ?? "").toLocaleLowerCase();
-    return previousTerm && term.value.toLocaleLowerCase().startsWith(previousTerm)
+    return previousQuery?.queryKey[2] === props.kind && previousQuery?.queryKey[3] === props.exclusion && previousQuery?.queryKey[4] === props.scope
+      && previousTerm && term.value.toLocaleLowerCase().startsWith(previousTerm)
       ? keepPreviousData(previous)
       : undefined;
   },

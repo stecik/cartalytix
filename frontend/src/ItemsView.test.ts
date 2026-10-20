@@ -24,6 +24,7 @@ function stubApi() {
   const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
     const url = String(input);
     if (url.startsWith("/api/v1/connections")) return Response.json({ items: [] });
+    if (url.startsWith("/api/v1/items/exclusions")) return Response.json({ items: [], total: 0, limit: 30, offset: 0 });
     if (url.startsWith("/api/v1/items/detail")) {
       return url.includes("currency=CZK") ? Response.json(detail) : Response.json({}, { status: 404 });
     }
@@ -55,6 +56,54 @@ function itemUrls(fetcher: ReturnType<typeof stubApi>): URL[] {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("items ledger", () => {
+  it("returns to a valid page after excluding the last product on the final page", async () => {
+    let excluded = false;
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      if (String(input).startsWith("/api/v1/connections")) return Response.json({ items: [] });
+      if (init?.method === "PATCH") { excluded = true; return new Response(null, { status: 204 }); }
+      const offset = Number(new URL(String(input), "http://test").searchParams.get("offset"));
+      return Response.json({ items: excluded && offset > 0 ? [] : [item], total: excluded ? 30 : 31, limit: 30, offset });
+    }));
+    const { router, wrapper, client } = await mountAt("/items?offset=30");
+    await wrapper.get('tbody [data-exclusion="product"] button').trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.query.offset).toBeUndefined();
+    expect(wrapper.findAll("tbody tr")).toHaveLength(1);
+    wrapper.unmount(); client.clear();
+  });
+
+  it("keeps excluded purchases in history but removes them from the price chart", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ ...detail,
+      purchases: [...detail.purchases, { ...detail.purchases[0], receipt_id: "excluded", exclusion_reason: "receipt" }],
+    })));
+    const { wrapper, client } = await mountAt("/items/detail?name=Rohl%C3%ADk&currency=CZK");
+    expect(wrapper.findAll("tbody tr")).toHaveLength(3);
+    expect(wrapper.get(".chart-stub").attributes("data-count")).toBe("2");
+    expect(wrapper.get(".excluded-row").text()).toContain("Excluded by receipt");
+    wrapper.unmount(); client.clear();
+  });
+
+  it("globally excludes directly in the ledger without opening the product", async () => {
+    const fetcher = stubApi();
+    const { router, wrapper, client } = await mountAt("/items");
+    await wrapper.get('tbody [data-exclusion="product"] button').trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe("/items");
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/items/exclusion", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ name: "<b>Rohlík</b>", currency: "CZK", excluded: true }) }));
+    wrapper.unmount(); client.clear();
+  });
+
+  it("loads excluded products and switches back to included products", async () => {
+    const fetcher = stubApi();
+    const { router, wrapper, client } = await mountAt("/items?exclusion=excluded&offset=30");
+    const excludedUrl = fetcher.mock.calls.map(([input]) => new URL(String(input), "http://test")).find((url) => url.pathname === "/api/v1/items/exclusions");
+    expect(excludedUrl?.searchParams.get("scope")).toBe("all");
+    await wrapper.get('.exclusion-filter input[value="included"]').setValue(true);
+    await flushPromises();
+    expect(router.currentRoute.value.query).toEqual({});
+    wrapper.unmount(); client.clear();
+  });
+
   it("sends filters and the default sort, renders names as text", async () => {
     const fetcher = stubApi();
     const { wrapper, client } = await mountAt("/items?q=roh&from=2026-03-01&min=1&max=5");
@@ -94,6 +143,25 @@ describe("items ledger", () => {
 });
 
 describe("item detail", () => {
+  it("globally excludes and restores the exact product and currency", async () => {
+    let excluded = false;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      if (init?.method === "PATCH") excluded = JSON.parse(String(init.body)).excluded;
+      return Response.json({ ...detail, is_excluded: excluded, included_amount: excluded ? "0.00" : "43.00" });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const { wrapper, client } = await mountAt("/items/detail?name=Rohl%C3%ADk&currency=CZK");
+    await wrapper.get('[data-exclusion="product"] button').trigger("click");
+    await flushPromises();
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/items/exclusion", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ name: "Rohlík", currency: "CZK", excluded: true }) }));
+    expect(wrapper.get('[data-exclusion="product"] button').text()).toBe("Restore in all purchases");
+    expect(wrapper.get(".included-total").text()).toContain("0.00");
+    await wrapper.get('[data-exclusion="product"] button').trigger("click");
+    await flushPromises();
+    expect(wrapper.get(".included-total").text()).toContain("43.00");
+    wrapper.unmount(); client.clear();
+  });
+
   it("shows price summary and links purchases to receipts", async () => {
     stubApi();
     const { wrapper, client } = await mountAt("/items/detail?name=Roh%C3%ADk&currency=CZK");

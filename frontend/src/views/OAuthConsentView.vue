@@ -28,6 +28,7 @@ const decide = useMutation({
 });
 const scopeLabels: Record<string, string> = {
   "cartalytix:read": "mcpScopeRead",
+  "cartalytix:categories:write": "mcpScopeCategoriesWrite",
   offline_access: "mcpScopeOffline",
 };
 </script>

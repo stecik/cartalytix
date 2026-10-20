@@ -9,6 +9,8 @@ import type { ReceiptDetail, ReceiptDiscount, User } from "../api";
 import AppIcon from "../components/AppIcon.vue";
 import QueryState from "../components/QueryState.vue";
 import SegmentedToggle from "../components/SegmentedToggle.vue";
+import ExclusionAction from "../components/ExclusionAction.vue";
+import ExclusionStatus from "../components/ExclusionStatus.vue";
 import { sessionOptions } from "../auth";
 import { providerLogos } from "../providerLogos";
 import { useUserSettings } from "../settings";
@@ -86,6 +88,11 @@ function date(value: string): string {
     <QueryState v-else :pending="receipt.isPending.value" :failed="receipt.isError.value" @retry="receipt.refetch()">
       <template v-if="receipt.data.value">
         <p v-if="receipt.data.value.quality_issues.length" role="status" class="receipt-quality">{{ t("receiptQualityWarning") }}</p>
+        <div class="receipt-accounting">
+          <div class="included-total"><span>{{ t("includedAmount") }}</span><strong>{{ money(receipt.data.value.included_amount ?? receipt.data.value.total_amount) }}</strong></div>
+          <ExclusionAction scope="receipt" :path="`/receipts/${encodeURIComponent(receiptId)}/exclusion`" :excluded="receipt.data.value.is_excluded" />
+          <ExclusionStatus v-if="receipt.data.value.is_excluded" reason="receipt" />
+        </div>
         <SegmentedToggle v-model="receiptView" class="receipt-view-toggle" :options="views" :label="t('receiptDisplay')" />
         <div v-if="rendered" class="receipt-paper-wrap">
           <article class="receipt-paper" :aria-label="t('receiptViewRendered')">
@@ -96,10 +103,15 @@ function date(value: string): string {
             </header>
             <p v-if="!receipt.data.value.items.length" class="receipt-paper-empty">{{ t("noReceiptItems") }}</p>
             <ol v-else class="receipt-paper-items">
-              <li v-for="item in receipt.data.value.items" :key="item.id">
+              <li v-for="item in receipt.data.value.items" :key="item.id" :class="{ 'excluded-row': item.exclusion_reason }">
                 <div class="receipt-paper-line"><span>{{ sourceName(item.name, t) }}</span><span>{{ money(item.original_amount ?? item.total_amount) }}</span></div>
                 <div v-if="item.unit_price !== null && (item.is_weight || Number(item.quantity) !== 1)" class="receipt-paper-sub">{{ quantity(item.quantity, item.unit) }} × {{ money(item.unit_price, true) }}</div>
                 <div v-for="discount in discounts.get(item.id)" :key="discount.id" class="receipt-paper-line receipt-paper-sub"><span>{{ discount.name ? sourceName(discount.name, t) : t("discount") }}</span><span>{{ money(negated(discount.amount)) }}</span></div>
+                <div class="receipt-item-actions">
+                  <ExclusionStatus :reason="item.exclusion_reason" />
+                  <ExclusionAction scope="item" :path="`/receipts/${encodeURIComponent(receiptId)}/items/${encodeURIComponent(item.id)}/exclusion`" :excluded="item.is_excluded" />
+                  <RouterLink v-if="item.exclusion_reason === 'product'" class="text-link" :to="{ path: '/items/detail', query: { name: item.name, currency: receipt.data.value.currency } }">{{ t("manageProductExclusion") }}</RouterLink>
+                </div>
               </li>
             </ol>
             <div v-if="discounts.get(null)?.length || Number(receipt.data.value.rounding_amount) !== 0" class="receipt-paper-block">
@@ -118,7 +130,7 @@ function date(value: string): string {
           <div class="section-heading"><h2>{{ t("receiptItems") }}</h2></div>
           <p v-if="!receipt.data.value.items.length" class="section-note">{{ t("noReceiptItems") }}</p>
           <ol v-else class="receipt-item-list">
-            <li v-for="item in receipt.data.value.items" :key="item.id">
+            <li v-for="item in receipt.data.value.items" :key="item.id" :class="{ 'excluded-row': item.exclusion_reason }">
               <div class="receipt-item-heading"><h3>{{ sourceName(item.name, t) }}</h3><strong>{{ money(item.total_amount) }}</strong></div>
               <dl class="receipt-item-facts">
                 <div><dt>{{ t("quantity") }}</dt><dd>{{ quantity(item.quantity, item.unit) }}</dd></div>
@@ -133,6 +145,11 @@ function date(value: string): string {
               <ul v-if="discounts.get(item.id)?.length" class="receipt-discounts" :aria-label="t('itemDiscounts')">
                 <li v-for="discount in discounts.get(item.id)" :key="discount.id"><span>{{ discount.name ? sourceName(discount.name, t) : t("discount") }}</span><span>{{ money(discount.amount) }}</span></li>
               </ul>
+              <div class="receipt-item-actions">
+                <ExclusionStatus :reason="item.exclusion_reason" />
+                <ExclusionAction scope="item" :path="`/receipts/${encodeURIComponent(receiptId)}/items/${encodeURIComponent(item.id)}/exclusion`" :excluded="item.is_excluded" />
+                <RouterLink v-if="item.exclusion_reason === 'product'" class="text-link" :to="{ path: '/items/detail', query: { name: item.name, currency: receipt.data.value.currency } }">{{ t("manageProductExclusion") }}</RouterLink>
+              </div>
             </li>
           </ol>
         </section>
@@ -153,6 +170,11 @@ function date(value: string): string {
 
 <style scoped>
 .receipt-back { margin-bottom: 25px; }
+.receipt-accounting { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 18px 0; margin-bottom: 24px; }
+.included-total { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+.included-total strong { font-size: 24px; color: var(--green); font-weight: 600; font-variant-numeric: tabular-nums; }
+.receipt-item-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 10px; font-family: "DM Sans Variable", sans-serif; font-size: 12px; }
+.excluded-row > .receipt-paper-line:first-child, .excluded-row > .receipt-item-heading { color: var(--muted); }
 .receipt-provider { margin-left: 18px; }
 .receipt-items { border-top: 1px solid var(--line); padding-top: 24px; }
 .receipt-item-list { list-style: none; padding: 0; margin: 20px 0 0; }

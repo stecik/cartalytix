@@ -8,6 +8,7 @@ import OverviewView from "./views/OverviewView.vue";
 import ReceiptsView from "./views/ReceiptsView.vue";
 import ReceiptDetailView from "./views/ReceiptDetailView.vue";
 import ItemsView from "./views/ItemsView.vue";
+import CategoriesView from "./views/CategoriesView.vue";
 import ItemDetailView from "./views/ItemDetailView.vue";
 import CalculatorView from "./views/CalculatorView.vue";
 import ConnectionsView from "./views/ConnectionsView.vue";
@@ -36,6 +37,7 @@ export function createAppRouter(client: QueryClient) {
       { path: "/receipts", name: "receipts", component: ReceiptsView },
       { path: "/receipts/:id", name: "receipt-detail", component: ReceiptDetailView },
       { path: "/items", name: "items", component: ItemsView },
+      { path: "/categories", name: "categories", component: CategoriesView },
       { path: "/items/detail", name: "item-detail", component: ItemDetailView },
       { path: "/calculator", name: "calculator", component: CalculatorView },
       { path: "/connections", name: "connections", component: ConnectionsView },

@@ -33,8 +33,11 @@ from test_api import UnlimitedLimiter
 from test_api import client as client
 from test_api import engine as engine
 
+from cartalytix.category_routes import assign_category_items
+from cartalytix.category_schemas import CategoryAssignmentInput
 from cartalytix.main import create_app
 from cartalytix.models import (
+    OAuthClient,
     OAuthCode,
     OAuthGrant,
     ProviderConnection,
@@ -64,7 +67,15 @@ TOOLS = {
     "get_item_price_history",
     "get_spending_overview",
     "get_spending_stats",
+    "list_categories",
+    "create_category",
+    "update_category",
+    "delete_category",
+    "list_category_items",
+    "assign_category_items",
 }
+CATEGORY_WRITES = {"create_category", "update_category", "delete_category", "assign_category_items"}
+CATEGORY_WRITE_SCOPE = "cartalytix:categories:write"
 INITIALIZE = {
     "jsonrpc": "2.0",
     "id": 1,
@@ -235,7 +246,7 @@ def test_discovery_metadata(web: TestClient) -> None:
         resource = web.get(path).json()
         assert resource.get("resource") == RESOURCE
         assert resource.get("authorization_servers") == [ISSUER]
-        assert resource.get("scopes_supported") == [SCOPE]
+        assert resource.get("scopes_supported") == [SCOPE, CATEGORY_WRITE_SCOPE]
     for path in [
         "/.well-known/oauth-authorization-server/api/v1/oauth",
         "/.well-known/oauth-authorization-server",
@@ -247,7 +258,11 @@ def test_discovery_metadata(web: TestClient) -> None:
         assert metadata.get("registration_endpoint") == f"{ISSUER}/register"
         assert metadata.get("revocation_endpoint") == f"{ISSUER}/revoke"
         assert metadata.get("code_challenge_methods_supported") == ["S256"]
-        assert set(metadata.get("scopes_supported")) == {SCOPE, "offline_access"}
+        assert set(metadata.get("scopes_supported")) == {
+            SCOPE,
+            "offline_access",
+            CATEGORY_WRITE_SCOPE,
+        }
     missing = rpc(web, None)
     assert missing.status_code == 401
     assert (
@@ -519,7 +534,12 @@ class MemoryStorage:
 
 @asynccontextmanager
 async def connect(
-    app: FastAPI, account: tuple[str, str], mode: str = "auto"
+    app: FastAPI,
+    account: tuple[str, str],
+    mode: str = "auto",
+    *,
+    write: bool = False,
+    consents: list[list[str]] | None = None,
 ) -> AsyncGenerator[Client]:
     """Official MCP client: discovery, registration, PKCE login with consent, then tools."""
     transport = httpx2.ASGITransport(app=app)
@@ -530,7 +550,21 @@ async def connect(
         assert url.startswith(f"{ISSUER}/authorize?")
         assert query(url).get("resource") == RESOURCE
         pending = await browser.get(url)
+        assert pending.status_code == 302, pending.text
         request = query(pending.headers.get("location", "")).get("request")
+        details = await browser.get(f"/api/v1/mcp/authorizations/{request}")
+        assert details.status_code == 200, details.text
+        requested = [
+            scope for scope in details.json().get("scopes", []) if scope != "offline_access"
+        ]
+        assert requested == [SCOPE] or (
+            write and set(requested) == {SCOPE, CATEGORY_WRITE_SCOPE}
+        ), {
+            "request_scopes": query(url).get("scope"),
+            "consent_scopes": requested,
+        }
+        if consents is not None:
+            consents.append(requested)
         decision = await browser.post(
             f"/api/v1/mcp/authorizations/{request}", json={"approve": True}, headers=ORIGIN
         )
@@ -547,6 +581,7 @@ async def connect(
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
             token_endpoint_auth_method="none",
+            scope=SCOPE,
         ),
         MemoryStorage(),
         redirect_handler,
@@ -581,11 +616,14 @@ async def test_mcp_tools_over_oauth(mcp_app: FastAPI, engine: Engine, mode: str)
         assert {tool.name for tool in tools} == TOOLS
         for tool in tools:
             assert tool.annotations is not None
-            assert tool.annotations.read_only_hint is True
-            assert tool.annotations.destructive_hint is False
+            writable = tool.name in CATEGORY_WRITES
+            assert tool.annotations.read_only_hint is not writable
+            assert tool.annotations.destructive_hint is (
+                tool.name in {"delete_category", "assign_category_items"}
+            )
             assert "user_id" not in str(tool.input_schema)
             assert (tool.meta or {}).get("securitySchemes") == [
-                {"type": "oauth2", "scopes": [SCOPE]}
+                {"type": "oauth2", "scopes": [SCOPE, CATEGORY_WRITE_SCOPE] if writable else [SCOPE]}
             ]
         page = structured(await mcp.call_tool("search_receipts", {"limit": 1}))
         assert page.get("total") == 2
@@ -660,3 +698,259 @@ def test_public_url_settings() -> None:
     ]:
         with pytest.raises(ValueError, match="Public URL"):
             Settings(public_url=url)
+
+
+def call_rpc(web: TestClient, token: str, name: str, arguments: dict[str, Any]) -> Response:
+    return web.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": name,
+                "arguments": arguments,
+            },
+        },
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json, text/event-stream",
+        },
+    )
+
+
+def test_category_writes_require_separate_consent(web: TestClient) -> None:
+    token = tokens_for(web, OWNER).get("access_token", "")
+    for name, arguments in [
+        ("create_category", {"name": "Bakery"}),
+        ("update_category", {"category_id": str(uuid4()), "name": "Bakery"}),
+        ("delete_category", {"category_id": str(uuid4())}),
+        (
+            "assign_category_items",
+            {
+                "items": [{"connection_id": str(uuid4()), "name": "Rohlík", "currency": "CZK"}],
+                "category_id": None,
+            },
+        ),
+    ]:
+        response = call_rpc(web, token, name, arguments)
+        assert response.status_code == 403
+        assert response.json().get("error") == "insufficient_scope"
+        challenge = response.headers.get("www-authenticate", "")
+        assert f'scope="{SCOPE} {CATEGORY_WRITE_SCOPE}"' in challenge
+        assert 'error="insufficient_scope"' in challenge
+    listed = call_rpc(web, token, "list_categories", {})
+    assert listed.status_code == 200
+    assert listed.json().get("result", {}).get("structuredContent", {}).get("items") == []
+
+
+@pytest.mark.anyio
+async def test_category_mcp_batch_preview_and_owner_isolation(mcp_app: FastAPI) -> None:
+    consents: list[list[str]] = []
+    async with (
+        mcp_app.router.lifespan_context(mcp_app),
+        connect(mcp_app, OWNER, write=True, consents=consents) as owner,
+        connect(mcp_app, OTHER, write=True) as other,
+    ):
+        category = structured(await owner.call_tool("create_category", {"name": "Bakery"}))
+        assert consents == [[SCOPE], [SCOPE, CATEGORY_WRITE_SCOPE]]
+        category_id = category.get("id")
+        renamed = structured(
+            await owner.call_tool("update_category", {"category_id": category_id, "name": "Bread"})
+        )
+        assert renamed.get("name") == "Bread"
+        first = structured(await owner.call_tool("list_category_items", {"limit": 1}))
+        assert len(first.get("items", [])) == 1
+        assert first.get("next_cursor")
+        second = structured(
+            await owner.call_tool("list_category_items", {"cursor": first.get("next_cursor")})
+        )
+        assert len(second.get("items", [])) == 1
+        assert second.get("next_cursor") is None
+        assert {
+            item.get("currency") for item in first.get("items", []) + second.get("items", [])
+        } == {"CZK", "EUR"}
+        product = first.get("items", [])[0]
+        key = {field: product.get(field) for field in ("connection_id", "name", "currency")}
+        assignment = {"items": [key], "category_id": category_id}
+        preview = structured(
+            await owner.call_tool("assign_category_items", {**assignment, "dry_run": True})
+        )
+        assert preview == {"matched": 1, "changed": 1, "protected": 0, "dry_run": True}
+        assert (
+            structured(await owner.call_tool("list_categories", {}))
+            .get("items", [])[0]
+            .get("item_count")
+            == 0
+        )
+        applied = structured(await owner.call_tool("assign_category_items", assignment))
+        assert applied == {"matched": 1, "changed": 1, "protected": 0, "dry_run": False}
+        repeat = structured(await owner.call_tool("assign_category_items", assignment))
+        assert repeat.get("changed") == 0
+        categorized = structured(
+            await owner.call_tool("list_category_items", {"category_id": category_id})
+        )
+        assert categorized.get("items", [])[0].get("assignment_source") == "mcp"
+        assert structured(await other.call_tool("list_categories", {})).get("items") == []
+        assert (await other.call_tool("delete_category", {"category_id": category_id})).is_error
+        foreign = structured(await other.call_tool("create_category", {"name": "Private"}))
+        assert (
+            await other.call_tool(
+                "assign_category_items", {**assignment, "category_id": foreign.get("id")}
+            )
+        ).is_error
+        assert structured(
+            await owner.call_tool("delete_category", {"category_id": category_id})
+        ) == {"deleted": True}
+        assert (
+            len(
+                structured(
+                    await owner.call_tool("list_category_items", {"uncategorized": True})
+                ).get("items", [])
+            )
+            == 2
+        )
+
+
+def test_read_only_refresh_cannot_gain_category_write_scope(web: TestClient) -> None:
+    issued = tokens_for(web, OWNER)
+    response = web.post(
+        "/api/v1/oauth/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": issued.get("refresh_token"),
+            "client_id": issued.get("client_id"),
+            "scope": f"{SCOPE} {CATEGORY_WRITE_SCOPE}",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json().get("error") == "invalid_scope"
+    assert rpc(web, issued.get("access_token")).status_code == 200
+
+
+@pytest.mark.anyio
+async def test_mcp_protects_manual_category_assignments(mcp_app: FastAPI, engine: Engine) -> None:
+    async with mcp_app.router.lifespan_context(mcp_app), connect(mcp_app, OWNER, write=True) as mcp:
+        manual = structured(await mcp.call_tool("create_category", {"name": "Manual choice"}))
+        automated = structured(await mcp.call_tool("create_category", {"name": "AI choice"}))
+        products = structured(await mcp.call_tool("list_category_items", {}))
+        product = products.get("items", [])[0]
+        key = {field: product.get(field) for field in ("connection_id", "name", "currency")}
+        with Session(engine) as db:
+            user = db.scalar(select(User).where(User.email == OWNER[0]))
+            assert user is not None
+            result = assign_category_items(
+                user,
+                db,
+                CategoryAssignmentInput.model_validate(
+                    {"items": [key], "category_id": manual.get("id")}
+                ),
+            )
+            assert result.changed == 1
+        assignment = {"items": [key], "category_id": automated.get("id")}
+        protected = structured(await mcp.call_tool("assign_category_items", assignment))
+        assert protected == {"matched": 1, "changed": 0, "protected": 1, "dry_run": False}
+        deletion = await mcp.call_tool("delete_category", {"category_id": manual.get("id")})
+        assert deletion.is_error
+        assert "category_contains_manual_items" in str(deletion.content)
+        clear = structured(
+            await mcp.call_tool("assign_category_items", {"items": [key], "category_id": None})
+        )
+        assert clear.get("protected") == 1
+        forced = structured(
+            await mcp.call_tool("assign_category_items", {**assignment, "overwrite_manual": True})
+        )
+        assert forced == {"matched": 1, "changed": 1, "protected": 0, "dry_run": False}
+        with Session(engine) as db:
+            user = db.scalar(select(User).where(User.email == OWNER[0]))
+            assert user is not None
+            assign_category_items(
+                user,
+                db,
+                CategoryAssignmentInput.model_validate(
+                    {"items": [key], "category_id": manual.get("id")}
+                ),
+            )
+        deleted = structured(
+            await mcp.call_tool(
+                "delete_category", {"category_id": manual.get("id"), "overwrite_manual": True}
+            )
+        )
+        assert deleted == {"deleted": True}
+
+
+@pytest.mark.parametrize(
+    "body,status",
+    [(b"{", 400), (b"x" * (1024 * 1024 + 1), 413)],
+    ids=["malformed", "oversized"],
+)
+def test_category_scope_challenge_bounds_request_body(
+    web: TestClient, body: bytes, status: int
+) -> None:
+    token = tokens_for(web, OWNER).get("access_token")
+    response = web.post(
+        "/mcp",
+        content=body,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+        },
+    )
+    assert response.status_code == status
+
+
+def test_legacy_client_reconsent_preserves_old_read_only_tokens(
+    web: TestClient, engine: Engine
+) -> None:
+    issued = tokens_for(web, OWNER)
+    assert issued.get("scope") == SCOPE
+    registered = {"client_id": issued.get("client_id")}
+    with Session(engine) as db:
+        row = db.get(OAuthClient, issued.get("client_id"))
+        assert row is not None
+        row.registration = {**row.registration, "scope": SCOPE}
+        db.commit()
+    code, verifier = code_for(web, OWNER, registered, scope=f"{SCOPE} {CATEGORY_WRITE_SCOPE}")
+    renewed = exchange(web, registered, code, verifier)
+    assert renewed.status_code == 200
+    assert renewed.json().get("scope") == f"{SCOPE} {CATEGORY_WRITE_SCOPE}"
+    denied = call_rpc(web, issued.get("access_token", ""), "create_category", {"name": "Denied"})
+    assert denied.status_code == 403
+    allowed = call_rpc(
+        web, renewed.json().get("access_token", ""), "create_category", {"name": "Allowed"}
+    )
+    assert allowed.status_code == 200
+    assert allowed.json().get("result", {}).get("structuredContent", {}).get("name") == "Allowed"
+    assert rpc(web, issued.get("access_token")).status_code == 200
+
+
+@pytest.mark.anyio
+async def test_category_mcp_cursor_supports_long_unicode_names(
+    mcp_app: FastAPI, engine: Engine
+) -> None:
+    with Session(engine) as db:
+        receipt = db.scalar(
+            select(Receipt).where(Receipt.currency == "CZK", Receipt.total_amount < 500)
+        )
+        assert receipt is not None
+        for position, name in enumerate(["界" * 1000, "界" * 999 + "z"], start=1):
+            db.add(
+                ReceiptItem(
+                    receipt_id=receipt.id,
+                    position=position,
+                    name=name,
+                    quantity=Decimal("1"),
+                    unit="ks",
+                    unit_price=Decimal("1"),
+                    total_amount=Decimal("1"),
+                )
+            )
+        db.commit()
+    async with mcp_app.router.lifespan_context(mcp_app), connect(mcp_app, OWNER) as mcp:
+        first = structured(await mcp.call_tool("list_category_items", {"limit": 3}))
+        cursor = first.get("next_cursor")
+        assert cursor is not None and len(cursor) > 4000
+        second = structured(await mcp.call_tool("list_category_items", {"cursor": cursor}))
+        assert len(second.get("items", [])) == 1
+        assert second.get("next_cursor") is None

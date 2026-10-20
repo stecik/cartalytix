@@ -6,17 +6,20 @@ import { useRoute, useRouter } from "vue-router";
 import { accountOptions } from "../names";
 import AppDateInput from "../components/AppDateInput.vue";
 import AppSelect from "../components/AppSelect.vue";
+import ExclusionFilter from "../components/ExclusionFilter.vue";
 import { request } from "../api";
-import type { Connection, ItemPage } from "../api";
+import type { Connection, ExclusionMode, ExclusionReason, ExclusionScope, ItemDetail, ItemExclusion, ItemExclusionPage, ItemPage, ReceiptDetail } from "../api";
 import ItemLedger from "../components/ItemLedger.vue";
+import ExcludedItemsLedger from "../components/ExcludedItemsLedger.vue";
+import ExclusionStatus from "../components/ExclusionStatus.vue";
 import type { ItemSortField } from "../components/ItemLedger.vue";
 import QueryState from "../components/QueryState.vue";
 import ReceiptSearch from "../components/ReceiptSearch.vue";
 
-type QueryKey = "q" | "from" | "to" | "connection" | "min" | "max" | "sort" | "offset";
+type QueryKey = "q" | "from" | "to" | "connection" | "min" | "max" | "sort" | "offset" | "exclusion" | "exclusion_scope";
 
 const DEFAULT_SORT = "receipt_count_desc";
-const FILTER_KEYS = ["q", "from", "to", "connection", "min", "max"] as const;
+const FILTER_KEYS = ["q", "from", "to", "connection", "min", "max", "exclusion", "exclusion_scope"] as const;
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
@@ -52,7 +55,27 @@ const offset = computed(() => {
   const value = Number(queryValue("offset"));
   return Number.isInteger(value) && value > 0 ? value : 0;
 });
-const sort = computed(() => queryValue("sort") || DEFAULT_SORT);
+const exclusion = computed<ExclusionMode>(() => {
+  const value = queryValue("exclusion");
+  return value === "excluded" || value === "all" ? value : "included";
+});
+const exclusionScope = computed<ExclusionScope>(() => {
+  const value = queryValue("exclusion_scope");
+  return value === "product" || value === "item" ? value : "all";
+});
+const defaultSort = computed(() => exclusion.value === "excluded" ? "last_purchased_desc" : DEFAULT_SORT);
+const sort = computed(() => {
+  const value = queryValue("sort");
+  const excludedSorts = ["name_asc", "name_desc", "last_purchased_asc", "last_purchased_desc", "total_amount_asc", "total_amount_desc"];
+  return exclusion.value === "excluded" && !excludedSorts.includes(value) ? defaultSort.value : value || defaultSort.value;
+});
+const scopeOptions = computed(() => [
+  { value: "all", label: t("allExclusionTypes") },
+  { value: "product", label: t("globalExclusions") },
+  { value: "item", label: t("oneOffExclusions") },
+]);
+const restoredState = ref<{ kind: ItemExclusion["kind"]; reasons: NonNullable<ExclusionReason>[] } | null>(null);
+watch([exclusion, exclusionScope], () => { restoredState.value = null; });
 const filtered = computed(() => FILTER_KEYS.some((key) => queryValue(key) !== ""));
 const apiPath = computed(() => {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset.value) });
@@ -64,6 +87,7 @@ const apiPath = computed(() => {
     price_min: queryValue("min"),
     price_max: queryValue("max"),
     sort: sort.value,
+    exclusion: exclusion.value,
   };
   for (const [key, value] of Object.entries(values)) if (value) params.set(key, value);
   return `/items?${params.toString()}`;
@@ -72,7 +96,27 @@ const apiPath = computed(() => {
 const items = useQuery({
   queryKey: ["items", apiPath],
   queryFn: ({ signal }) => request<ItemPage>(apiPath.value, { signal }),
+  enabled: computed(() => exclusion.value !== "excluded"),
   placeholderData: keepPreviousData,
+});
+const exclusionsPath = computed(() => {
+  const params = new URLSearchParams(apiPath.value.split("?")[1]);
+  params.delete("exclusion");
+  params.set("scope", exclusionScope.value);
+  return "/items/exclusions?" + params.toString();
+});
+const itemExclusions = useQuery({
+  queryKey: ["item-exclusions", exclusionsPath],
+  queryFn: ({ signal }) => request<ItemExclusionPage>(exclusionsPath.value, { signal }),
+  enabled: computed(() => exclusion.value === "excluded"),
+  placeholderData: keepPreviousData,
+});
+const activeQuery = computed(() => exclusion.value === "excluded" ? itemExclusions : items);
+const currentPage = computed(() => activeQuery.value.data.value);
+watch([() => currentPage.value?.total, () => activeQuery.value.isPlaceholderData.value], ([total, placeholder]) => {
+  if (!placeholder && total !== undefined && offset.value > 0 && offset.value >= total) {
+    updateQuery({ offset: String(Math.floor(Math.max(0, total - 1) / limit) * limit || "") });
+  }
 });
 const connections = useQuery({
   queryKey: ["connections"],
@@ -101,7 +145,7 @@ function changeSort(field: ItemSortField): void {
   const first = field === "name" ? "asc" : "desc";
   const second = first === "asc" ? "desc" : "asc";
   const next = sort.value === `${field}_${first}` ? `${field}_${second}` : `${field}_${first}`;
-  updateQuery({ sort: next === DEFAULT_SORT ? "" : next });
+  updateQuery({ sort: next === defaultSort.value ? "" : next });
 }
 
 function resetFilters(): void {
@@ -113,6 +157,19 @@ function resetFilters(): void {
 function changePage(value: number): void {
   updateQuery({ offset: value > 0 ? String(value) : "" });
 }
+
+function changeExclusion(value: string): void {
+  updateQuery({ exclusion: value === "included" ? "" : value, exclusion_scope: "", sort: "" });
+}
+
+function restored(row: ItemExclusion, result: ReceiptDetail | ItemDetail | undefined): void {
+  let reasons = row.blocked_by;
+  if (row.kind === "item" && result && "items" in result) {
+    const item = result.items.find((item) => item.id === row.item_id);
+    reasons = item?.exclusion_reason ? [item.exclusion_reason] : [];
+  }
+  restoredState.value = { kind: row.kind, reasons };
+}
 </script>
 
 <template>
@@ -122,11 +179,24 @@ function changePage(value: number): void {
       <h1>{{ t("items") }}</h1>
       <p>{{ t("itemsIntro") }}</p>
     </header>
+    <div class="item-display-controls">
+      <ExclusionFilter :model-value="exclusion" @update:model-value="changeExclusion" />
+      <AppSelect v-if="exclusion === 'excluded'" class="exclusion-scope" :model-value="exclusionScope" :options="scopeOptions" :label="t('exclusionScope')" @update:model-value="updateQuery({ exclusion_scope: $event === 'all' ? '' : $event })" />
+    </div>
+    <p v-if="restoredState" role="status" class="restoration-status">
+      {{ restoredState.kind === "product" ? t("globalExclusionRemoved") : t("occurrenceExclusionRemoved") }}
+      <template v-if="restoredState.reasons.length">
+        <span>{{ t("otherExclusionsRemain") }}</span>
+        <ExclusionStatus v-for="reason in restoredState.reasons" :key="reason" :reason="reason" />
+      </template>
+    </p>
     <div class="item-filters" role="search">
       <ReceiptSearch
         v-model="search"
         class="filter-search"
         kind="item"
+        :exclusion="exclusion"
+        :scope="exclusion === 'excluded' ? exclusionScope : undefined"
         :placeholder="t('searchItems')"
         @select="applySearch"
       />
@@ -155,31 +225,36 @@ function changePage(value: number): void {
       </button>
     </div>
     <QueryState
-      :pending="items.isPending.value"
-      :failed="items.isError.value"
-      @retry="items.refetch()"
+      :pending="activeQuery.isPending.value"
+      :failed="activeQuery.isError.value"
+      @retry="activeQuery.refetch()"
     >
-      <section v-if="items.data.value" class="ledger-section" :class="{ updating: items.isPlaceholderData.value }">
+      <section v-if="currentPage" class="ledger-section" :class="{ updating: activeQuery.isPlaceholderData.value }">
         <div class="section-heading">
-          <h2>{{ t("itemCount", items.data.value.total) }}</h2>
+          <h2>{{ t(exclusion === "excluded" ? "exclusionCount" : "itemCount", currentPage.total) }}</h2>
         </div>
-        <ItemLedger v-if="items.data.value.items.length" :items="items.data.value.items" :sort="sort" @sort="changeSort" />
+        <ExcludedItemsLedger v-if="exclusion === 'excluded' && itemExclusions.data.value?.items.length" :rows="itemExclusions.data.value.items" :sort="sort" @sort="changeSort" @restored="restored" />
+        <ItemLedger v-else-if="exclusion !== 'excluded' && items.data.value?.items.length" :items="items.data.value.items" :sort="sort" manage-exclusions @sort="changeSort" />
         <div v-else class="empty-state">
-          <h3>{{ filtered ? t("noMatchingItems") : t("noReceipts") }}</h3>
+          <h3>{{ exclusion === "excluded" ? t("noMatchingExclusions") : filtered ? t("noMatchingItems") : t("noReceipts") }}</h3>
         </div>
-        <div v-if="items.data.value.total > limit" class="pagination">
+        <p v-if="exclusion === 'excluded'" class="exclusion-note">
+          {{ t("exclusionRegistryHint") }}
+          <RouterLink class="text-link" to="/receipts?exclusion=excluded">{{ t("excludedReceipts") }}</RouterLink>
+        </p>
+        <div v-if="currentPage.total > limit" class="pagination">
           <span>{{
             t("pageRange", {
               start: offset + 1,
-              end: Math.min(offset + limit, items.data.value.total),
-              total: items.data.value.total,
+              end: Math.min(offset + limit, currentPage.total),
+              total: currentPage.total,
             })
           }}</span>
           <div>
             <button class="button secondary" :disabled="offset === 0" @click="changePage(Math.max(0, offset - limit))">
               {{ t("previous") }}
             </button>
-            <button class="button secondary" :disabled="offset + limit >= items.data.value.total" @click="changePage(offset + limit)">
+            <button class="button secondary" :disabled="offset + limit >= currentPage.total" @click="changePage(offset + limit)">
               {{ t("next") }}
             </button>
           </div>
@@ -191,6 +266,17 @@ function changePage(value: number): void {
 
 <style scoped>
 .item-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 36px; }
+.item-display-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.exclusion-filter { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.exclusion-filter :deep(label) { padding: 12px 16px; border-radius: 0; border-bottom: 2px solid transparent; }
+.exclusion-filter :deep(label:first-of-type) { padding-left: 0; }
+.exclusion-filter :deep(label.selected) { background: transparent; box-shadow: none; border-bottom-color: var(--green); }
+.exclusion-scope { width: 176px; }
+.exclusion-scope :deep(.app-select-trigger) { background: transparent; }
+.restoration-status { margin-bottom: 20px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 5px; color: var(--green); background: var(--surface-notice); font-size: 13px; line-height: 1.7; }
+.restoration-status > span { margin-left: 8px; }
+.exclusion-note { margin-top: 18px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.exclusion-note a { margin-left: 5px; }
 .item-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
 .item-filters .filter-search { flex: 1 1 140px; min-width: 0; }
 .item-filters .filter-amount { width: 120px; }

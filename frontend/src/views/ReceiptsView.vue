@@ -6,16 +6,17 @@ import { useRoute, useRouter } from "vue-router";
 import { accountOptions } from "../names";
 import AppDateInput from "../components/AppDateInput.vue";
 import AppSelect from "../components/AppSelect.vue";
+import ExclusionFilter from "../components/ExclusionFilter.vue";
 import { request } from "../api";
-import type { Connection, ReceiptPage } from "../api";
+import type { Connection, ExclusionMode, ReceiptPage } from "../api";
 import QueryState from "../components/QueryState.vue";
 import ReceiptLedger from "../components/ReceiptLedger.vue";
 import ReceiptSearch from "../components/ReceiptSearch.vue";
 
-type QueryKey = "q" | "from" | "to" | "connection" | "min" | "max" | "sort" | "offset";
+type QueryKey = "q" | "from" | "to" | "connection" | "min" | "max" | "sort" | "offset" | "exclusion";
 
 const DEFAULT_SORT = "purchased_at_desc";
-const FILTER_KEYS = ["q", "from", "to", "connection", "min", "max"] as const;
+const FILTER_KEYS = ["q", "from", "to", "connection", "min", "max", "exclusion"] as const;
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
@@ -52,6 +53,10 @@ const offset = computed(() => {
   return Number.isInteger(value) && value > 0 ? value : 0;
 });
 const sort = computed(() => queryValue("sort") || DEFAULT_SORT);
+const exclusion = computed<ExclusionMode>(() => {
+  const value = queryValue("exclusion");
+  return value === "excluded" || value === "all" ? value : "included";
+});
 const filtered = computed(() => FILTER_KEYS.some((key) => queryValue(key) !== ""));
 const apiPath = computed(() => {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset.value) });
@@ -63,6 +68,7 @@ const apiPath = computed(() => {
     amount_min: queryValue("min"),
     amount_max: queryValue("max"),
     sort: sort.value,
+    exclusion: exclusion.value,
   };
   for (const [key, value] of Object.entries(values)) if (value) params.set(key, value);
   return `/receipts?${params.toString()}`;
@@ -72,6 +78,11 @@ const receipts = useQuery({
   queryKey: ["receipts", apiPath],
   queryFn: ({ signal }) => request<ReceiptPage>(apiPath.value, { signal }),
   placeholderData: keepPreviousData,
+});
+watch([() => receipts.data.value?.total, receipts.isPlaceholderData], ([total, placeholder]) => {
+  if (!placeholder && total !== undefined && offset.value > 0 && offset.value >= total) {
+    updateQuery({ offset: String(Math.floor(Math.max(0, total - 1) / limit) * limit || "") });
+  }
 });
 const connections = useQuery({
   queryKey: ["connections"],
@@ -119,8 +130,9 @@ function changePage(value: number): void {
       <h1>{{ t("receipts") }}</h1>
       <p>{{ t("receiptIntro") }}</p>
     </header>
+    <ExclusionFilter :model-value="exclusion" @update:model-value="updateQuery({ exclusion: $event === 'included' ? '' : $event })" />
     <div class="receipt-filters" role="search">
-      <ReceiptSearch v-model="search" class="filter-search" @select="applySearch" />
+      <ReceiptSearch v-model="search" class="filter-search" :exclusion="exclusion" @select="applySearch" />
       <label>
         <span>{{ t("dateFrom") }}</span>
         <AppDateInput :model-value="queryValue('from')" :max="queryValue('to')" @update:model-value="updateQuery({ from: $event })" />
@@ -154,7 +166,7 @@ function changePage(value: number): void {
         <div class="section-heading">
           <h2>{{ t("receiptCount", receipts.data.value.total) }}</h2>
         </div>
-        <ReceiptLedger :receipts="receipts.data.value.items" :sort="sort" :filtered="filtered" @sort="changeSort" />
+        <ReceiptLedger :receipts="receipts.data.value.items" :sort="sort" :filtered="filtered" manage-exclusions @sort="changeSort" />
         <div v-if="receipts.data.value.total > limit" class="pagination">
           <span>{{
             t("pageRange", {
@@ -186,6 +198,7 @@ function changePage(value: number): void {
 
 <style scoped>
 .receipt-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 36px; }
+.exclusion-filter { margin-bottom: 20px; }
 .receipt-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
 .receipt-filters .filter-search { flex: 1 1 140px; min-width: 0; }
 .receipt-filters .filter-amount { width: 120px; }

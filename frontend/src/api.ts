@@ -35,6 +35,30 @@ export interface Receipt {
   merchant: string;
   total_amount: string;
   currency: string;
+  is_excluded: boolean;
+  included_amount: string;
+}
+
+export type ExclusionReason = "receipt" | "item" | "product" | null;
+export type ExclusionMode = "included" | "excluded" | "all";
+export type ExclusionScope = "all" | "product" | "item";
+
+export type ItemExclusion = {
+  name: string;
+  currency: string;
+  purchased_at: string;
+  total_amount: string;
+  blocked_by: NonNullable<ExclusionReason>[];
+} & (
+  | { kind: "product"; receipt_id: null; item_id: null; merchant: null }
+  | { kind: "item"; receipt_id: string; item_id: string; merchant: string }
+);
+
+export interface ItemExclusionPage {
+  items: ItemExclusion[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface ReceiptItem {
@@ -51,6 +75,9 @@ export interface ReceiptItem {
   is_weight: boolean;
   source_code: string | null;
   warranty: string | null;
+  is_excluded: boolean;
+  exclusion_reason: ExclusionReason;
+  included_amount: string;
 }
 
 export interface ReceiptDiscount {
@@ -86,9 +113,59 @@ export interface ItemSummary {
   min_price: string;
   max_price: string;
   last_purchased_at: string;
+  is_excluded: boolean;
+  included_amount: string;
 }
 
 export type ItemKey = Pick<ItemSummary, "name" | "currency">;
+
+export interface Category {
+  id: string;
+  name: string;
+  item_count: number;
+}
+
+export interface CategoryItemKey {
+  connection_id: string;
+  name: string;
+  currency: string;
+}
+
+export interface CategoryPage {
+  items: Category[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CategoryItemSnapshot extends CategoryItemKey {
+  category_id: string | null;
+}
+
+export interface CategoryItem extends CategoryItemKey {
+  connection_name: string;
+  receipt_count: number;
+  total_amount: string;
+  category_id: string | null;
+  category_name: string | null;
+  assignment_source: "manual" | "mcp" | null;
+}
+
+export interface CategoryItemPage {
+  items: CategoryItem[];
+  next_cursor: string | null;
+}
+
+export interface CategoryAssignmentResult {
+  matched: number;
+  changed: number;
+  protected: number;
+  dry_run: boolean;
+}
+
+export interface CategoryAssignmentResponse extends CategoryAssignmentResult {
+  previous_items: CategoryItemSnapshot[];
+}
 
 /** Currency has a fixed length, so the key stays unambiguous for any product name. */
 export function itemKey(item: ItemKey): string {
@@ -108,6 +185,8 @@ export interface ItemPage {
 }
 
 export interface ItemPurchase {
+  item_id: string;
+  is_excluded: boolean;
   receipt_id: string;
   purchased_at: string;
   merchant: string;
@@ -115,6 +194,8 @@ export interface ItemPurchase {
   unit: string | null;
   unit_price: string;
   total_amount: string;
+  exclusion_reason: ExclusionReason;
+  included_amount: string;
 }
 
 export interface ItemDetail extends ItemSummary {

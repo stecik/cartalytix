@@ -5,6 +5,8 @@ import { useRouter } from "vue-router";
 import { itemKey } from "../api";
 import type { ItemSummary } from "../api";
 import { formatMoney, numberLocale } from "../stats";
+import ExclusionAction from "./ExclusionAction.vue";
+import ExclusionStatus from "./ExclusionStatus.vue";
 
 export type ItemSortField =
   | "name"
@@ -14,7 +16,7 @@ export type ItemSortField =
   | "last_purchased";
 
 /** Without `sort` headers are static; with `selected` rows toggle a checkbox instead of opening. */
-const props = defineProps<{ items: ItemSummary[]; sort?: string; selected?: ReadonlySet<string> }>();
+const props = defineProps<{ items: ItemSummary[]; sort?: string; selected?: ReadonlySet<string>; manageExclusions?: boolean }>();
 const emit = defineEmits<{ sort: [field: ItemSortField]; toggle: [item: ItemSummary] }>();
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -73,10 +75,12 @@ function formatDate(date: string): string {
             :aria-sort="sort === undefined ? undefined : ariaSort(column.field)"
           >
             <button v-if="sort !== undefined" type="button" class="sort-button" @click="emit('sort', column.field)">
-              {{ t(column.label) }}<span aria-hidden="true">{{ SORT_MARKS[ariaSort(column.field)] }}</span>
+              {{ t(column.field === 'total_amount' && (manageExclusions || selected) ? 'originalAmount' : column.label) }}<span aria-hidden="true">{{ SORT_MARKS[ariaSort(column.field)] }}</span>
             </button>
-            <template v-else>{{ t(column.label) }}</template>
+            <template v-else>{{ t(column.field === 'total_amount' && (manageExclusions || selected) ? 'originalAmount' : column.label) }}</template>
           </th>
+          <th v-if="manageExclusions || selected" scope="col" class="amount">{{ t("includedAmount") }}</th>
+          <th v-if="manageExclusions" scope="col"><span class="sr-only">{{ t("actions") }}</span></th>
         </tr>
       </thead>
       <tbody>
@@ -84,7 +88,7 @@ function formatDate(date: string): string {
           v-for="item in items"
           :key="itemKey(item)"
           class="item-row"
-          :class="{ selected: selected?.has(itemKey(item)) }"
+          :class="{ selected: selected?.has(itemKey(item)), 'excluded-row': item.is_excluded }"
           @click="openItem($event, item)"
         >
           <td v-if="selected" class="select-cell">
@@ -96,6 +100,7 @@ function formatDate(date: string): string {
           <td class="item-name">
             <RouterLink :to="detailRoute(item)">{{ sourceName(item.name, t) }}</RouterLink>
             <span class="row-detail">{{ formatQuantity(item) }}</span>
+            <ExclusionStatus v-if="item.is_excluded" reason="product" />
           </td>
           <td class="amount">{{ item.receipt_count }}</td>
           <td class="amount strong">{{ formatMoney(item.total_amount, item.currency, locale) }}</td>
@@ -106,6 +111,10 @@ function formatDate(date: string): string {
             </span>
           </td>
           <td class="amount">{{ formatDate(item.last_purchased_at) }}</td>
+          <td v-if="manageExclusions || selected" class="amount included-amount">{{ formatMoney(item.included_amount ?? item.total_amount, item.currency, locale) }}</td>
+          <td v-if="manageExclusions" class="actions-cell">
+            <ExclusionAction scope="product" path="/items/exclusion" :identity="{ name: item.name, currency: item.currency }" :excluded="item.is_excluded" />
+          </td>
         </tr>
       </tbody>
     </table>
@@ -117,6 +126,8 @@ function formatDate(date: string): string {
   cursor: pointer;
   transition: background 0.12s;
 }
+.excluded-row td { color: var(--muted); }
+.actions-cell { width: 1%; }
 .item-row:hover,
 .item-row.selected {
   background: var(--surface-item-ledger);

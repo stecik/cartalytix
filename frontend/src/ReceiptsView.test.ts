@@ -8,13 +8,13 @@ import { createAppI18n } from "./i18n";
 const receipt = { id: "receipt-1", connection_id: "account-1", provider: "lidl", external_id: "external-1",
   purchased_at: "2026-10-17T10:00:00Z", merchant: "Lidl Praha", total_amount: "20.00", currency: "CZK" };
 
-function stubApi(items: unknown[] = [receipt]) {
+function stubApi(items: unknown[] = [receipt], total = items.length) {
   const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) =>
     String(input).startsWith("/api/v1/connections")
       ? Response.json({ items: [{ id: "account-1", provider: "lidl", name: "My Lidl" }] })
       : String(input).startsWith("/api/v1/receipts/suggestions")
         ? Response.json({ items: [] })
-        : Response.json({ items, total: items.length, limit: 30, offset: 0 }));
+        : Response.json({ items, total, limit: 30, offset: 0 }));
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 }
@@ -40,8 +40,45 @@ async function mountAt(path: string) {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("receipt filters", () => {
-  it("sends filters from the URL to the API with local day bounds", async () => {
+  it("returns to a valid page after excluding the last receipt on the final page", async () => {
+    let excluded = false;
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      if (String(input).startsWith("/api/v1/connections")) return Response.json({ items: [] });
+      if (init?.method === "PATCH") { excluded = true; return new Response(null, { status: 204 }); }
+      const offset = Number(new URL(String(input), "http://test").searchParams.get("offset"));
+      return Response.json({ items: excluded && offset > 0 ? [] : [receipt], total: excluded ? 30 : 31, limit: 30, offset });
+    }));
+    const { router, wrapper, client } = await mountAt("/receipts?offset=30");
+    await wrapper.get('tbody [data-exclusion="receipt"] button').trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.query.offset).toBeUndefined();
+    expect(wrapper.findAll("tbody tr")).toHaveLength(1);
+    wrapper.unmount(); client.clear();
+  });
+
+  it("excludes directly in the ledger without opening the receipt", async () => {
     const fetcher = stubApi();
+    const { router, wrapper, client } = await mountAt("/receipts");
+    await wrapper.get('tbody [data-exclusion="receipt"] button').trigger("click");
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe("/receipts");
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/receipts/receipt-1/exclusion", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ excluded: true }) }));
+    wrapper.unmount(); client.clear();
+  });
+
+  it("loads excluded receipts from a shareable filter and resets pagination", async () => {
+    const fetcher = stubApi();
+    const { router, wrapper, client } = await mountAt("/receipts?exclusion=excluded&offset=30");
+    expect(receiptUrls(fetcher).at(-1)?.searchParams.get("exclusion")).toBe("excluded");
+    await wrapper.get('.exclusion-filter input[value="all"]').setValue(true);
+    await flushPromises();
+    expect(router.currentRoute.value.query).toEqual({ exclusion: "all" });
+    expect(receiptUrls(fetcher).at(-1)?.searchParams.get("exclusion")).toBe("all");
+    wrapper.unmount(); client.clear();
+  });
+
+  it("sends filters from the URL to the API with local day bounds", async () => {
+    const fetcher = stubApi([receipt], 61);
     const { wrapper, client } = await mountAt(
       "/receipts?q=milk&from=2026-01-01&to=2026-01-31&connection=account-1&min=10&max=20.5&sort=total_amount_asc&offset=30");
     const params = receiptUrls(fetcher).at(-1)?.searchParams;
@@ -77,7 +114,7 @@ describe("receipt filters", () => {
 
   it("debounces search, resets the page and clears all filters", async () => {
     vi.useFakeTimers();
-    stubApi();
+    stubApi([receipt], 61);
     const { router, wrapper, client } = await mountAt("/receipts?min=5&offset=30");
     await wrapper.get('input[type="search"]').setValue("mléko");
     expect(router.currentRoute.value.query).toEqual({ min: "5", offset: "30" });

@@ -8,6 +8,8 @@ import { ApiError, request } from "../api";
 import type { ItemDetail } from "../api";
 import AppIcon from "../components/AppIcon.vue";
 import QueryState from "../components/QueryState.vue";
+import ExclusionAction from "../components/ExclusionAction.vue";
+import ExclusionStatus from "../components/ExclusionStatus.vue";
 import { formatMoney, numberLocale } from "../stats";
 
 const PriceHistoryChart = defineAsyncComponent(
@@ -36,6 +38,7 @@ const detail = useQuery({
 // The chart uses every loaded purchase; only the table is paged.
 const offset = ref(0);
 const purchases = computed(() => detail.data.value?.purchases ?? []);
+const includedPurchases = computed(() => purchases.value.filter((purchase) => !purchase.exclusion_reason));
 const visiblePurchases = computed(() => purchases.value.slice(offset.value, offset.value + PAGE_SIZE));
 watch([name, currency], () => { offset.value = 0; });
 const missing = computed(
@@ -85,9 +88,14 @@ function formatDate(date: string): string {
           <h1>{{ sourceName(detail.data.value.name, t) }}</h1>
           <p>{{ formatQuantity(detail.data.value.quantity, detail.data.value.unit) }} · {{ t("receiptCount", detail.data.value.receipt_count) }}</p>
         </header>
+        <div class="product-exclusion">
+          <ExclusionAction scope="product" path="/items/exclusion" :identity="{ name, currency }" :excluded="detail.data.value.is_excluded" />
+          <p>{{ t("productExclusionHint") }}</p>
+          <ExclusionStatus v-if="detail.data.value.is_excluded" reason="product" />
+        </div>
         <dl class="item-kpis">
           <div>
-            <dt>{{ t("totalSpent") }}</dt>
+            <dt>{{ t("originalAmount") }}</dt>
             <dd>{{ money(detail.data.value.total_amount) }}</dd>
           </div>
           <div>
@@ -103,11 +111,12 @@ function formatDate(date: string): string {
             <dd class="high">{{ money(detail.data.value.max_price) }}</dd>
           </div>
         </dl>
-        <section v-if="detail.data.value.purchases.length > 1" class="detail-panel">
+        <div class="included-total"><span>{{ t("includedAmount") }}</span><strong>{{ money(detail.data.value.included_amount ?? detail.data.value.total_amount) }}</strong></div>
+        <section v-if="includedPurchases.length > 1" class="detail-panel">
           <div class="section-heading">
             <h2>{{ t("priceHistory") }}</h2>
           </div>
-          <PriceHistoryChart :purchases="detail.data.value.purchases" :currency="currency" />
+          <PriceHistoryChart :purchases="includedPurchases" :currency="currency" />
         </section>
         <section class="detail-panel">
           <div class="section-heading">
@@ -128,13 +137,13 @@ function formatDate(date: string): string {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(purchase, index) in visiblePurchases" :key="`${purchase.receipt_id}:${offset + index}`">
+                <tr v-for="(purchase, index) in visiblePurchases" :key="`${purchase.receipt_id}:${offset + index}`" :class="{ 'excluded-row': purchase.exclusion_reason }">
                   <td>
                     <RouterLink class="receipt-link" :to="{ name: 'receipt-detail', params: { id: purchase.receipt_id } }">
                       {{ formatDate(purchase.purchased_at) }}
                     </RouterLink>
                   </td>
-                  <td>{{ purchase.merchant }}</td>
+                  <td>{{ purchase.merchant }}<ExclusionStatus :reason="purchase.exclusion_reason" /></td>
                   <td class="amount">{{ formatQuantity(purchase.quantity, purchase.unit) }}</td>
                   <td class="amount">{{ money(purchase.unit_price) }}</td>
                   <td class="amount strong">{{ money(purchase.total_amount) }}</td>
@@ -159,6 +168,11 @@ function formatDate(date: string): string {
 .back-link {
   margin-bottom: 18px;
 }
+.product-exclusion { margin-bottom: 22px; }
+.product-exclusion p { margin: 8px 0; max-width: 720px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.included-total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; font-size: 12px; color: var(--muted); padding-bottom: 24px; }
+.included-total strong { font-size: 22px; color: var(--green); font-variant-numeric: tabular-nums; }
+.excluded-row td { color: var(--muted); }
 .item-kpis {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

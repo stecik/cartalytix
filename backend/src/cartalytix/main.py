@@ -19,6 +19,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from cartalytix.admin_routes import bootstrap_admin
 from cartalytix.admin_routes import router as admin_router
 from cartalytix.bolt_routes import router as bolt_router
+from cartalytix.category_routes import router as category_router
 from cartalytix.connection_routes import connection_outputs
 from cartalytix.connection_routes import router as connection_router
 from cartalytix.dependencies import COOKIE_NAME, ActiveUser, Db, Owner, SessionUser
@@ -184,6 +185,7 @@ def create_app(
     app.include_router(search_router)
     app.include_router(receipt_router)
     app.include_router(item_router)
+    app.include_router(category_router)
     app.include_router(oauth_router)
     app.include_router(admin_router)
     if mcp:

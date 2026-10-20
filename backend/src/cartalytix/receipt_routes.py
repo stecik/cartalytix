@@ -8,11 +8,14 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import ColumnElement, exists, func, or_, select
 
+from cartalytix.accounting import accounting, product_excluded
 from cartalytix.dependencies import Db, Owner
 from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem
 from cartalytix.schemas import (
     CurrencyTotal,
     DiscountOutput,
+    ExclusionFilter,
+    ExclusionInput,
     OverviewOutput,
     ReceiptDetailOutput,
     ReceiptItemOutput,
@@ -32,7 +35,7 @@ RECEIPT_ORDER = {
 router = APIRouter(prefix="/api/v1", tags=["receipts"])
 
 
-def receipt_output(receipt: Receipt, provider: str) -> ReceiptOutput:
+def receipt_output(receipt: Receipt, provider: str, included_amount: Decimal) -> ReceiptOutput:
     return ReceiptOutput(
         id=receipt.id,
         connection_id=receipt.connection_id,
@@ -42,6 +45,8 @@ def receipt_output(receipt: Receipt, provider: str) -> ReceiptOutput:
         merchant=receipt.merchant,
         total_amount=format(receipt.total_amount, ".2f"),
         currency=receipt.currency,
+        is_excluded=receipt.is_excluded,
+        included_amount=format(included_amount, ".2f"),
     )
 
 
@@ -58,8 +63,11 @@ def receipts(
     amount_min: Annotated[Decimal | None, Query(ge=0, max_digits=18, decimal_places=2)] = None,
     amount_max: Annotated[Decimal | None, Query(ge=0, max_digits=18, decimal_places=2)] = None,
     sort: ReceiptSort = ReceiptSort.PURCHASED_AT_DESC,
+    exclusion: ExclusionFilter = ExclusionFilter.INCLUDED,
 ) -> ReceiptsOutput:
     filters: list[ColumnElement[bool]] = [ProviderConnection.owner_id == user.id]
+    if exclusion != ExclusionFilter.ALL:
+        filters.append(Receipt.is_excluded.is_(exclusion == ExclusionFilter.EXCLUDED))
     if connection_id is not None:
         filters.append(Receipt.connection_id == connection_id)
     if q and q.strip():
@@ -92,18 +100,27 @@ def receipts(
         )
         or 0
     )
-    rows = db.execute(
-        select(Receipt, ProviderConnection.provider)
+    order = RECEIPT_ORDER.get(sort, RECEIPT_ORDER[ReceiptSort.PURCHASED_AT_DESC])
+    page_receipts = (
+        select(Receipt.id)
         .join(ProviderConnection)
-        .where(
-            *filters,
-        )
-        .order_by(*RECEIPT_ORDER.get(sort, RECEIPT_ORDER[ReceiptSort.PURCHASED_AT_DESC]))
+        .where(*filters)
+        .order_by(*order)
         .limit(limit)
         .offset(offset)
     )
+    _, receipt_amounts = accounting(user.id, page_receipts)
+    rows = db.execute(
+        select(Receipt, ProviderConnection.provider, receipt_amounts.c.included_amount)
+        .join(ProviderConnection)
+        .join(receipt_amounts, receipt_amounts.c.receipt_id == Receipt.id)
+        .where(
+            *filters,
+        )
+        .order_by(*order)
+    )
     return ReceiptsOutput(
-        items=[receipt_output(receipt, provider) for receipt, provider in rows],
+        items=[receipt_output(receipt, provider, amount) for receipt, provider, amount in rows],
         total=total,
         limit=limit,
         offset=offset,
@@ -112,9 +129,11 @@ def receipts(
 
 @router.get("/receipts/{receipt_id}", response_model=ReceiptDetailOutput)
 def receipt_detail(receipt_id: UUID, user: Owner, db: Db) -> ReceiptDetailOutput:
+    item_amounts, receipt_amounts = accounting(user.id, [receipt_id])
     row = db.execute(
-        select(Receipt, ProviderConnection.provider)
+        select(Receipt, ProviderConnection.provider, receipt_amounts.c.included_amount)
         .join(ProviderConnection)
+        .join(receipt_amounts, receipt_amounts.c.receipt_id == Receipt.id)
         .where(
             Receipt.id == receipt_id,
             ProviderConnection.owner_id == user.id,
@@ -122,9 +141,11 @@ def receipt_detail(receipt_id: UUID, user: Owner, db: Db) -> ReceiptDetailOutput
     ).first()
     if row is None:
         raise HTTPException(404, "receipt_not_found")
-    receipt, provider = row
-    items = db.scalars(
-        select(ReceiptItem)
+    receipt, provider, amount = row
+    items = db.execute(
+        select(ReceiptItem, item_amounts.c.included_amount, product_excluded(user.id))
+        .join(Receipt, Receipt.id == ReceiptItem.receipt_id)
+        .join(item_amounts, item_amounts.c.id == ReceiptItem.id)
         .where(ReceiptItem.receipt_id == receipt.id)
         .order_by(ReceiptItem.position)
     )
@@ -132,18 +153,82 @@ def receipt_detail(receipt_id: UUID, user: Owner, db: Db) -> ReceiptDetailOutput
         select(Discount).where(Discount.receipt_id == receipt.id).order_by(Discount.id)
     )
     return ReceiptDetailOutput(
-        **receipt_output(receipt, provider).model_dump(),
+        **receipt_output(receipt, provider, amount).model_dump(),
         rounding_amount=receipt.rounding_amount,
         quality_issues=receipt.quality_issues,
         source_format=receipt.source_format,
-        items=[ReceiptItemOutput.model_validate(item) for item in items],
+        items=[
+            ReceiptItemOutput.model_validate(item).model_copy(
+                update={
+                    "included_amount": format(included, ".2f"),
+                    "exclusion_reason": "receipt"
+                    if receipt.is_excluded
+                    else "item"
+                    if item.is_excluded
+                    else "product"
+                    if global_excluded
+                    else None,
+                }
+            )
+            for item, included, global_excluded in items
+        ],
         discounts=[DiscountOutput.model_validate(discount) for discount in discounts],
     )
+
+
+@router.patch("/receipts/{receipt_id}/exclusion", response_model=ReceiptDetailOutput)
+def set_receipt_exclusion(
+    receipt_id: UUID, body: ExclusionInput, user: Owner, db: Db
+) -> ReceiptDetailOutput:
+    receipt = db.scalar(
+        select(Receipt)
+        .join(ProviderConnection)
+        .where(Receipt.id == receipt_id, ProviderConnection.owner_id == user.id)
+        .with_for_update(of=Receipt)
+    )
+    if receipt is None:
+        raise HTTPException(404, "receipt_not_found")
+    receipt.is_excluded = body.excluded
+    db.commit()
+    return receipt_detail(receipt_id, user, db)
+
+
+@router.patch(
+    "/receipts/{receipt_id}/items/{item_id}/exclusion", response_model=ReceiptDetailOutput
+)
+def set_receipt_item_exclusion(
+    receipt_id: UUID, item_id: UUID, body: ExclusionInput, user: Owner, db: Db
+) -> ReceiptDetailOutput:
+    receipt = db.scalar(
+        select(Receipt)
+        .join(ProviderConnection)
+        .where(
+            Receipt.id == receipt_id,
+            ProviderConnection.owner_id == user.id,
+        )
+        .with_for_update(of=Receipt)
+    )
+    if receipt is None:
+        raise HTTPException(404, "receipt_not_found")
+    item = db.scalar(
+        select(ReceiptItem)
+        .where(
+            ReceiptItem.receipt_id == receipt_id,
+            ReceiptItem.id == item_id,
+        )
+        .with_for_update(of=ReceiptItem)
+    )
+    if item is None:
+        raise HTTPException(404, "receipt_item_not_found")
+    item.is_excluded = body.excluded
+    db.commit()
+    return receipt_detail(receipt_id, user, db)
 
 
 @router.get("/overview", response_model=OverviewOutput)
 def overview(user: Owner, db: Db) -> OverviewOutput:
     owner_filter = ProviderConnection.owner_id == user.id
+    _, receipt_amounts = accounting(user.id)
     receipt_count = (
         db.scalar(
             select(func.count())
@@ -151,7 +236,8 @@ def overview(user: Owner, db: Db) -> OverviewOutput:
             .join(
                 ProviderConnection,
             )
-            .where(owner_filter)
+            .join(receipt_amounts, receipt_amounts.c.receipt_id == Receipt.id)
+            .where(owner_filter, receipt_amounts.c.is_included)
         )
         or 0
     )
@@ -166,19 +252,22 @@ def overview(user: Owner, db: Db) -> OverviewOutput:
         or 0
     )
     totals = db.execute(
-        select(Receipt.currency, func.sum(Receipt.total_amount))
+        select(Receipt.currency, func.sum(receipt_amounts.c.included_amount))
         .join(
             ProviderConnection,
         )
-        .where(owner_filter)
+        .join(receipt_amounts, receipt_amounts.c.receipt_id == Receipt.id)
+        .where(owner_filter, receipt_amounts.c.is_included)
         .group_by(Receipt.currency)
         .order_by(Receipt.currency)
     )
     latest = db.execute(
-        select(Receipt, ProviderConnection.provider)
+        select(Receipt, ProviderConnection.provider, receipt_amounts.c.included_amount)
         .join(ProviderConnection)
+        .join(receipt_amounts, receipt_amounts.c.receipt_id == Receipt.id)
         .where(
             owner_filter,
+            receipt_amounts.c.is_included,
         )
         .order_by(Receipt.purchased_at.desc(), Receipt.id.desc())
         .limit(5)
@@ -190,5 +279,7 @@ def overview(user: Owner, db: Db) -> OverviewOutput:
             CurrencyTotal(currency=currency, amount=format(amount, ".2f"))
             for currency, amount in totals
         ],
-        latest_receipts=[receipt_output(receipt, provider) for receipt, provider in latest],
+        latest_receipts=[
+            receipt_output(receipt, provider, amount) for receipt, provider, amount in latest
+        ],
     )

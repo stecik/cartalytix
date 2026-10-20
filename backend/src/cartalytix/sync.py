@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections import Counter, defaultdict
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -460,6 +461,23 @@ def _decimal(value: object) -> Decimal:
     return result
 
 
+def _item_identity(item: ReceiptItem, discounts: list[tuple[str, Decimal]]) -> tuple[object, ...]:
+    return (
+        item.name,
+        item.source_code,
+        item.quantity,
+        item.unit,
+        item.unit_price,
+        item.total_amount,
+        item.original_amount,
+        item.is_weight,
+        item.deposit_amount,
+        item.printed_net_amount,
+        item.warranty,
+        tuple(sorted(discounts)),
+    )
+
+
 def _save_receipt(
     engine: Engine,
     connection_id: UUID,
@@ -475,15 +493,40 @@ def _save_receipt(
     if not items or not normalized.get("currency"):
         raise SyncError("quality_error")
     with Session(engine) as db, db.begin():
+        excluded: Counter[tuple[object, ...]] = Counter()
         receipt = db.scalar(
-            select(Receipt).where(
-                Receipt.connection_id == connection_id, Receipt.external_id == external_id
-            )
+            select(Receipt)
+            .where(Receipt.connection_id == connection_id, Receipt.external_id == external_id)
+            .with_for_update()
         )
         if receipt is None:
             receipt = Receipt(connection_id=connection_id, external_id=external_id)
             db.add(receipt)
         else:
+            if receipt.currency == normalized.get("currency"):
+                excluded_items = list(
+                    db.scalars(
+                        select(ReceiptItem).where(
+                            ReceiptItem.receipt_id == receipt.id,
+                            ReceiptItem.is_excluded.is_(True),
+                        )
+                    )
+                )
+                if excluded_items:
+                    item_discounts: dict[UUID, list[tuple[str, Decimal]]] = defaultdict(list)
+                    for discount in db.scalars(
+                        select(Discount).where(
+                            Discount.receipt_id == receipt.id, Discount.item_id.is_not(None)
+                        )
+                    ):
+                        if discount.item_id is not None:
+                            item_discounts[discount.item_id].append(
+                                (discount.name, discount.amount)
+                            )
+                    excluded.update(
+                        _item_identity(item, item_discounts.get(item.id, []))
+                        for item in excluded_items
+                    )
             db.execute(delete(Discount).where(Discount.receipt_id == receipt.id))
             db.execute(delete(ReceiptItem).where(ReceiptItem.receipt_id == receipt.id))
         receipt.raw_document_id = raw_id
@@ -518,15 +561,26 @@ def _save_receipt(
                 warranty=item.get("warranty"),
             )
             db.add(row)
+            row_discounts: list[tuple[str, Decimal]] = []
             for discount in item.get("discounts", []):
+                discount_name = str(
+                    discount.get("description") or discount.get("name") or "Discount"
+                )
+                discount_amount = _decimal(discount.get("amount"))
+                row_discounts.append((discount_name, discount_amount))
                 discounts.append(
                     Discount(
                         receipt_id=receipt.id,
                         item_id=row.id,
-                        name=str(discount.get("description") or discount.get("name") or "Discount"),
-                        amount=_decimal(discount.get("amount")),
+                        name=discount_name,
+                        amount=discount_amount,
                     )
                 )
+            identity = _item_identity(row, row_discounts)
+            remaining = excluded.get(identity, 0)
+            row.is_excluded = remaining > 0
+            if row.is_excluded:
+                excluded[identity] = remaining - 1
         discounts.extend(
             Discount(
                 receipt_id=receipt.id,

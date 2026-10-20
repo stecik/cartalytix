@@ -3,9 +3,11 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import type { Receipt } from "../api";
 import AppIcon from "./AppIcon.vue";
+import ExclusionAction from "./ExclusionAction.vue";
+import ExclusionStatus from "./ExclusionStatus.vue";
 import { providerLogos } from "../providerLogos";
 
-const props = defineProps<{ receipts: Receipt[]; sort?: string; filtered?: boolean }>();
+const props = defineProps<{ receipts: Receipt[]; sort?: string; filtered?: boolean; manageExclusions?: boolean }>();
 const emit = defineEmits<{ sort: [field: "purchased_at" | "total_amount"] }>();
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -13,7 +15,7 @@ const SORT_MARKS = { ascending: "↑", descending: "↓", none: "" } as const;
 
 function openReceipt(event: MouseEvent, id: string): void {
   if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey
-    || (event.target instanceof Element && event.target.closest("a"))) return;
+    || (event.target instanceof Element && event.target.closest("a, button"))) return;
   void router.push({ name: "receipt-detail", params: { id } });
 }
 
@@ -72,21 +74,28 @@ function formatDate(date: string): string {
               {{ t("amount") }}<span aria-hidden="true">{{ SORT_MARKS[ariaSort("total_amount")] }}</span>
             </button>
           </th>
+          <th v-if="manageExclusions" scope="col" class="amount">{{ t("includedAmount") }}</th>
+          <th v-if="manageExclusions" scope="col"><span class="sr-only">{{ t("actions") }}</span></th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="receipt in receipts" :key="receipt.id" class="receipt-row" @click="openReceipt($event, receipt.id)">
+        <tr v-for="receipt in receipts" :key="receipt.id" class="receipt-row" :class="{ 'excluded-row': receipt.is_excluded }" @click="openReceipt($event, receipt.id)">
           <td>
             <div class="receipt-store">
               <img v-if="providerLogos[receipt.provider]" :src="providerLogos[receipt.provider]" class="receipt-logo" width="28" height="28" alt="" />
               <div>
                 <RouterLink :to="{ name: 'receipt-detail', params: { id: receipt.id } }"><strong>{{ receipt.merchant }}</strong></RouterLink><span class="row-detail">{{ receipt.provider }}</span>
+                <ExclusionStatus v-if="receipt.is_excluded" reason="receipt" />
               </div>
             </div>
           </td>
           <td>{{ formatDate(receipt.purchased_at) }}</td>
           <td class="amount">
             {{ formatAmount(receipt.total_amount, receipt.currency) }}
+          </td>
+          <td v-if="manageExclusions" class="amount included-amount">{{ formatAmount(receipt.included_amount ?? receipt.total_amount, receipt.currency) }}</td>
+          <td v-if="manageExclusions" class="actions-cell">
+            <ExclusionAction scope="receipt" :path="`/receipts/${encodeURIComponent(receipt.id)}/exclusion`" :excluded="receipt.is_excluded" />
           </td>
         </tr>
       </tbody>
@@ -96,6 +105,8 @@ function formatDate(date: string): string {
 
 <style scoped>
 .receipt-row { cursor: pointer; }
+.excluded-row td { color: var(--muted); }
+.actions-cell { width: 1%; }
 .receipt-store { display: flex; align-items: center; gap: 12px; }
 .receipt-logo { width: 28px; height: 28px; object-fit: contain; flex-shrink: 0; }
 .sort-button { border: 0; padding: 0; background: none; color: inherit; font-size: inherit; display: inline-flex; gap: 4px; }

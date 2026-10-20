@@ -49,6 +49,21 @@ beforeEach(() => { localStorage.clear(); });
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("calculator", () => {
+  it("shows each included amount alongside its original price and the net total", async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([{ name: "Rohlík", currency: "CZK" }]));
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      if (String(input).startsWith("/api/v1/connections")) return Response.json({ items: [] });
+      if (String(input).startsWith("/api/v1/items/totals")) return Response.json({ items: [{ ...rohlik, included_amount: "33.00" }], totals: [{ currency: "CZK", total_amount: "33.00" }] });
+      return Response.json({ items: [{ ...rohlik, included_amount: "33.00" }], total: 1, limit: 30, offset: 0 });
+    }));
+    const { wrapper, client } = await mountAt("/calculator");
+    expect(wrapper.get(".calculator-stats").text().replace(/\s/g, " ")).toContain("CZK 33.00");
+    expect(wrapper.get(".selection-section .included-amount").text().replace(/\s/g, " ")).toBe("CZK 33.00");
+    expect(wrapper.get(".ledger-section .included-amount").text().replace(/\s/g, " ")).toBe("CZK 33.00");
+    expect(wrapper.get(".selection-section .strong").text().replace(/\s/g, " ")).toBe("CZK 43.00");
+    wrapper.unmount(); client.clear();
+  });
+
   it("sums ticked products for the chosen period and remembers them", async () => {
     const fetcher = stubApi();
     const { wrapper, client } = await mountAt("/calculator?from=2026-03-01&to=2026-03-31");

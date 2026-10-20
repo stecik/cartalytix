@@ -51,8 +51,10 @@ from cartalytix.schemas import (
 from cartalytix.security import token_hash
 
 SCOPE = "cartalytix:read"
+CATEGORIES_WRITE_SCOPE = "cartalytix:categories:write"
 # Advertised only by the authorization server; refresh tokens are issued either way.
 OFFLINE_SCOPE = "offline_access"
+CLIENT_SCOPES = [SCOPE, OFFLINE_SCOPE, CATEGORIES_WRITE_SCOPE]
 REQUEST_TTL = timedelta(minutes=10)
 CODE_TTL = timedelta(minutes=5)
 ACCESS_TTL = timedelta(hours=1)
@@ -128,7 +130,13 @@ class DatabaseOAuthProvider(
             return None
         secret = self.cipher.decrypt(client.encrypted_secret) if client.encrypted_secret else None
         return OAuthClientInformationFull.model_validate(
-            {**client.registration, "client_secret": secret}
+            {
+                **client.registration,
+                "client_secret": secret,
+                # Registration describes permitted requests, not the user's grant. Old
+                # clients may request new consent; their existing tokens keep their scopes.
+                "scope": " ".join(CLIENT_SCOPES),
+            }
         )
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
@@ -138,6 +146,8 @@ class DatabaseOAuthProvider(
         registration = client_info.model_dump(
             mode="json", exclude={"client_secret"}, exclude_none=True
         )
+        # Permit later consent without changing the scopes returned to the registering client.
+        registration["scope"] = " ".join(CLIENT_SCOPES)
         if len(json.dumps(registration)) > MAX_REGISTRATION_BYTES:
             raise RegistrationError("invalid_client_metadata", "Client metadata is too large")
         client = OAuthClient(
@@ -161,7 +171,7 @@ class DatabaseOAuthProvider(
         if params.resource is not None and not self.urls.is_resource(params.resource):
             raise AuthorizeError("invalid_target", "Unknown resource")
         scopes = params.scopes or (client.scope or SCOPE).split()
-        if not set(scopes) <= {SCOPE, OFFLINE_SCOPE}:
+        if not set(scopes) <= {SCOPE, OFFLINE_SCOPE, CATEGORIES_WRITE_SCOPE}:
             raise AuthorizeError("invalid_scope", "Unsupported scope")
         request = token_urlsafe(32)
         row = OAuthAuthorizationRequest(
@@ -336,6 +346,8 @@ class DatabaseOAuthProvider(
             if found is None:
                 raise TokenError("invalid_grant", "refresh token is not valid")
             token = found[0]
+            if not set(scopes) <= set(token.scopes):
+                raise TokenError("invalid_scope", "Scope exceeds the original authorization")
             # Rotation: only the request that deletes the row may issue new tokens.
             removed = db.scalar(
                 delete(OAuthToken)

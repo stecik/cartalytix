@@ -4,12 +4,14 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Query
-from sqlalchemy import ColumnElement, Float, case, func, literal, or_, select, text
+from sqlalchemy import ColumnElement, Float, and_, case, exists, func, literal, or_, select, text
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
+from cartalytix.accounting import product_excluded
 from cartalytix.dependencies import Db, Owner
+from cartalytix.exclusion_schemas import ExclusionScope
 from cartalytix.models import ProviderConnection, Receipt, ReceiptItem
-from cartalytix.schemas import SuggestionKind, SuggestionOutput, SuggestionsOutput
+from cartalytix.schemas import ExclusionFilter, SuggestionKind, SuggestionOutput, SuggestionsOutput
 from cartalytix.search import like_pattern, search_text, system_names
 
 MIN_TERM_LENGTH = 3
@@ -27,6 +29,8 @@ def _suggest(
     term: str,
     limit: int,
     fuzzy: bool,
+    exclusion: ExclusionFilter,
+    scope: ExclusionScope | None = None,
 ) -> list[tuple[int, float, int, str]]:
     key = search_text(column)
     contains = key.like(like_pattern(term), escape="\\")
@@ -52,8 +56,33 @@ def _suggest(
         statement = statement.select_from(ReceiptItem).join(
             Receipt, ReceiptItem.receipt_id == Receipt.id
         )
+        included = and_(
+            Receipt.is_excluded.is_(False),
+            ReceiptItem.is_excluded.is_(False),
+            ~product_excluded(owner_id),
+        )
     else:
         statement = statement.select_from(Receipt)
+        included = and_(
+            Receipt.is_excluded.is_(False),
+            or_(
+                ~exists().where(ReceiptItem.receipt_id == Receipt.id),
+                exists().where(
+                    ReceiptItem.receipt_id == Receipt.id,
+                    ReceiptItem.is_excluded.is_(False),
+                    ~product_excluded(owner_id),
+                ),
+            ),
+        )
+    if scope is not None and column.class_ is ReceiptItem and exclusion == ExclusionFilter.EXCLUDED:
+        explicit = {
+            ExclusionScope.ALL: or_(ReceiptItem.is_excluded.is_(True), product_excluded(owner_id)),
+            ExclusionScope.PRODUCT: product_excluded(owner_id),
+            ExclusionScope.ITEM: ReceiptItem.is_excluded.is_(True),
+        }
+        statement = statement.where(explicit.get(scope, ReceiptItem.is_excluded.is_(True)))
+    elif exclusion != ExclusionFilter.ALL:
+        statement = statement.where(included.is_(exclusion == ExclusionFilter.INCLUDED))
     statement = (
         statement.join(ProviderConnection, Receipt.connection_id == ProviderConnection.id)
         .where(ProviderConnection.owner_id == owner_id, condition)
@@ -74,6 +103,8 @@ def receipt_suggestions(
     q: Annotated[str, Query(min_length=MIN_TERM_LENGTH, max_length=100)],
     limit: Annotated[int, Query(ge=1, le=20)] = 8,
     kind: SuggestionKind | None = None,
+    exclusion: ExclusionFilter = ExclusionFilter.INCLUDED,
+    scope: ExclusionScope | None = None,
 ) -> SuggestionsOutput:
     term = q.strip()
     if len(term) < MIN_TERM_LENGTH:
@@ -89,7 +120,16 @@ def receipt_suggestions(
         (*row, source)
         for source, column in sources
         if kind in (None, source)
-        for row in _suggest(db, user.id, column, term, limit, fuzzy)
+        for row in _suggest(
+            db,
+            user.id,
+            column,
+            term,
+            limit,
+            fuzzy,
+            exclusion,
+            scope if kind == SuggestionKind.ITEM else None,
+        )
     ]
     candidates.sort(key=lambda row: (-row[0], -row[1], -row[2], row[3]))
     return SuggestionsOutput(

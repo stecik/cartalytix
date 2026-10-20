@@ -263,6 +263,19 @@ class ReceiptOutput(BaseModel):
     merchant: str
     total_amount: str
     currency: str
+    is_excluded: bool
+    included_amount: str
+
+
+class ExclusionFilter(StrEnum):
+    INCLUDED = "included"
+    EXCLUDED = "excluded"
+    ALL = "all"
+
+
+class ExclusionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    excluded: bool
 
 
 class ReceiptSort(StrEnum):
@@ -294,6 +307,9 @@ class ReceiptItemOutput(BaseModel):
     is_weight: bool
     source_code: str | None
     warranty: str | None
+    is_excluded: bool
+    exclusion_reason: Literal["receipt", "item", "product"] | None = None
+    included_amount: str = "0.00"
 
 
 class DiscountOutput(BaseModel):
@@ -399,6 +415,8 @@ class ItemSummaryOutput(BaseModel):
     min_price: str
     max_price: str
     last_purchased_at: datetime
+    is_excluded: bool
+    included_amount: str
 
 
 class ItemsOutput(BaseModel):
@@ -416,6 +434,10 @@ class ItemPurchaseOutput(BaseModel):
     unit: str | None
     unit_price: str
     total_amount: str
+    item_id: UUID
+    is_excluded: bool
+    exclusion_reason: Literal["receipt", "item", "product"] | None
+    included_amount: str
 
 
 class ItemDetailOutput(ItemSummaryOutput):
@@ -426,6 +448,10 @@ class ItemKeyInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=1000)
     currency: str = Field(pattern=r"^[A-Z]{3}$")
+
+
+class ProductExclusionInput(ItemKeyInput):
+    excluded: bool
 
 
 class ItemTotalsInput(BaseModel):

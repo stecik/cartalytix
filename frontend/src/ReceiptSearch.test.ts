@@ -35,6 +35,30 @@ async function type(wrapper: ReturnType<typeof setup>["wrapper"], value: string)
 }
 
 describe("receipt search suggestions", () => {
+  it("separates one-off and global exclusion suggestions", async () => {
+    const { wrapper, fetcher, client } = setup();
+    await wrapper.setProps({ exclusion: "excluded", scope: "item" });
+    await wrapper.get("input").trigger("focus");
+    await type(wrapper, "rohlik");
+    expect(new URL(String(fetcher.mock.calls.at(-1)?.[0]), "http://test").searchParams.get("scope")).toBe("item");
+    await wrapper.setProps({ scope: "product" });
+    await flushPromises();
+    expect(new URL(String(fetcher.mock.calls.at(-1)?.[0]), "http://test").searchParams.get("scope")).toBe("product");
+    wrapper.unmount(); client.clear();
+  });
+
+  it("searches the selected exclusion scope and refetches when it changes", async () => {
+    const { wrapper, fetcher, client } = setup();
+    await wrapper.setProps({ exclusion: "excluded" });
+    await wrapper.get("input").trigger("focus");
+    await type(wrapper, "rohlik");
+    expect(new URL(String(fetcher.mock.calls.at(-1)?.[0]), "http://test").searchParams.get("exclusion")).toBe("excluded");
+    await wrapper.setProps({ exclusion: "all" });
+    await flushPromises();
+    expect(new URL(String(fetcher.mock.calls.at(-1)?.[0]), "http://test").searchParams.get("exclusion")).toBe("all");
+    wrapper.unmount(); client.clear();
+  });
+
   it("waits for three characters and debounces requests", async () => {
     const { wrapper, fetcher, client } = setup();
     await wrapper.get("input").trigger("focus");

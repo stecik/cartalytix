@@ -10,9 +10,11 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import ColumnElement, Integer, Select, String, cast, func, select
+from sqlalchemy.sql.selectable import CTE
 
+from cartalytix.accounting import accounting
 from cartalytix.dependencies import Db, Owner
-from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem
+from cartalytix.models import ProviderConnection, Receipt, ReceiptItem
 from cartalytix.schemas import (
     STATS_BUCKET_PATTERN,
     BucketStats,
@@ -136,15 +138,18 @@ def _range_filters(start: datetime | None, end: datetime | None) -> list[ColumnE
 
 
 def _top_items(
-    filters: list[ColumnElement[bool]], order: ColumnElement[int] | ColumnElement[Decimal]
+    filters: list[ColumnElement[bool]],
+    item_amounts: CTE,
+    order: ColumnElement[int] | ColumnElement[Decimal],
 ) -> Select[str, int, Decimal]:
     receipt_count = func.count(func.distinct(ReceiptItem.receipt_id))
-    amount = func.sum(ReceiptItem.total_amount)
+    amount = func.sum(item_amounts.c.included_amount)
     return (
         select(ReceiptItem.name, receipt_count, amount)
         .join(Receipt, ReceiptItem.receipt_id == Receipt.id)
         .join(ProviderConnection, Receipt.connection_id == ProviderConnection.id)
-        .where(*filters)
+        .join(item_amounts, ReceiptItem.id == item_amounts.c.id)
+        .where(*filters, item_amounts.c.is_included)
         .group_by(ReceiptItem.name)
         .order_by(order.desc(), ReceiptItem.name)
         .limit(TOP_ITEMS)
@@ -181,15 +186,23 @@ def overview_stats(
         start = bucket_start if period_start is None else max(bucket_start, period_start)
         end = min(bucket_end, period_end)
     owner_filter = ProviderConnection.owner_id == user.id
-    selection_filters = [owner_filter, *_range_filters(start, end)]
+    accounting_start = period_start
+    if start is not None and lookback is not None and accounting_start is not None:
+        accounting_start = min(accounting_start, _back(start, lookback))
+    item_amounts, receipt_amounts = accounting(
+        user.id,
+        select(Receipt.id).where(*_range_filters(accounting_start, period_end)),
+    )
+    selection_filters = [owner_filter, receipt_amounts.c.is_included, *_range_filters(start, end)]
     bucket_key, weekday, hour = _local_parts(db.get_bind().dialect.name, granularity)
     amounts: dict[str, Decimal] = defaultdict(Decimal)
     counts: Counter[str] = Counter()
     by_merchant: dict[str, list[MerchantStats]] = defaultdict(list)
-    merchant_amount = func.sum(Receipt.total_amount)
+    merchant_amount = func.sum(receipt_amounts.c.included_amount)
     for row_currency, merchant, count, amount in db.execute(
         select(Receipt.currency, Receipt.merchant, func.count(), merchant_amount)
         .join(ProviderConnection)
+        .join(receipt_amounts, Receipt.id == receipt_amounts.c.receipt_id)
         .where(*selection_filters)
         .group_by(Receipt.currency, Receipt.merchant)
         .order_by(merchant_amount.desc(), Receipt.merchant)
@@ -208,18 +221,21 @@ def overview_stats(
         previous = {
             row_currency: (count, amount)
             for row_currency, count, amount in db.execute(
-                select(Receipt.currency, func.count(), func.sum(Receipt.total_amount))
+                select(Receipt.currency, func.count(), func.sum(receipt_amounts.c.included_amount))
                 .join(ProviderConnection)
-                .where(owner_filter, *_range_filters(*previous_range))
+                .join(receipt_amounts, Receipt.id == receipt_amounts.c.receipt_id)
+                .where(
+                    owner_filter, receipt_amounts.c.is_included, *_range_filters(*previous_range)
+                )
                 .group_by(Receipt.currency)
             )
         }
     discounts: dict[str, Decimal] = {
         row_currency: amount
         for row_currency, amount in db.execute(
-            select(Receipt.currency, func.sum(Discount.amount))
-            .select_from(Discount)
-            .join(Receipt, Discount.receipt_id == Receipt.id)
+            select(Receipt.currency, func.sum(receipt_amounts.c.included_discount_amount))
+            .select_from(Receipt)
+            .join(receipt_amounts, Receipt.id == receipt_amounts.c.receipt_id)
             .join(ProviderConnection, Receipt.connection_id == ProviderConnection.id)
             .where(*selection_filters)
             .group_by(Receipt.currency)
@@ -245,12 +261,14 @@ def overview_stats(
     bucket_amounts: dict[str, Decimal] = defaultdict(Decimal)
     bucket_counts: Counter[str] = Counter()
     if currency is not None:
-        bucket_amount = func.sum(Receipt.total_amount)
+        bucket_amount = func.sum(receipt_amounts.c.included_amount)
         for key, merchant, count, amount in db.execute(
             select(bucket_key, Receipt.merchant, func.count(), bucket_amount)
             .join(ProviderConnection)
+            .join(receipt_amounts, Receipt.id == receipt_amounts.c.receipt_id)
             .where(
                 owner_filter,
+                receipt_amounts.c.is_included,
                 Receipt.currency == currency,
                 *_range_filters(period_start, period_end),
             )
@@ -288,6 +306,7 @@ def overview_stats(
     for day, hour_of_day, count in db.execute(
         select(weekday, hour, func.count())
         .join(ProviderConnection)
+        .join(receipt_amounts, Receipt.id == receipt_amounts.c.receipt_id)
         .where(*selection_filters)
         .group_by(weekday, hour)
     ):
@@ -296,12 +315,18 @@ def overview_stats(
     frequent_items: list[ItemStats] = []
     top_spend_items: list[ItemStats] = []
     if currency is not None:
-        item_filters = [*selection_filters, Receipt.currency == currency]
+        item_filters = [owner_filter, *_range_filters(start, end), Receipt.currency == currency]
         frequent_items = _item_stats(
-            db.execute(_top_items(item_filters, func.count(func.distinct(ReceiptItem.receipt_id))))
+            db.execute(
+                _top_items(
+                    item_filters, item_amounts, func.count(func.distinct(ReceiptItem.receipt_id))
+                )
+            )
         )
         top_spend_items = _item_stats(
-            db.execute(_top_items(item_filters, func.sum(ReceiptItem.total_amount)))
+            db.execute(
+                _top_items(item_filters, item_amounts, func.sum(item_amounts.c.included_amount))
+            )
         )
 
     return StatsOutput(
