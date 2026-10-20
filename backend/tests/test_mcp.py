@@ -73,9 +73,11 @@ TOOLS = {
     "delete_category",
     "list_category_items",
     "assign_category_items",
+    "calculate_items_spending",
 }
 CATEGORY_WRITES = {"create_category", "update_category", "delete_category", "assign_category_items"}
 CATEGORY_WRITE_SCOPE = "cartalytix:categories:write"
+CALCULATOR_SCOPE = "cartalytix:calculator"
 INITIALIZE = {
     "jsonrpc": "2.0",
     "id": 1,
@@ -183,11 +185,13 @@ def authorize(
     )
 
 
-def consent(web: TestClient, location: str, approve: bool = True) -> dict[str, str]:
+def consent(
+    web: TestClient, location: str, approve: bool = True, grant: list[str] | None = None
+) -> dict[str, str]:
     assert location.startswith(f"{PUBLIC}/oauth/consent?request=")
     response = web.post(
         f"/api/v1/mcp/authorizations/{query(location).get('request')}",
-        json={"approve": approve},
+        json={"approve": approve, "scopes": grant or []},
         headers=ORIGIN,
     )
     assert response.status_code == 200, response.text
@@ -195,13 +199,17 @@ def consent(web: TestClient, location: str, approve: bool = True) -> dict[str, s
 
 
 def code_for(
-    web: TestClient, account: tuple[str, str], registered: dict[str, Any], **params: str
+    web: TestClient,
+    account: tuple[str, str],
+    registered: dict[str, Any],
+    grant: list[str] | None = None,
+    **params: str,
 ) -> tuple[str, str]:
     login(web, account)
     verifier, challenge = pkce()
     response = authorize(web, registered, challenge, **params)
     assert response.status_code == 302
-    result = consent(web, response.headers.get("location", ""))
+    result = consent(web, response.headers.get("location", ""), grant=grant)
     assert result.get("state") == "state-1"
     return result.get("code", ""), verifier
 
@@ -246,7 +254,7 @@ def test_discovery_metadata(web: TestClient) -> None:
         resource = web.get(path).json()
         assert resource.get("resource") == RESOURCE
         assert resource.get("authorization_servers") == [ISSUER]
-        assert resource.get("scopes_supported") == [SCOPE, CATEGORY_WRITE_SCOPE]
+        assert resource.get("scopes_supported") == [SCOPE, CATEGORY_WRITE_SCOPE, CALCULATOR_SCOPE]
     for path in [
         "/.well-known/oauth-authorization-server/api/v1/oauth",
         "/.well-known/oauth-authorization-server",
@@ -262,6 +270,7 @@ def test_discovery_metadata(web: TestClient) -> None:
             SCOPE,
             "offline_access",
             CATEGORY_WRITE_SCOPE,
+            CALCULATOR_SCOPE,
         }
     missing = rpc(web, None)
     assert missing.status_code == 401
@@ -447,7 +456,16 @@ def test_token_validation(web: TestClient, engine: Engine) -> None:
     registered = {"client_id": no_scope.get("client_id")}
     code, verifier = code_for(web, OWNER, registered, scope="offline_access")
     limited = exchange(web, registered, code, verifier).json()
-    assert limited.get("scope") == "offline_access"
+    # Read is the mandatory base of every consent, even when the client omits it.
+    assert limited.get("scope") == f"{SCOPE} offline_access"
+    assert rpc(web, limited.get("access_token")).status_code == 200
+    with Session(engine) as db:
+        db.execute(
+            update(OAuthGrant)
+            .where(OAuthGrant.client_id == no_scope.get("client_id"))
+            .values(scopes=["offline_access"])
+        )
+        db.commit()
     forbidden = rpc(web, limited.get("access_token"))
     assert forbidden.status_code == 403
     assert 'error="insufficient_scope"' in forbidden.headers.get("www-authenticate", "")
@@ -565,8 +583,11 @@ async def connect(
         }
         if consents is not None:
             consents.append(requested)
+        # The owner enables what the client asked for; read is always granted.
         decision = await browser.post(
-            f"/api/v1/mcp/authorizations/{request}", json={"approve": True}, headers=ORIGIN
+            f"/api/v1/mcp/authorizations/{request}",
+            json={"approve": True, "scopes": requested},
+            headers=ORIGIN,
         )
         callback.update(query(decision.json().get("redirect_url")))
 
@@ -622,8 +643,11 @@ async def test_mcp_tools_over_oauth(mcp_app: FastAPI, engine: Engine, mode: str)
                 tool.name in {"delete_category", "assign_category_items"}
             )
             assert "user_id" not in str(tool.input_schema)
+            optional = {"calculate_items_spending": [CALCULATOR_SCOPE]}.get(
+                tool.name, [CATEGORY_WRITE_SCOPE] if writable else []
+            )
             assert (tool.meta or {}).get("securitySchemes") == [
-                {"type": "oauth2", "scopes": [SCOPE, CATEGORY_WRITE_SCOPE] if writable else [SCOPE]}
+                {"type": "oauth2", "scopes": [SCOPE, *optional]}
             ]
         page = structured(await mcp.call_tool("search_receipts", {"limit": 1}))
         assert page.get("total") == 2
@@ -900,9 +924,7 @@ def test_category_scope_challenge_bounds_request_body(
     assert response.status_code == status
 
 
-def test_legacy_client_reconsent_preserves_old_read_only_tokens(
-    web: TestClient, engine: Engine
-) -> None:
+def test_legacy_client_reconsent_updates_the_grant(web: TestClient, engine: Engine) -> None:
     issued = tokens_for(web, OWNER)
     assert issued.get("scope") == SCOPE
     registered = {"client_id": issued.get("client_id")}
@@ -911,18 +933,67 @@ def test_legacy_client_reconsent_preserves_old_read_only_tokens(
         assert row is not None
         row.registration = {**row.registration, "scope": SCOPE}
         db.commit()
-    code, verifier = code_for(web, OWNER, registered, scope=f"{SCOPE} {CATEGORY_WRITE_SCOPE}")
+    denied = call_rpc(web, issued.get("access_token", ""), "create_category", {"name": "Denied"})
+    assert denied.status_code == 403
+    requested = f"{SCOPE} {CATEGORY_WRITE_SCOPE}"
+    code, verifier = code_for(web, OWNER, registered, scope=requested)
+    unchanged = exchange(web, registered, code, verifier)
+    assert unchanged.json().get("scope") == SCOPE
+    code, verifier = code_for(web, OWNER, registered, grant=[CATEGORY_WRITE_SCOPE], scope=requested)
     renewed = exchange(web, registered, code, verifier)
     assert renewed.status_code == 200
     assert renewed.json().get("scope") == f"{SCOPE} {CATEGORY_WRITE_SCOPE}"
-    denied = call_rpc(web, issued.get("access_token", ""), "create_category", {"name": "Denied"})
-    assert denied.status_code == 403
-    allowed = call_rpc(
-        web, renewed.json().get("access_token", ""), "create_category", {"name": "Allowed"}
-    )
+    # Permissions live on the grant, so the earlier token gains them too.
+    allowed = call_rpc(web, issued.get("access_token", ""), "create_category", {"name": "Allowed"})
     assert allowed.status_code == 200
     assert allowed.json().get("result", {}).get("structuredContent", {}).get("name") == "Allowed"
-    assert rpc(web, issued.get("access_token")).status_code == 200
+    with Session(engine) as db:
+        assert len(db.scalars(select(OAuthGrant)).all()) == 1
+
+
+def test_owner_edits_grant_permissions_live(web: TestClient, engine: Engine) -> None:
+    issued = tokens_for(web, OWNER)
+    token = issued.get("access_token", "")
+    listed = web.get("/api/v1/mcp/grants").json().get("items", [])
+    assert len(listed) == 1
+    grant = listed[0]
+    assert grant.get("scopes") == [SCOPE]
+    assert grant.get("last_used_at")
+    url = f"/api/v1/mcp/grants/{grant.get('id')}"
+    calculation = {"items": [{"name": "Rohlík", "currency": "CZK"}]}
+    denied = call_rpc(web, token, "calculate_items_spending", calculation)
+    assert denied.status_code == 403
+    assert f'scope="{SCOPE} {CALCULATOR_SCOPE}"' in denied.headers.get("www-authenticate", "")
+    assert web.patch(url, json={"scopes": [CALCULATOR_SCOPE]}, headers=ORIGIN).status_code == 422
+    assert web.patch(url, json={"scopes": [SCOPE, "admin"]}, headers=ORIGIN).status_code == 422
+    everything = [SCOPE, CATEGORY_WRITE_SCOPE, CALCULATOR_SCOPE]
+    response = web.patch(url, json={"scopes": everything}, headers=ORIGIN)
+    assert response.status_code == 200
+    assert response.json().get("scopes") == everything
+    allowed = call_rpc(web, token, "calculate_items_spending", calculation)
+    assert allowed.status_code == 200
+    assert "totals" in allowed.json().get("result", {}).get("structuredContent", {})
+    assert call_rpc(web, token, "create_category", {"name": "Live"}).status_code == 200
+    with Session(engine) as db:
+        stored = db.scalar(select(OAuthGrant.scopes))
+    assert stored == everything
+    refreshed = web.post(
+        "/api/v1/oauth/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": issued.get("refresh_token"),
+            "client_id": issued.get("client_id"),
+            "scope": SCOPE,
+        },
+    )
+    assert refreshed.status_code == 200
+    assert refreshed.json().get("scope") == " ".join(everything)
+    renewed = refreshed.json().get("access_token", "")
+    assert call_rpc(web, renewed, "calculate_items_spending", calculation).status_code == 200
+    assert web.patch(url, json={"scopes": [SCOPE]}, headers=ORIGIN).json().get("scopes") == [SCOPE]
+    assert call_rpc(web, renewed, "calculate_items_spending", calculation).status_code == 403
+    login(web, OTHER)
+    assert web.patch(url, json={"scopes": [SCOPE]}, headers=ORIGIN).status_code == 404
 
 
 @pytest.mark.anyio

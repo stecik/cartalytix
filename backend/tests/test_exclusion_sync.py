@@ -105,9 +105,11 @@ def test_refresh_preserves_duplicate_exclusion_count_without_excluding_new_dupli
     save(engine, connection_id, [milk, milk, milk])
 
     with Session(engine) as db:
-        assert list(
-            db.scalars(select(ReceiptItem.is_excluded).order_by(ReceiptItem.position))
-        ) == [True, False, False]
+        assert list(db.scalars(select(ReceiptItem.is_excluded).order_by(ReceiptItem.position))) == [
+            True,
+            False,
+            False,
+        ]
 
 
 def test_refresh_does_not_transfer_exclusion_to_changed_source_item(
@@ -141,6 +143,7 @@ def test_refresh_matches_duplicate_names_by_item_discounts(
     save(engine, connection_id, [discounted, full_price])
 
     with Session(engine) as db:
-        assert list(
-            db.scalars(select(ReceiptItem.is_excluded).order_by(ReceiptItem.position))
-        ) == [True, False]
+        assert list(db.scalars(select(ReceiptItem.is_excluded).order_by(ReceiptItem.position))) == [
+            True,
+            False,
+        ]

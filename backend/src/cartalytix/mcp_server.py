@@ -53,11 +53,12 @@ from cartalytix.category_schemas import (
     CategoryOutput,
 )
 from cartalytix.credentials import TokenCipher
-from cartalytix.item_routes import item_detail, items
+from cartalytix.item_routes import item_detail, item_totals, items
 from cartalytix.models import User
 from cartalytix.oauth import (
+    CALCULATOR_SCOPE,
     CATEGORIES_WRITE_SCOPE,
-    OFFLINE_SCOPE,
+    CLIENT_SCOPES,
     SCOPE,
     DatabaseOAuthProvider,
     McpUrls,
@@ -67,8 +68,11 @@ from cartalytix.schemas import (
     STATS_BUCKET_PATTERN,
     ExclusionFilter,
     ItemDetailOutput,
+    ItemKeyInput,
     ItemSort,
     ItemsOutput,
+    ItemTotalsInput,
+    ItemTotalsOutput,
     OverviewOutput,
     ReceiptDetailOutput,
     ReceiptSort,
@@ -82,9 +86,14 @@ from cartalytix.stats_routes import overview_stats
 PAGE_LIMIT = 50
 TOKEN_BODY_LIMIT = 64 * 1024
 MCP_BODY_LIMIT = 1024 * 1024
-CATEGORY_WRITE_TOOLS = frozenset(
-    {"create_category", "update_category", "delete_category", "assign_category_items"}
-)
+# Optional permissions the owner enables per connection; every other tool needs only read.
+TOOL_SCOPES = {
+    "create_category": CATEGORIES_WRITE_SCOPE,
+    "update_category": CATEGORIES_WRITE_SCOPE,
+    "delete_category": CATEGORIES_WRITE_SCOPE,
+    "assign_category_items": CATEGORIES_WRITE_SCOPE,
+    "calculate_items_spending": CALCULATOR_SCOPE,
+}
 READ_ONLY = ToolAnnotations(
     read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False
 )
@@ -92,6 +101,7 @@ SECURITY = {"securitySchemes": [{"type": "oauth2", "scopes": [SCOPE]}]}
 WRITE_SECURITY = {
     "securitySchemes": [{"type": "oauth2", "scopes": [SCOPE, CATEGORIES_WRITE_SCOPE]}]
 }
+CALCULATOR_SECURITY = {"securitySchemes": [{"type": "oauth2", "scopes": [SCOPE, CALCULATOR_SCOPE]}]}
 INSTRUCTIONS = (
     "Access to the signed-in user's Cartalytix receipts and categories. Amounts are exact "
     "decimal strings in the currency next to them; never add or compare different currencies. "
@@ -101,7 +111,9 @@ INSTRUCTIONS = (
     "until next_cursor is null to inspect all purchased products. Products use the exact "
     "connection_id, name and currency returned there. Use assign_category_items with dry_run "
     "before applying batches of up to 200 products. Manual assignments are protected unless "
-    "overwrite_manual is explicitly enabled. Each product currently has at most one category."
+    "overwrite_manual is explicitly enabled. Each product currently has at most one category. "
+    "To total spending on chosen products, find their exact name and currency with search_items, "
+    "then pass up to 200 of them to calculate_items_spending (cartalytix:calculator)."
 )
 
 Limit = Annotated[int, Field(ge=1, le=PAGE_LIMIT, description="Page size")]
@@ -120,8 +132,8 @@ class McpConnector:
         self.urls = urls
 
 
-class CategoryScopeMiddleware:
-    """Challenge optional writes after bearer verification, before executing a tool."""
+class ToolScopeMiddleware:
+    """Challenge optional permissions after bearer verification, before executing a tool."""
 
     def __init__(self, app: ASGIApp, urls: McpUrls) -> None:
         self.app = app
@@ -156,16 +168,16 @@ class CategoryScopeMiddleware:
             return
         params = payload.get("params") if isinstance(payload, dict) else None
         name = params.get("name") if isinstance(params, dict) else None
+        required = TOOL_SCOPES.get(name) if isinstance(name, str) else None
         if (
             isinstance(payload, dict)
             and payload.get("method") == "tools/call"
-            and isinstance(name, str)
-            and name in CATEGORY_WRITE_TOOLS
-            and CATEGORIES_WRITE_SCOPE not in token.scopes
+            and required is not None
+            and required not in token.scopes
         ):
             challenge = (
                 'Bearer error="insufficient_scope", '
-                f'scope="{SCOPE} {CATEGORIES_WRITE_SCOPE}", '
+                f'scope="{SCOPE} {required}", '
                 f'resource_metadata="{self.urls.origin}/.well-known/oauth-protected-resource/mcp"'
             )
             await JSONResponse(
@@ -186,14 +198,14 @@ class CategoryScopeMiddleware:
         await self.app(scope, replay, send)
 
 
-def _owner(db: Session, *, write: bool = False) -> User:
+def _owner(db: Session, *, scope: str | None = None) -> User:
     # The owner comes only from the verified token; tools never accept a user id.
     token = get_access_token()
     user = db.get(User, UUID(token.subject)) if token and token.subject else None
     if user is None or user.is_disabled or user.is_admin or user.must_change_password:
         raise ToolError("authentication_required")
-    if write and token is not None and CATEGORIES_WRITE_SCOPE not in token.scopes:
-        raise ToolError("insufficient_scope: cartalytix:categories:write required")
+    if scope is not None and token is not None and scope not in token.scopes:
+        raise ToolError(f"insufficient_scope: {scope} required")
     return user
 
 
@@ -226,7 +238,9 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
     ) -> CategoryOutput:
         with Session(engine) as db:
             try:
-                return create_category_record(_owner(db, write=True), db, CategoryInput(name=name))
+                return create_category_record(
+                    _owner(db, scope=CATEGORIES_WRITE_SCOPE), db, CategoryInput(name=name)
+                )
             except HTTPException as exc:
                 raise ToolError(str(exc.detail)) from exc
 
@@ -237,7 +251,10 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
         with Session(engine) as db:
             try:
                 return update_category_record(
-                    category_id, _owner(db, write=True), db, CategoryInput(name=name)
+                    category_id,
+                    _owner(db, scope=CATEGORIES_WRITE_SCOPE),
+                    db,
+                    CategoryInput(name=name),
                 )
             except HTTPException as exc:
                 raise ToolError(str(exc.detail)) from exc
@@ -252,7 +269,7 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
             try:
                 delete_category_record(
                     category_id,
-                    _owner(db, write=True),
+                    _owner(db, scope=CATEGORIES_WRITE_SCOPE),
                     db,
                     source="mcp",
                     overwrite_manual=overwrite_manual,
@@ -301,7 +318,7 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
         with Session(engine) as db:
             try:
                 return assign_items(
-                    _owner(db, write=True),
+                    _owner(db, scope=CATEGORIES_WRITE_SCOPE),
                     db,
                     CategoryAssignmentInput(
                         items=items,
@@ -378,6 +395,33 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
                 price_max=price_max,
                 sort=sort,
                 exclusion=exclusion,
+            )
+
+    @server.tool(
+        description=(
+            "Total spending on chosen products (exact name and currency from search_items) in a "
+            "period, with a per-product breakdown and totals per currency. Needs "
+            "cartalytix:calculator."
+        ),
+        annotations=READ_ONLY,
+        meta=CALCULATOR_SECURITY,
+    )
+    def calculate_items_spending(
+        items: Annotated[list[ItemKeyInput], Field(min_length=1, max_length=200)],
+        purchased_from: Since = None,
+        purchased_to: Until = None,
+        connection_id: Connection = None,
+    ) -> ItemTotalsOutput:
+        with Session(engine) as db:
+            return item_totals(
+                _owner(db, scope=CALCULATOR_SCOPE),
+                db,
+                ItemTotalsInput(
+                    items=items,
+                    purchased_from=purchased_from,
+                    purchased_to=purchased_to,
+                    connection_id=connection_id,
+                ),
             )
 
     @tool("Purchase price history of one item (exact name and currency from search_items).")
@@ -470,12 +514,12 @@ def create_mcp(engine: Engine, settings: Settings) -> McpConnector:
     )
     for route in transport.routes:
         if isinstance(route, Route) and route.path == "/mcp":
-            route.app = CategoryScopeMiddleware(route.app, urls)
-    routes: list[BaseRoute] = [Route("/mcp", endpoint=CategoryScopeMiddleware(transport, urls))]
+            route.app = ToolScopeMiddleware(route.app, urls)
+    routes: list[BaseRoute] = [Route("/mcp", endpoint=ToolScopeMiddleware(transport, urls))]
     for route in create_protected_resource_routes(
         resource_url=AnyHttpUrl(urls.resource),
         authorization_servers=[AnyHttpUrl(urls.issuer)],
-        scopes_supported=[SCOPE, CATEGORIES_WRITE_SCOPE],
+        scopes_supported=[SCOPE, CATEGORIES_WRITE_SCOPE, CALCULATOR_SCOPE],
     ):
         # RFC 9728 path insertion for /mcp, plus the root location ChatGPT also reads.
         routes += [
@@ -487,7 +531,7 @@ def create_mcp(engine: Engine, settings: Settings) -> McpConnector:
         AnyHttpUrl(urls.issuer),
         client_registration_options=ClientRegistrationOptions(
             enabled=True,
-            valid_scopes=[SCOPE, OFFLINE_SCOPE, CATEGORIES_WRITE_SCOPE],
+            valid_scopes=CLIENT_SCOPES,
             default_scopes=[SCOPE],
         ),
         revocation_options=RevocationOptions(enabled=True),

@@ -33,13 +33,28 @@ describe("MCP consent", () => {
     const wrapper = await render(fetch);
     expect(wrapper.get("h1").text()).toBe("Connect ChatGPT to Cartalytix");
     expect(wrapper.text()).toContain("chatgpt.com");
+    const switches = wrapper.findAll<HTMLInputElement>('input[role="switch"]');
+    expect(switches.map((input) => input.element.checked)).toEqual([false, true, false, false]);
+    expect(switches[1]?.element.disabled).toBe(true);
+    await wrapper.get('input[aria-label="Calculator"]').setValue(true);
     await wrapper.get("button.primary").trigger("click");
     await flushPromises();
     const [path, init] = fetch.mock.calls[1] ?? [];
     expect(path).toBe("/api/v1/mcp/authorizations/pending-request-token");
     expect(init?.method).toBe("POST");
-    expect(init?.body).toBe(JSON.stringify({ approve: true }));
+    expect(init?.body).toBe(JSON.stringify({ approve: true, scopes: ["cartalytix:read", "cartalytix:calculator"] }));
     expect(assign).toHaveBeenCalledWith("https://chatgpt.com/connector/oauth/x?code=c&state=s");
+  });
+
+  it("enables and disables every optional permission at once", async () => {
+    const wrapper = await render(vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      Response.json({ client_name: "Codex", redirect_host: "127.0.0.1", scopes: ["cartalytix:read"] }),
+    ));
+    const all = wrapper.get<HTMLInputElement>('input[aria-label="Allow everything"]');
+    await all.setValue(true);
+    expect(wrapper.findAll<HTMLInputElement>('input[role="switch"]').every((input) => input.element.checked)).toBe(true);
+    await all.setValue(false);
+    expect(wrapper.findAll<HTMLInputElement>('input[role="switch"]').map((input) => input.element.checked)).toEqual([false, true, false, false]);
   });
 
   it("explains an expired or reused request", async () => {

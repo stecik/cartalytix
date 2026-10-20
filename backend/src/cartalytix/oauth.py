@@ -29,7 +29,7 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull
 from mcp.shared.auth import OAuthToken as IssuedTokens
 from pydantic import AnyHttpUrl, AnyUrl, ValidationError
-from sqlalchemy import Engine, delete, select, update
+from sqlalchemy import Engine, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from cartalytix.credentials import TokenCipher
@@ -45,16 +45,19 @@ from cartalytix.schemas import (
     McpAuthorizationOutput,
     McpConsentInput,
     McpConsentOutput,
+    McpGrantInput,
     McpGrantOutput,
     McpGrantsOutput,
+    McpScope,
 )
 from cartalytix.security import token_hash
 
-SCOPE = "cartalytix:read"
-CATEGORIES_WRITE_SCOPE = "cartalytix:categories:write"
+SCOPE = McpScope.READ.value
+CATEGORIES_WRITE_SCOPE = McpScope.CATEGORIES_WRITE.value
+CALCULATOR_SCOPE = McpScope.CALCULATOR.value
 # Advertised only by the authorization server; refresh tokens are issued either way.
 OFFLINE_SCOPE = "offline_access"
-CLIENT_SCOPES = [SCOPE, OFFLINE_SCOPE, CATEGORIES_WRITE_SCOPE]
+CLIENT_SCOPES = [SCOPE, OFFLINE_SCOPE, CATEGORIES_WRITE_SCOPE, CALCULATOR_SCOPE]
 REQUEST_TTL = timedelta(minutes=10)
 CODE_TTL = timedelta(minutes=5)
 ACCESS_TTL = timedelta(hours=1)
@@ -104,6 +107,12 @@ def _now() -> datetime:
 def _aware(value: datetime) -> datetime:
     # SQLite returns naive UTC values.
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+
+def granted_scopes(chosen: list[McpScope], *, offline: bool) -> list[str]:
+    """Read plus the chosen permissions in a stable order; offline access follows the client."""
+    scopes = [scope.value for scope in McpScope if scope == McpScope.READ or scope in chosen]
+    return [*scopes, OFFLINE_SCOPE] if offline else scopes
 
 
 def revoke_grant(db: Session, grant_id: UUID) -> None:
@@ -171,7 +180,7 @@ class DatabaseOAuthProvider(
         if params.resource is not None and not self.urls.is_resource(params.resource):
             raise AuthorizeError("invalid_target", "Unknown resource")
         scopes = params.scopes or (client.scope or SCOPE).split()
-        if not set(scopes) <= {SCOPE, OFFLINE_SCOPE, CATEGORIES_WRITE_SCOPE}:
+        if not set(scopes) <= set(CLIENT_SCOPES):
             raise AuthorizeError("invalid_scope", "Unsupported scope")
         request = token_urlsafe(32)
         row = OAuthAuthorizationRequest(
@@ -253,36 +262,39 @@ class DatabaseOAuthProvider(
             if claimed is None:
                 raise TokenError("invalid_grant", "authorization code is not valid")
             owner_id = UUID(code.subject or "")
-            grant_id = db.scalar(
-                select(OAuthGrant.id).where(
+            grant = db.scalar(
+                select(OAuthGrant).where(
                     OAuthGrant.owner_id == owner_id, OAuthGrant.client_id == code.client_id
                 )
             )
-            if grant_id is None:
+            if grant is None:
                 grant = OAuthGrant(owner_id=owner_id, client_id=code.client_id)
                 db.add(grant)
-                db.flush()
-                grant_id = grant.id
+            # A new consent replaces the permissions of an earlier one for the same client.
+            grant.scopes = code.scopes
+            db.flush()
             db.execute(
-                update(OAuthCode).where(OAuthCode.token_hash == code_hash).values(grant_id=grant_id)
+                update(OAuthCode).where(OAuthCode.token_hash == code_hash).values(grant_id=grant.id)
             )
-            tokens = self._issue(db, grant_id, code.scopes, code.resource or self.urls.resource)
+            tokens = self._issue(db, grant, code.scopes, code.resource or self.urls.resource)
             db.commit()
             return tokens
 
-    def _issue(self, db: Session, grant_id: UUID, scopes: list[str], resource: str) -> IssuedTokens:
+    def _issue(
+        self, db: Session, grant: OAuthGrant, requested: list[str], resource: str
+    ) -> IssuedTokens:
         now = _now()
         db.execute(
-            delete(OAuthToken).where(OAuthToken.grant_id == grant_id, OAuthToken.expires_at <= now)
+            delete(OAuthToken).where(OAuthToken.grant_id == grant.id, OAuthToken.expires_at <= now)
         )
         access, refresh = token_urlsafe(32), token_urlsafe(32)
         db.add_all(
             [
                 OAuthToken(
                     token_hash=token_hash(value),
-                    grant_id=grant_id,
+                    grant_id=grant.id,
                     kind=kind,
-                    scopes=scopes,
+                    scopes=requested,
                     resource=resource,
                     expires_at=now + ttl,
                 )
@@ -296,7 +308,7 @@ class DatabaseOAuthProvider(
             access_token=access,
             token_type="Bearer",
             expires_in=int(ACCESS_TTL.total_seconds()),
-            scope=" ".join(scopes),
+            scope=" ".join(grant.scopes),
             refresh_token=refresh,
         )
 
@@ -326,7 +338,8 @@ class DatabaseOAuthProvider(
         return RefreshToken(
             token=value,
             client_id=grant.client_id,
-            scopes=token.scopes,
+            # Clients may resend their original scope; issued tokens still carry the grant's.
+            scopes=sorted({*token.scopes, *grant.scopes}),
             expires_at=int(_aware(token.expires_at).timestamp()),
             resource=token.resource,
             subject=str(grant.owner_id),
@@ -345,9 +358,7 @@ class DatabaseOAuthProvider(
             found = self._token(db, refresh_token.token, REFRESH)
             if found is None:
                 raise TokenError("invalid_grant", "refresh token is not valid")
-            token = found[0]
-            if not set(scopes) <= set(token.scopes):
-                raise TokenError("invalid_scope", "Scope exceeds the original authorization")
+            token, grant = found
             # Rotation: only the request that deletes the row may issue new tokens.
             removed = db.scalar(
                 delete(OAuthToken)
@@ -356,7 +367,7 @@ class DatabaseOAuthProvider(
             )
             if removed is None:
                 raise TokenError("invalid_grant", "refresh token is not valid")
-            tokens = self._issue(db, token.grant_id, scopes, token.resource)
+            tokens = self._issue(db, grant, scopes, token.resource)
             db.commit()
             return tokens
 
@@ -372,7 +383,8 @@ class DatabaseOAuthProvider(
         return AccessToken(
             token=value,
             client_id=grant.client_id,
-            scopes=token.scopes,
+            # The grant is authoritative, so permission changes apply to live tokens at once.
+            scopes=grant.scopes,
             expires_at=int(_aware(token.expires_at).timestamp()),
             resource=token.resource,
             subject=str(grant.owner_id),
@@ -452,13 +464,17 @@ def decide(
         return McpConsentOutput(
             redirect_url=construct_redirect_uri(redirect_uri, error="access_denied", state=state)
         )
+    requested = params.get("scopes", [])
+    scopes = granted_scopes(
+        payload.scopes, offline=isinstance(requested, list) and OFFLINE_SCOPE in requested
+    )
     code = token_urlsafe(32)
     db.add(
         OAuthCode(
             token_hash=token_hash(code),
             client_id=client.id,
             owner_id=user.id,
-            params=params,
+            params={**params, "scopes": scopes},
             expires_at=_now() + CODE_TTL,
         )
     )
@@ -468,21 +484,60 @@ def decide(
     )
 
 
-@router.get("/grants", response_model=McpGrantsOutput)
-def grants(_urls: Mcp, user: Owner, db: Db) -> McpGrantsOutput:
-    rows = db.execute(
-        select(OAuthGrant.id, OAuthClient.name, OAuthGrant.created_at)
+def _grant_rows(db: Session, owner_id: UUID, grant_id: UUID | None = None) -> list[McpGrantOutput]:
+    # Refresh tokens rotate on every use, so the newest one dates the last activity.
+    refreshed = (
+        select(OAuthToken.grant_id, func.max(OAuthToken.expires_at).label("expires_at"))
+        .where(OAuthToken.kind == REFRESH)
+        .group_by(OAuthToken.grant_id)
+        .subquery()
+    )
+    query = (
+        select(
+            OAuthGrant.id,
+            OAuthClient.name,
+            OAuthGrant.created_at,
+            OAuthGrant.scopes,
+            refreshed.c.expires_at,
+        )
         .join(OAuthClient, OAuthGrant.client_id == OAuthClient.id)
-        .where(OAuthGrant.owner_id == user.id)
+        .outerjoin(refreshed, refreshed.c.grant_id == OAuthGrant.id)
+        .where(OAuthGrant.owner_id == owner_id)
         .order_by(OAuthGrant.created_at.desc(), OAuthGrant.id)
         .limit(100)
     )
-    return McpGrantsOutput(
-        items=[
-            McpGrantOutput(id=grant_id, client_name=name, created_at=_aware(created_at))
-            for grant_id, name, created_at in rows
-        ]
+    if grant_id is not None:
+        query = query.where(OAuthGrant.id == grant_id)
+    known = {scope.value for scope in McpScope}
+    return [
+        McpGrantOutput(
+            id=row_id,
+            client_name=name,
+            created_at=_aware(created_at),
+            scopes=[McpScope(scope) for scope in scopes if scope in known],
+            last_used_at=None if expires_at is None else _aware(expires_at) - REFRESH_TTL,
+        )
+        for row_id, name, created_at, scopes, expires_at in db.execute(query)
+    ]
+
+
+@router.get("/grants", response_model=McpGrantsOutput)
+def grants(_urls: Mcp, user: Owner, db: Db) -> McpGrantsOutput:
+    return McpGrantsOutput(items=_grant_rows(db, user.id))
+
+
+@router.patch("/grants/{grant_id}", response_model=McpGrantOutput)
+def update_grant(
+    grant_id: UUID, payload: McpGrantInput, _urls: Mcp, user: Owner, db: Db
+) -> McpGrantOutput:
+    grant = db.scalar(
+        select(OAuthGrant).where(OAuthGrant.id == grant_id, OAuthGrant.owner_id == user.id)
     )
+    if grant is None:
+        raise HTTPException(404, "grant_not_found")
+    grant.scopes = granted_scopes(payload.scopes, offline=OFFLINE_SCOPE in grant.scopes)
+    db.commit()
+    return _grant_rows(db, user.id, grant_id)[0]
 
 
 @router.delete("/grants/{grant_id}", status_code=204)

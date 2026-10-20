@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { ApiError, request } from "../api";
-import type { McpAuthorization } from "../api";
+import type { McpAuthorization, McpScope } from "../api";
+import McpScopeSwitches from "../components/McpScopeSwitches.vue";
 import QueryState from "../components/QueryState.vue";
 
 const { t } = useI18n();
@@ -21,16 +22,16 @@ const authorization = useQuery({
 const expired = computed(
   () => requestId.value === "" || (authorization.error.value instanceof ApiError && authorization.error.value.status === 404),
 );
+// Optional permissions stay off until the owner enables them.
+const scopes = ref<McpScope[]>(["cartalytix:read"]);
 const decide = useMutation({
   mutationFn: (approve: boolean) =>
-    request<{ redirect_url: string }>(path.value, { method: "POST", body: JSON.stringify({ approve }) }),
+    request<{ redirect_url: string }>(path.value, {
+      method: "POST",
+      body: JSON.stringify({ approve, scopes: approve ? scopes.value : [] }),
+    }),
   onSuccess: ({ redirect_url }) => window.location.assign(redirect_url),
 });
-const scopeLabels: Record<string, string> = {
-  "cartalytix:read": "mcpScopeRead",
-  "cartalytix:categories:write": "mcpScopeCategoriesWrite",
-  offline_access: "mcpScopeOffline",
-};
 </script>
 
 <template>
@@ -41,9 +42,7 @@ const scopeLabels: Record<string, string> = {
         <template v-if="authorization.data.value">
           <h1 id="consent-heading">{{ t("mcpConsentTitle", { client: authorization.data.value.client_name }) }}</h1>
           <p>{{ t("mcpConsentIntro", { client: authorization.data.value.client_name }) }}</p>
-          <ul class="consent-scopes">
-            <li v-for="scope in authorization.data.value.scopes" :key="scope">{{ t(scopeLabels[scope] ?? "mcpScopeRead") }}</li>
-          </ul>
+          <McpScopeSwitches v-model="scopes" class="consent-scopes" read-locked :disabled="decide.isPending.value || decide.isSuccess.value" />
           <p class="consent-return">{{ t("mcpConsentReturn", { host: authorization.data.value.redirect_host }) }}</p>
           <p v-if="decide.isError.value" role="alert" class="form-alert">{{ t("mcpConsentFailed") }}</p>
           <div class="consent-actions">
@@ -61,7 +60,7 @@ const scopeLabels: Record<string, string> = {
 .consent-panel { padding: 28px; border: 1px solid var(--border-store); border-radius: 12px; background: var(--surface-store); }
 .consent-panel h1 { margin-bottom: 12px; font-size: 24px; line-height: 1.3; font-weight: 600; letter-spacing: -.6px; overflow-wrap: anywhere; }
 .consent-panel p { color: var(--muted); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
-.consent-scopes { margin: 18px 0; padding-left: 20px; font-size: 13px; line-height: 1.9; }
+.consent-scopes { margin: 18px 0; }
 .consent-return { margin-bottom: 8px; }
 .consent-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 24px; }
 @media (max-width: 600px) { .consent-panel { padding: 20px; } }

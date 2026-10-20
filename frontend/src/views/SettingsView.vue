@@ -3,7 +3,7 @@ import { computed, inject, ref } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { request } from "../api";
-import type { McpGrant, User } from "../api";
+import type { McpGrant, McpScope, User } from "../api";
 import { sessionOptions } from "../auth";
 import { useUserSettings } from "../settings";
 import { pwaInstallKey } from "../pwaInstall";
@@ -12,6 +12,7 @@ import { isThemePreference, themePreference } from "../theme";
 import AppDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
 import AppSelect from "../components/AppSelect.vue";
+import McpScopeSwitches from "../components/McpScopeSwitches.vue";
 import SegmentedToggle from "../components/SegmentedToggle.vue";
 
 const { t, locale } = useI18n();
@@ -33,6 +34,14 @@ const revoke = useMutation({
   onSuccess: async () => {
     revoking.value = null;
     await queryClient.invalidateQueries({ queryKey: ["mcp-grants"] });
+  },
+});
+const permissions = useMutation({
+  mutationFn: ({ id, scopes }: { id: string; scopes: McpScope[] }) =>
+    request<McpGrant>(`/mcp/grants/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ scopes }) }),
+  onSuccess: (saved) => {
+    queryClient.setQueryData<{ items: McpGrant[] }>(["mcp-grants"], (current) =>
+      current && { items: current.items.map((grant) => (grant.id === saved.id ? saved : grant)) });
   },
 });
 function connectedOn(value: string): string {
@@ -169,9 +178,20 @@ const views = computed(() => [
       <div v-for="grant in grants.data.value?.items" :key="grant.id" class="settings-row">
         <div class="settings-copy">
           <h3>{{ grant.client_name }}</h3>
-          <p>{{ t("mcpConnectedOn", { date: connectedOn(grant.created_at) }) }}</p>
+          <p>
+            {{ t("mcpConnectedOn", { date: connectedOn(grant.created_at) }) }}
+            <template v-if="grant.last_used_at"> · {{ t("mcpLastUsed", { date: connectedOn(grant.last_used_at) }) }}</template>
+          </p>
         </div>
         <button type="button" class="button secondary settings-install" @click="revoking = grant">{{ t("mcpRevoke") }}</button>
+        <McpScopeSwitches
+          class="settings-grant-scopes"
+          :model-value="grant.scopes"
+          :disabled="permissions.isPending.value && permissions.variables.value?.id === grant.id"
+          @update:model-value="permissions.mutate({ id: grant.id, scopes: $event })"
+          @revoke="revoking = grant"
+        />
+        <p v-if="permissions.isError.value && permissions.variables.value?.id === grant.id" class="form-alert settings-grant-error" role="alert">{{ t("mcpPermissionsFailed") }}</p>
       </div>
       <div v-if="grants.data.value?.items.length === 0" class="settings-row">
         <p class="settings-copy">{{ t("mcpNoApps") }}</p>
@@ -216,6 +236,9 @@ const views = computed(() => [
 .settings-install-help p { color: var(--muted); font-size: 12px; line-height: 1.8; }
 .settings-connector-url { min-width: 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
 .settings-row > p.settings-copy { color: var(--muted); font-size: 12px; }
+.settings-grant-scopes,
+.settings-grant-error { grid-column: 1 / -1; }
+.settings-grant-scopes { margin-top: -8px; }
 @media (max-width: 780px) { .settings-row { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 16px; }.settings-install { justify-self: start; } }
 @media (max-width: 600px) { .settings-section-heading { padding: 16px; }.settings-row { margin-inline: 16px; padding-block: 20px; }.settings-install-help { margin: 0 16px 20px; }.settings-section + .settings-section { margin-top: 22px; } }
 </style>

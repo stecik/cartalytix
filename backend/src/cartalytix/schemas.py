@@ -493,19 +493,43 @@ class McpAuthorizationOutput(BaseModel):
     scopes: list[str]
 
 
+class McpScope(StrEnum):
+    """Permissions the owner toggles per connection; read is the mandatory base."""
+
+    READ = "cartalytix:read"
+    CATEGORIES_WRITE = "cartalytix:categories:write"
+    CALCULATOR = "cartalytix:calculator"
+
+
 class McpConsentInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     approve: bool
+    # Read is always granted; optional permissions stay off unless the owner enables them.
+    scopes: list[McpScope] = Field(default_factory=list, max_length=len(McpScope))
 
 
 class McpConsentOutput(BaseModel):
     redirect_url: str
 
 
+class McpGrantInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scopes: list[McpScope] = Field(max_length=len(McpScope))
+
+    @field_validator("scopes")
+    @classmethod
+    def require_read(cls, scopes: list[McpScope]) -> list[McpScope]:
+        if McpScope.READ not in scopes:
+            raise ValueError("read_required")
+        return scopes
+
+
 class McpGrantOutput(BaseModel):
     id: UUID
     client_name: str
     created_at: datetime
+    scopes: list[McpScope]
+    last_used_at: datetime | None
 
 
 class McpGrantsOutput(BaseModel):

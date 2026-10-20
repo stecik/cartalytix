@@ -15,6 +15,7 @@ import GlobusLoginForm from "./GlobusLoginForm.vue";
 import FoodoraTokenForm from "./FoodoraTokenForm.vue";
 import AppIcon from "./AppIcon.vue";
 import AppDialog from "./AppDialog.vue";
+import AppSwitch from "./AppSwitch.vue";
 
 const props = withDefaults(defineProps<{ connection: Connection; initialLinking?: boolean }>(), { initialLinking: false });
 const { t, locale } = useI18n();
@@ -160,7 +161,7 @@ const actionError = computed(() => {
         <div v-if="!linkedAccount && !linking" class="reconnect-note"><p>{{ t(connection.status === 'not_connected' ? 'connectToImport' : 'reconnectToImport') }}</p><button class="button secondary" :disabled="active || busy" @click="connect">{{ t(connection.status === 'not_connected' ? 'linkAccount' : 'reconnectAccount') }}</button></div>
         <div class="account-setting">
           <div><strong>{{ t('automaticSync') }}</strong><p>{{ t('automaticSyncHelp') }}</p></div>
-          <label class="sync-switch"><input type="checkbox" role="switch" :checked="connection.sync_interval_minutes !== null" :disabled="!linkedAccount || active || busy || linking" :aria-label="t('automaticSync')" @change="save.mutate({ sync_interval_minutes: ($event.target as HTMLInputElement).checked ? interval : null })" /><span>{{ t(connection.sync_interval_minutes === null ? 'off' : 'on') }}</span></label>
+          <AppSwitch :model-value="connection.sync_interval_minutes !== null" :disabled="!linkedAccount || active || busy || linking" :label="t('automaticSync')" @update:model-value="save.mutate({ sync_interval_minutes: $event ? interval : null })"><span>{{ t(connection.sync_interval_minutes === null ? 'off' : 'on') }}</span></AppSwitch>
         </div>
         <div v-if="connection.sync_interval_minutes !== null" class="account-setting interval-setting">
           <label :for="`interval-${connection.id}`">{{ t('syncFrequency') }}</label>
@@ -236,9 +237,6 @@ const actionError = computed(() => {
 .account-setting + .account-setting { border-top: 1px solid var(--line); }
 .account-setting > div { min-width: 0; }.account-setting strong { font-size: 13px; font-weight: 550; }.account-setting p { color: var(--muted); font-size: 12px; line-height: 1.7; margin-top: 4px; }
 .account-setting .button { flex-shrink: 0; font-size: 12px; min-height: 38px; padding: 9px 13px; }
-.sync-switch { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--muted); flex-shrink: 0; }
-.sync-switch input { appearance: none; border: 0; border-radius: 15px; width: 34px; height: 20px; background: var(--surface-switch); position: relative; padding: 0; margin: 0; cursor: pointer; transition: background .15s; }
-.sync-switch input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; background: var(--white); border-radius: 50%; transition: transform .15s; }.sync-switch input:checked { background: var(--green); }.sync-switch input:checked::after { transform: translateX(14px); }.sync-switch input:disabled { opacity: .5; cursor: not-allowed; }
 .interval-setting > label { font-size: 13px; }.interval-setting select { min-height: 38px; max-width: 100%; padding: 8px 28px 8px 10px; border: 1px solid var(--border-secondary-button); border-radius: 5px; background: var(--surface-interval); font-size: 12px; }
 .account-next { color: var(--muted); font-size: 12px; line-height: 1.7; margin: -2px 0 16px; }
 .manual-setting { border-top: 1px solid var(--line); }

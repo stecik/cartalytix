@@ -309,10 +309,14 @@ export interface McpAuthorization {
   scopes: string[];
 }
 
+export type McpScope = "cartalytix:read" | "cartalytix:categories:write" | "cartalytix:calculator";
+
 export interface McpGrant {
   id: string;
   client_name: string;
   created_at: string;
+  scopes: McpScope[];
+  last_used_at: string | null;
 }
 
 export class ApiError extends Error {

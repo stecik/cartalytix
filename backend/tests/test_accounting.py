@@ -39,17 +39,24 @@ def basket(db: Session, *, total: str = "20.00") -> tuple[UUID, Receipt, list[Re
     db.flush()
     items = [
         ReceiptItem(
-            receipt_id=receipt.id, position=position, name=name,
-            quantity=Decimal(1), total_amount=Decimal(amount),
+            receipt_id=receipt.id,
+            position=position,
+            name=name,
+            quantity=Decimal(1),
+            total_amount=Decimal(amount),
         )
         for position, (name, amount) in enumerate([("Food", "12.00"), ("Spatula", "10.00")])
     ]
     db.add_all(items)
     db.flush()
-    db.add_all([
-        Discount(receipt_id=receipt.id, item_id=items[0].id, name="Food offer", amount=Decimal(2)),
-        Discount(receipt_id=receipt.id, name="Basket offer", amount=Decimal(2)),
-    ])
+    db.add_all(
+        [
+            Discount(
+                receipt_id=receipt.id, item_id=items[0].id, name="Food offer", amount=Decimal(2)
+            ),
+            Discount(receipt_id=receipt.id, name="Basket offer", amount=Decimal(2)),
+        ]
+    )
     db.flush()
     return owner.id, receipt, items
 
@@ -102,9 +109,10 @@ def test_global_exclusion_exact_name_currency_owner_and_restore(engine: Engine) 
         rule.owner_id = owner_id
         db.flush()
         assert db.scalar(select(receipt_amounts.c.included_amount)) == Decimal(9)
-        assert db.scalar(
-            select(item_amounts.c.is_included).where(item_amounts.c.id == items[0].id)
-        ) is False
+        assert (
+            db.scalar(select(item_amounts.c.is_included).where(item_amounts.c.id == items[0].id))
+            is False
+        )
         db.delete(rule)
         db.flush()
         assert db.scalar(select(receipt_amounts.c.included_amount)) == Decimal(18)
@@ -198,7 +206,10 @@ def test_cent_discount_allocation_conserves_original_basket(engine: Engine) -> N
             item.total_amount = Decimal(1)
         db.add(
             ReceiptItem(
-                receipt_id=receipt.id, position=2, name="Third", quantity=Decimal(1),
+                receipt_id=receipt.id,
+                position=2,
+                name="Third",
+                quantity=Decimal(1),
                 total_amount=Decimal(1),
             )
         )
@@ -207,7 +218,9 @@ def test_cent_discount_allocation_conserves_original_basket(engine: Engine) -> N
         item_amounts, receipt_amounts = accounting(owner_id)
         rows = db.execute(select(item_amounts).order_by(item_amounts.c.position)).mappings().all()
         assert [row.get("net_amount") for row in rows] == [
-            Decimal("1.00"), Decimal("0.99"), Decimal("1.00")
+            Decimal("1.00"),
+            Decimal("0.99"),
+            Decimal("1.00"),
         ]
         items[1].is_excluded = True
         db.flush()
@@ -232,6 +245,7 @@ def test_printed_net_is_metadata_and_deposit_tracks_its_item(engine: Engine) -> 
         assert db.scalar(select(receipt_amounts.c.included_amount)) == Decimal(9)
         _, empty = accounting(owner_id, [])
         assert db.scalar(select(empty.c.receipt_id)) is None
+
 
 def test_refund_discount_keeps_proportional_original_shares(engine: Engine) -> None:
     from cartalytix.accounting import accounting

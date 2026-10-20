@@ -97,6 +97,8 @@ class OAuthGrant(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
     client_id: Mapped[str] = mapped_column(ForeignKey("oauth_clients.id"), index=True)
+    # Authoritative permissions, editable by the owner; token rows keep what the client requested.
+    scopes: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

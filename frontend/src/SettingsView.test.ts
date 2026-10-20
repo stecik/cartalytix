@@ -82,7 +82,7 @@ describe("settings appearance", () => {
 
 describe("settings connected AI apps", () => {
   it("lists MCP grants and revokes one after confirmation", async () => {
-    let items = [{ id: "grant-1", client_name: "ChatGPT", created_at: "2026-10-01T10:00:00Z" }];
+    let items = [{ id: "grant-1", client_name: "ChatGPT", created_at: "2026-10-01T10:00:00Z", scopes: ["cartalytix:read"], last_used_at: null }];
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
       if (String(input).endsWith("/mcp/grants/grant-1") && init?.method === "DELETE") {
         items = [];
@@ -103,6 +103,34 @@ describe("settings connected AI apps", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/v1/mcp/grants/grant-1", expect.objectContaining({ method: "DELETE" }));
       expect(wrapper.find(".app-dialog").exists()).toBe(false);
       expect(wrapper.text()).toContain("No apps are connected.");
+    } finally { wrapper.unmount(); client.clear(); }
+  });
+
+  it("saves permission switches and offers revoking when read is turned off", async () => {
+    const grant = { id: "grant-1", client_name: "Codex", created_at: "2026-10-01T10:00:00Z", scopes: ["cartalytix:read"], last_used_at: "2026-10-20T10:00:00Z" };
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
+      if (init?.method === "PATCH") return Response.json({ ...grant, scopes: JSON.parse(String(init.body)).scopes });
+      return String(input).endsWith("/mcp/grants") ? Response.json({ items: [grant] }) : Response.json(null);
+    });
+    const { wrapper, client } = render(false, null, fetchMock);
+    try {
+      await flushPromises();
+      expect(wrapper.text()).toContain("last used 20 Oct 2026");
+      await wrapper.get('input[aria-label="Manage categories"]').setValue(true);
+      await flushPromises();
+      expect(fetchMock).toHaveBeenCalledWith("/api/v1/mcp/grants/grant-1", expect.objectContaining({
+        method: "PATCH", body: JSON.stringify({ scopes: ["cartalytix:read", "cartalytix:categories:write"] }),
+      }));
+      expect(wrapper.get<HTMLInputElement>('input[aria-label="Manage categories"]').element.checked).toBe(true);
+      await wrapper.get('input[aria-label="Allow everything"]').setValue(true);
+      await flushPromises();
+      expect(fetchMock).toHaveBeenLastCalledWith("/api/v1/mcp/grants/grant-1", expect.objectContaining({
+        body: JSON.stringify({ scopes: ["cartalytix:read", "cartalytix:categories:write", "cartalytix:calculator"] }),
+      }));
+      const read = wrapper.get<HTMLInputElement>('input[aria-label="Read data"]');
+      await read.setValue(false);
+      expect(read.element.checked).toBe(true);
+      expect(wrapper.get(".app-dialog").text()).toContain("Codex will immediately lose access");
     } finally { wrapper.unmount(); client.clear(); }
   });
 });
