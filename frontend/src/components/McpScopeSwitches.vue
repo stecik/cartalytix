@@ -14,6 +14,7 @@ const SCOPES: Array<{ value: McpScope; title: string; hint: string }> = [
   { value: READ, title: "mcpScopeReadTitle", hint: "mcpScopeRead" },
   { value: "cartalytix:categories:write", title: "mcpScopeCategoriesWriteTitle", hint: "mcpScopeCategoriesWrite" },
   { value: "cartalytix:calculator", title: "mcpScopeCalculatorTitle", hint: "mcpScopeCalculator" },
+  { value: "cartalytix:exclusions:write", title: "mcpScopeExclusionsWriteTitle", hint: "mcpScopeExclusionsWrite" },
 ];
 const OPTIONAL = SCOPES.map((scope) => scope.value).filter((value) => value !== READ);
 

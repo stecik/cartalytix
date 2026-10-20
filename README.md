@@ -162,7 +162,8 @@ Each user connects their own Cartalytix account to ChatGPT or Codex through the
 MCP endpoint `/mcp` (Streamable HTTP). There is no OpenAI API key and no
 central service. The backend is its own OAuth 2.1 authorization server: dynamic
 client registration, PKCE S256, `resource`-bound tokens. Scope `cartalytix:read` is
-mandatory; `cartalytix:categories:write` and `cartalytix:calculator` are off by default
+mandatory; `cartalytix:categories:write`, `cartalytix:calculator` and `cartalytix:exclusions:write`
+are off by default
 and enabled on the consent page or later per connection. Permissions are stored on the
 grant, so changes apply to live tokens immediately and survive refresh.
 Tokens are opaque, stored only as SHA-256 hashes in PostgreSQL (access 1 h, rotated

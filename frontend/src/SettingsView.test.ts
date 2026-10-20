@@ -125,7 +125,7 @@ describe("settings connected AI apps", () => {
       await wrapper.get('input[aria-label="Allow everything"]').setValue(true);
       await flushPromises();
       expect(fetchMock).toHaveBeenLastCalledWith("/api/v1/mcp/grants/grant-1", expect.objectContaining({
-        body: JSON.stringify({ scopes: ["cartalytix:read", "cartalytix:categories:write", "cartalytix:calculator"] }),
+        body: JSON.stringify({ scopes: ["cartalytix:read", "cartalytix:categories:write", "cartalytix:calculator", "cartalytix:exclusions:write"] }),
       }));
       const read = wrapper.get<HTMLInputElement>('input[aria-label="Read data"]');
       await read.setValue(false);

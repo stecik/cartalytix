@@ -521,6 +521,7 @@ class McpScope(StrEnum):
     READ = "cartalytix:read"
     CATEGORIES_WRITE = "cartalytix:categories:write"
     CALCULATOR = "cartalytix:calculator"
+    EXCLUSIONS_WRITE = "cartalytix:exclusions:write"
 
 
 class McpConsentInput(BaseModel):

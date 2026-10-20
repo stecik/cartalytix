@@ -319,7 +319,11 @@ export interface McpAuthorization {
   scopes: string[];
 }
 
-export type McpScope = "cartalytix:read" | "cartalytix:categories:write" | "cartalytix:calculator";
+export type McpScope =
+  | "cartalytix:read"
+  | "cartalytix:categories:write"
+  | "cartalytix:calculator"
+  | "cartalytix:exclusions:write";
 
 export interface McpGrant {
   id: string;

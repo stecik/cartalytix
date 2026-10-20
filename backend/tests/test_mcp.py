@@ -40,6 +40,7 @@ from cartalytix.models import (
     OAuthClient,
     OAuthCode,
     OAuthGrant,
+    ProductExclusion,
     ProviderConnection,
     Receipt,
     ReceiptItem,
@@ -74,10 +75,15 @@ TOOLS = {
     "list_category_items",
     "assign_category_items",
     "calculate_items_spending",
+    "set_receipt_exclusion",
+    "set_product_exclusion",
+    "set_receipt_item_exclusion",
 }
+EXCLUSION_WRITES = {"set_receipt_exclusion", "set_product_exclusion", "set_receipt_item_exclusion"}
 CATEGORY_WRITES = {"create_category", "update_category", "delete_category", "assign_category_items"}
 CATEGORY_WRITE_SCOPE = "cartalytix:categories:write"
 CALCULATOR_SCOPE = "cartalytix:calculator"
+EXCLUSIONS_SCOPE = "cartalytix:exclusions:write"
 INITIALIZE = {
     "jsonrpc": "2.0",
     "id": 1,
@@ -254,7 +260,12 @@ def test_discovery_metadata(web: TestClient) -> None:
         resource = web.get(path).json()
         assert resource.get("resource") == RESOURCE
         assert resource.get("authorization_servers") == [ISSUER]
-        assert resource.get("scopes_supported") == [SCOPE, CATEGORY_WRITE_SCOPE, CALCULATOR_SCOPE]
+        assert resource.get("scopes_supported") == [
+            SCOPE,
+            CATEGORY_WRITE_SCOPE,
+            CALCULATOR_SCOPE,
+            EXCLUSIONS_SCOPE,
+        ]
     for path in [
         "/.well-known/oauth-authorization-server/api/v1/oauth",
         "/.well-known/oauth-authorization-server",
@@ -271,6 +282,7 @@ def test_discovery_metadata(web: TestClient) -> None:
             "offline_access",
             CATEGORY_WRITE_SCOPE,
             CALCULATOR_SCOPE,
+            EXCLUSIONS_SCOPE,
         }
     missing = rpc(web, None)
     assert missing.status_code == 401
@@ -638,13 +650,15 @@ async def test_mcp_tools_over_oauth(mcp_app: FastAPI, engine: Engine, mode: str)
         for tool in tools:
             assert tool.annotations is not None
             writable = tool.name in CATEGORY_WRITES
-            assert tool.annotations.read_only_hint is not writable
+            excludes = tool.name in EXCLUSION_WRITES
+            assert tool.annotations.read_only_hint is not (writable or excludes)
             assert tool.annotations.destructive_hint is (
                 tool.name in {"delete_category", "assign_category_items"}
             )
             assert "user_id" not in str(tool.input_schema)
             optional = {"calculate_items_spending": [CALCULATOR_SCOPE]}.get(
-                tool.name, [CATEGORY_WRITE_SCOPE] if writable else []
+                tool.name,
+                [CATEGORY_WRITE_SCOPE] if writable else [EXCLUSIONS_SCOPE] if excludes else [],
             )
             assert (tool.meta or {}).get("securitySchemes") == [
                 {"type": "oauth2", "scopes": [SCOPE, *optional]}
@@ -951,6 +965,70 @@ def test_legacy_client_reconsent_updates_the_grant(web: TestClient, engine: Engi
         assert len(db.scalars(select(OAuthGrant)).all()) == 1
 
 
+def test_exclusion_writes_need_their_scope_and_are_reversible(
+    web: TestClient, engine: Engine
+) -> None:
+    token = tokens_for(web, OWNER).get("access_token", "")
+    with Session(engine) as db:
+        own, item = db.execute(
+            select(Receipt.id, ReceiptItem.id)
+            .join(ReceiptItem, ReceiptItem.receipt_id == Receipt.id)
+            .where(Receipt.currency == "CZK", Receipt.total_amount < 500)
+        ).one()
+        foreign = db.scalar(select(Receipt.id).where(Receipt.total_amount == Decimal("999.00")))
+    receipt = {"receipt_id": str(own)}
+    line = {"receipt_id": str(own), "item_id": str(item)}
+    product = {"name": "Rohlík", "currency": "CZK"}
+    for name, arguments in [
+        ("set_receipt_exclusion", receipt),
+        ("set_receipt_item_exclusion", line),
+        ("set_product_exclusion", product),
+    ]:
+        denied = call_rpc(web, token, name, arguments)
+        assert denied.status_code == 403
+        assert f'scope="{SCOPE} {EXCLUSIONS_SCOPE}"' in denied.headers.get("www-authenticate", "")
+    grant = web.get("/api/v1/mcp/grants").json().get("items", [])[0]
+    enabled = web.patch(
+        f"/api/v1/mcp/grants/{grant.get('id')}",
+        json={"scopes": [SCOPE, EXCLUSIONS_SCOPE]},
+        headers=ORIGIN,
+    )
+    assert enabled.status_code == 200
+
+    def result(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        response = call_rpc(web, token, name, arguments)
+        assert response.status_code == 200
+        return response.json().get("result", {})
+
+    excluded = result("set_receipt_exclusion", receipt).get("structuredContent", {})
+    assert excluded.get("is_excluded") is True
+    restored = result("set_receipt_exclusion", {**receipt, "excluded": False})
+    assert restored.get("structuredContent", {}).get("is_excluded") is False
+    detail = result("set_receipt_item_exclusion", line).get("structuredContent", {})
+    assert [row.get("is_excluded") for row in detail.get("items", [])] == [True]
+    assert detail.get("is_excluded") is False
+    assert (
+        result("set_receipt_item_exclusion", {**line, "excluded": False})
+        .get("structuredContent", {})
+        .get("items", [])[0]
+        .get("is_excluded")
+        is False
+    )
+    assert result("set_product_exclusion", product).get("structuredContent", {}).get("is_excluded")
+    with Session(engine) as db:
+        assert db.scalar(select(ProductExclusion.name)) == "Rohlík"
+    result("set_product_exclusion", {**product, "excluded": False})
+    with Session(engine) as db:
+        assert db.scalar(select(ProductExclusion.name)) is None
+    stolen = result("set_receipt_exclusion", {"receipt_id": str(foreign)})
+    assert stolen.get("isError") is True
+    assert "receipt_not_found" in str(stolen.get("content"))
+    secret = result("set_product_exclusion", {"name": "Secret", "currency": "CZK"})
+    assert secret.get("isError") is True
+    with Session(engine) as db:
+        assert db.scalar(select(Receipt.is_excluded).where(Receipt.id == foreign)) is False
+
+
 def test_owner_edits_grant_permissions_live(web: TestClient, engine: Engine) -> None:
     issued = tokens_for(web, OWNER)
     token = issued.get("access_token", "")
@@ -966,7 +1044,7 @@ def test_owner_edits_grant_permissions_live(web: TestClient, engine: Engine) -> 
     assert f'scope="{SCOPE} {CALCULATOR_SCOPE}"' in denied.headers.get("www-authenticate", "")
     assert web.patch(url, json={"scopes": [CALCULATOR_SCOPE]}, headers=ORIGIN).status_code == 422
     assert web.patch(url, json={"scopes": [SCOPE, "admin"]}, headers=ORIGIN).status_code == 422
-    everything = [SCOPE, CATEGORY_WRITE_SCOPE, CALCULATOR_SCOPE]
+    everything = [SCOPE, CATEGORY_WRITE_SCOPE, CALCULATOR_SCOPE, EXCLUSIONS_SCOPE]
     response = web.patch(url, json={"scopes": everything}, headers=ORIGIN)
     assert response.status_code == 200
     assert response.json().get("scopes") == everything

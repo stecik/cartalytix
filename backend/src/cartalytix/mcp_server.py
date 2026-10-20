@@ -54,19 +54,24 @@ from cartalytix.category_schemas import (
 )
 from cartalytix.credentials import TokenCipher
 from cartalytix.item_routes import item_detail, item_totals, items
+from cartalytix.item_routes import set_product_exclusion as product_exclusion_record
 from cartalytix.models import User
 from cartalytix.oauth import (
     CALCULATOR_SCOPE,
     CATEGORIES_WRITE_SCOPE,
     CLIENT_SCOPES,
+    EXCLUSIONS_WRITE_SCOPE,
     SCOPE,
     DatabaseOAuthProvider,
     McpUrls,
 )
 from cartalytix.receipt_routes import overview, receipt_detail, receipts
+from cartalytix.receipt_routes import set_receipt_exclusion as receipt_exclusion_record
+from cartalytix.receipt_routes import set_receipt_item_exclusion as receipt_item_exclusion_record
 from cartalytix.schemas import (
     STATS_BUCKET_PATTERN,
     ExclusionFilter,
+    ExclusionInput,
     ItemDetailOutput,
     ItemKeyInput,
     ItemSort,
@@ -74,6 +79,7 @@ from cartalytix.schemas import (
     ItemTotalsInput,
     ItemTotalsOutput,
     OverviewOutput,
+    ProductExclusionInput,
     ReceiptDetailOutput,
     ReceiptSort,
     ReceiptsOutput,
@@ -93,6 +99,9 @@ TOOL_SCOPES = {
     "delete_category": CATEGORIES_WRITE_SCOPE,
     "assign_category_items": CATEGORIES_WRITE_SCOPE,
     "calculate_items_spending": CALCULATOR_SCOPE,
+    "set_receipt_exclusion": EXCLUSIONS_WRITE_SCOPE,
+    "set_product_exclusion": EXCLUSIONS_WRITE_SCOPE,
+    "set_receipt_item_exclusion": EXCLUSIONS_WRITE_SCOPE,
 }
 READ_ONLY = ToolAnnotations(
     read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False
@@ -102,6 +111,13 @@ WRITE_SECURITY = {
     "securitySchemes": [{"type": "oauth2", "scopes": [SCOPE, CATEGORIES_WRITE_SCOPE]}]
 }
 CALCULATOR_SECURITY = {"securitySchemes": [{"type": "oauth2", "scopes": [SCOPE, CALCULATOR_SCOPE]}]}
+EXCLUSIONS_SECURITY = {
+    "securitySchemes": [{"type": "oauth2", "scopes": [SCOPE, EXCLUSIONS_WRITE_SCOPE]}]
+}
+# Exclusions only change what counts in spending and are reversible with excluded=false.
+EXCLUSION_WRITE = ToolAnnotations(
+    read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False
+)
 INSTRUCTIONS = (
     "Access to the signed-in user's Cartalytix receipts and categories. Amounts are exact "
     "decimal strings in the currency next to them; never add or compare different currencies. "
@@ -113,7 +129,11 @@ INSTRUCTIONS = (
     "before applying batches of up to 200 products. Manual assignments are protected unless "
     "overwrite_manual is explicitly enabled. Each product currently has at most one category. "
     "To total spending on chosen products, find their exact name and currency with search_items, "
-    "then pass up to 200 of them to calculate_items_spending (cartalytix:calculator)."
+    "then pass up to 200 of them to calculate_items_spending (cartalytix:calculator). "
+    "Exclusion writes require cartalytix:exclusions:write and are reversible with "
+    "excluded=false: set_receipt_exclusion leaves out a whole receipt, set_product_exclusion "
+    "leaves out a product (exact name and currency) on every current and future receipt, and "
+    "set_receipt_item_exclusion leaves out one line (item id from get_receipt) on one receipt."
 )
 
 Limit = Annotated[int, Field(ge=1, le=PAGE_LIMIT, description="Page size")]
@@ -368,6 +388,67 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
             except HTTPException as exc:
                 raise ToolError(str(exc.detail)) from exc
 
+    def exclusion_tool[**P, R](description: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
+        return server.tool(
+            description=description, annotations=EXCLUSION_WRITE, meta=EXCLUSIONS_SECURITY
+        )
+
+    @exclusion_tool(
+        "Leave a whole receipt out of spending (excluded=true) or count it again (false). "
+        "Needs cartalytix:exclusions:write."
+    )
+    def set_receipt_exclusion(receipt_id: UUID, excluded: bool = True) -> ReceiptDetailOutput:
+        with Session(engine) as db:
+            try:
+                return receipt_exclusion_record(
+                    receipt_id,
+                    ExclusionInput(excluded=excluded),
+                    _owner(db, scope=EXCLUSIONS_WRITE_SCOPE),
+                    db,
+                )
+            except HTTPException as exc:
+                raise ToolError(str(exc.detail)) from exc
+
+    @exclusion_tool(
+        "Leave a product (exact name and currency from search_items) out of spending on every "
+        "current and future receipt (excluded=true), or count it again (false). Needs "
+        "cartalytix:exclusions:write."
+    )
+    def set_product_exclusion(
+        name: Annotated[str, Field(min_length=1, max_length=1000)],
+        currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")],
+        excluded: bool = True,
+    ) -> ItemDetailOutput:
+        with Session(engine) as db:
+            try:
+                return product_exclusion_record(
+                    _owner(db, scope=EXCLUSIONS_WRITE_SCOPE),
+                    db,
+                    ProductExclusionInput(name=name, currency=currency, excluded=excluded),
+                )
+            except HTTPException as exc:
+                raise ToolError(str(exc.detail)) from exc
+
+    @exclusion_tool(
+        "Leave one line (item id from get_receipt) of one receipt out of spending (excluded=true) "
+        "or count it again (false); other purchases of the product stay counted. Needs "
+        "cartalytix:exclusions:write."
+    )
+    def set_receipt_item_exclusion(
+        receipt_id: UUID, item_id: UUID, excluded: bool = True
+    ) -> ReceiptDetailOutput:
+        with Session(engine) as db:
+            try:
+                return receipt_item_exclusion_record(
+                    receipt_id,
+                    item_id,
+                    ExclusionInput(excluded=excluded),
+                    _owner(db, scope=EXCLUSIONS_WRITE_SCOPE),
+                    db,
+                )
+            except HTTPException as exc:
+                raise ToolError(str(exc.detail)) from exc
+
     @tool("Search purchased items grouped by name and currency, with price statistics.")
     def search_items(
         query: Query = None,
@@ -519,7 +600,7 @@ def create_mcp(engine: Engine, settings: Settings) -> McpConnector:
     for route in create_protected_resource_routes(
         resource_url=AnyHttpUrl(urls.resource),
         authorization_servers=[AnyHttpUrl(urls.issuer)],
-        scopes_supported=[SCOPE, CATEGORIES_WRITE_SCOPE, CALCULATOR_SCOPE],
+        scopes_supported=[SCOPE, CATEGORIES_WRITE_SCOPE, CALCULATOR_SCOPE, EXCLUSIONS_WRITE_SCOPE],
     ):
         # RFC 9728 path insertion for /mcp, plus the root location ChatGPT also reads.
         routes += [

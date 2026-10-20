@@ -34,7 +34,7 @@ describe("MCP consent", () => {
     expect(wrapper.get("h1").text()).toBe("Connect ChatGPT to Cartalytix");
     expect(wrapper.text()).toContain("chatgpt.com");
     const switches = wrapper.findAll<HTMLInputElement>('input[role="switch"]');
-    expect(switches.map((input) => input.element.checked)).toEqual([false, true, false, false]);
+    expect(switches.map((input) => input.element.checked)).toEqual([false, true, false, false, false]);
     expect(switches[1]?.element.disabled).toBe(true);
     await wrapper.get('input[aria-label="Calculator"]').setValue(true);
     await wrapper.get("button.primary").trigger("click");
@@ -54,7 +54,7 @@ describe("MCP consent", () => {
     await all.setValue(true);
     expect(wrapper.findAll<HTMLInputElement>('input[role="switch"]').every((input) => input.element.checked)).toBe(true);
     await all.setValue(false);
-    expect(wrapper.findAll<HTMLInputElement>('input[role="switch"]').map((input) => input.element.checked)).toEqual([false, true, false, false]);
+    expect(wrapper.findAll<HTMLInputElement>('input[role="switch"]').map((input) => input.element.checked)).toEqual([false, true, false, false, false]);
   });
 
   it("explains an expired or reused request", async () => {

@@ -55,9 +55,16 @@ from cartalytix.security import token_hash
 SCOPE = McpScope.READ.value
 CATEGORIES_WRITE_SCOPE = McpScope.CATEGORIES_WRITE.value
 CALCULATOR_SCOPE = McpScope.CALCULATOR.value
+EXCLUSIONS_WRITE_SCOPE = McpScope.EXCLUSIONS_WRITE.value
 # Advertised only by the authorization server; refresh tokens are issued either way.
 OFFLINE_SCOPE = "offline_access"
-CLIENT_SCOPES = [SCOPE, OFFLINE_SCOPE, CATEGORIES_WRITE_SCOPE, CALCULATOR_SCOPE]
+CLIENT_SCOPES = [
+    SCOPE,
+    OFFLINE_SCOPE,
+    CATEGORIES_WRITE_SCOPE,
+    CALCULATOR_SCOPE,
+    EXCLUSIONS_WRITE_SCOPE,
+]
 REQUEST_TTL = timedelta(minutes=10)
 CODE_TTL = timedelta(minutes=5)
 ACCESS_TTL = timedelta(hours=1)
