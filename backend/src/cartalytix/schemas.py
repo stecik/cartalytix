@@ -219,7 +219,16 @@ class WoltLoginInput(BaseModel):
 
 class GlobusLoginInput(BaseModel):
     model_config = {"extra": "forbid"}
-    cookie: SecretStr = Field(min_length=1, max_length=4200)
+    username: str = Field(min_length=1, max_length=254)
+    password: SecretStr = Field(min_length=1, max_length=1024)
+
+    @field_validator("username")
+    @classmethod
+    def strip_username(cls, value: str) -> str:
+        username = value.strip()
+        if not username:
+            raise ValueError("Username must not be blank")
+        return username
 
 
 class MixitLoginInput(BaseModel):

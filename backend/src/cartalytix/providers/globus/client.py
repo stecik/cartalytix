@@ -1,88 +1,38 @@
-"""Read-only Globus adapter: pasted globus.cz session cookie, receipt list and receipt PDFs.
+"""Read-only Globus receipts with automatic renewal of verified web sessions.
 
 The web API proxies the loyalty receipt list and renders each receipt only as PDF/PNG;
 there is no JSON detail with items, so items are parsed from the PDF text layer.
 """
 
 import math
-import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 
-from cartalytix.providers.common import ProviderError, ProviderPayload
+from cartalytix.providers.common import ProviderPayload
 from cartalytix.providers.globus.receipt_pdf import pdf_text
+from cartalytix.providers.globus.session import COOKIE as COOKIE
+from cartalytix.providers.globus.session import COOKIE_VALUE as COOKIE_VALUE
+from cartalytix.providers.globus.session import PROFILE_URL as PROFILE_URL
+from cartalytix.providers.globus.session import GlobusAccount as GlobusAccount
+from cartalytix.providers.globus.session import (
+    GlobusError,
+    decode_session,
+    refresh_session,
+    session_headers,
+)
+from cartalytix.providers.globus.session import fetch_identity as fetch_identity
+from cartalytix.providers.globus.session import parse_session_cookie as parse_session_cookie
 
 LIST_URL = "https://www.globus.cz/api/v1/gsoa/customer/receipts"
-PROFILE_URL = "https://www.globus.cz/api/v1/gsoa/customer/profiles/me/auth-status"
-COOKIE = "oidc_session"
 PAGE_SIZE = 20
-# RFC 6265 cookie-octet; the value goes only into the Cookie header for www.globus.cz.
-COOKIE_VALUE = re.compile(r"[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]{1,4096}")
-
-
-class GlobusError(ProviderError):
-    pass
-
-
-@dataclass(frozen=True)
-class GlobusAccount:
-    subject: str
-    email: str | None
-
-
-def parse_session_cookie(value: str) -> str:
-    """Accept the copied cookie value, optionally pasted together with its name."""
-    cookie = value.strip().removeprefix(f"{COOKIE}=")
-    if not COOKIE_VALUE.fullmatch(cookie):
-        raise GlobusError("session_cookie_invalid")
-    return cookie
 
 
 def _client(http: httpx.Client | None) -> tuple[httpx.Client, bool]:
     return (http, False) if http is not None else (httpx.Client(timeout=30), True)
-
-
-def _headers(cookie: str, accept: str) -> dict[str, str]:
-    return {"Accept": accept, "Cookie": f"{COOKIE}={cookie}"}
-
-
-def fetch_identity(cookie: str, *, http: httpx.Client | None = None) -> GlobusAccount:
-    client, owned = _client(http)
-    try:
-        try:
-            response = client.get(
-                PROFILE_URL, headers=_headers(cookie, "application/json"), follow_redirects=False
-            )
-        except httpx.HTTPError:
-            raise GlobusError("provider_unavailable") from None
-    finally:
-        if owned:
-            client.close()
-    if response.status_code in {401, 403} or response.is_redirect:
-        raise GlobusError("session_cookie_rejected")
-    if response.status_code != 200:
-        raise GlobusError("provider_unavailable")
-    try:
-        data = response.json()
-    except ValueError:
-        raise GlobusError("provider_response_invalid") from None
-    if not isinstance(data, dict) or data.get("authenticated") is not True:
-        raise GlobusError("session_cookie_rejected")
-    profile = data.get("profile") if isinstance(data.get("profile"), dict) else {}
-    registration = profile.get("registration") if isinstance(profile, dict) else None
-    contacts = profile.get("contacts") if isinstance(profile, dict) else None
-    customer = registration.get("customerID") if isinstance(registration, dict) else None
-    if isinstance(customer, bool) or not isinstance(customer, int | str) or not str(customer):
-        raise GlobusError("account_identity_unavailable")
-    email = contacts.get("email") if isinstance(contacts, dict) else None
-    return GlobusAccount(
-        subject=str(customer), email=email if isinstance(email, str) and email else None
-    )
 
 
 class GlobusClient:
@@ -98,8 +48,12 @@ class GlobusClient:
     ) -> None:
         if not math.isfinite(delay) or not 0 <= delay <= 60:
             raise ValueError("Invalid request delay")
-        # The session cookie is never rotated by Globus, so save_refresh stays unused.
-        self._cookie = cookie
+        self._session = decode_session(cookie)
+        self._cookie = (
+            self._session.cookie if self._session is not None else parse_session_cookie(cookie)
+        )
+        self._save_refresh = save_refresh
+        self._prepared = False
         self._http, self._owns_http = _client(http)
         self._delay = delay
         self._heartbeat = heartbeat
@@ -109,8 +63,23 @@ class GlobusClient:
         if self._owns_http:
             self._http.close()
 
+    def _refresh(self) -> None:
+        if self._session is None:
+            raise GlobusError("auth_required")
+        updated = refresh_session(self._session, http=self._http, heartbeat=self._heartbeat)
+        serialized = updated.serialize()
+        if serialized != self._session.serialize():
+            self._save_refresh(serialized)
+        self._session = updated
+        self._cookie = updated.cookie
+
     def _get(self, url: str, params: dict[str, str] | None, accept: str) -> httpx.Response:
-        for attempt in range(4):
+        if not self._prepared and self._session is not None:
+            self._refresh()
+            self._prepared = True
+        refreshed = False
+        attempt = 0
+        while attempt < 4:
             time.sleep(self._delay)
             if self._heartbeat is not None:
                 self._heartbeat()
@@ -118,16 +87,26 @@ class GlobusClient:
                 response = self._http.get(
                     url,
                     params=params,
-                    headers=_headers(self._cookie, accept),
+                    headers=session_headers(
+                        self._cookie,
+                        accept,
+                        self._session.user_agent if self._session is not None else "",
+                    ),
                     follow_redirects=False,
                 )
             except httpx.HTTPError:
                 if attempt == 3:
                     raise GlobusError("provider_unavailable") from None
                 time.sleep(min(60, max(self._delay, 1) * (2**attempt)))
+                attempt += 1
                 continue
-            # An expired session is answered with 401/403 or a redirect to the login page.
             if response.status_code in {401, 403} or response.is_redirect:
+                if self._session is not None and not refreshed:
+                    self._refresh()
+                    refreshed = True
+                    continue
+                if response.status_code == 403 and self._session is not None:
+                    raise GlobusError("provider_unavailable")
                 raise GlobusError("auth_required")
             if response.status_code == 429 or 500 <= response.status_code <= 599:
                 if attempt == 3:
@@ -135,6 +114,7 @@ class GlobusClient:
                         "rate_limited" if response.status_code == 429 else "provider_unavailable"
                     )
                 time.sleep(min(60, max(self._delay, 2) * (2**attempt)))
+                attempt += 1
                 continue
             if response.status_code != 200:
                 raise GlobusError("provider_unavailable")

@@ -1,4 +1,4 @@
-"""Globus account linking: the owner pastes the globus.cz session cookie from their browser."""
+"""Globus account linking with ephemeral headless login and encrypted web sessions."""
 
 from typing import cast
 from uuid import UUID
@@ -10,7 +10,8 @@ from sqlalchemy import Engine
 from cartalytix.connection_routes import account_guard, owned_connection, persist_credentials
 from cartalytix.credentials import CredentialError, TokenCipher
 from cartalytix.dependencies import Db, Owner
-from cartalytix.providers.globus.client import GlobusError, fetch_identity, parse_session_cookie
+from cartalytix.providers.globus.login import login
+from cartalytix.providers.globus.session import GlobusError
 from cartalytix.schemas import ConnectionOutput, GlobusLoginInput
 from cartalytix.sync import connection_lock
 
@@ -34,10 +35,6 @@ def login_connection(
         raise HTTPException(503, "service_unavailable") from None
     if not allowed:
         raise HTTPException(429, "login_rate_limited")
-    try:
-        cookie = parse_session_cookie(payload.cookie.get_secret_value())
-    except GlobusError as error:
-        raise HTTPException(422, error.code) from None
     engine = cast(Engine, request.app.state.engine)
     with connection_lock(engine, identifier) as acquired:
         if not acquired:
@@ -45,13 +42,15 @@ def login_connection(
         old_subject = account_guard(engine, identifier, owner_id, PROVIDER)
         try:
             cipher = TokenCipher(request.app.state.settings)
-            account = fetch_identity(cookie)
-            # The cookie is the only credential; it sits in the refresh-token column.
-            encrypted = cipher.encrypt(cookie)
+            account = login(payload.username, payload.password.get_secret_value())
+            encrypted = cipher.encrypt(account.serialize())
         except CredentialError:
             raise HTTPException(503, "credentials_unavailable") from None
         except GlobusError as error:
-            raise HTTPException(422, error.code) from None
+            status = 409 if error.code == "login_busy" else 422
+            if error.code in {"login_rate_limited", "rate_limited"}:
+                status = 429
+            raise HTTPException(status, error.code) from None
         return persist_credentials(
             engine,
             db,

@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
@@ -13,6 +14,7 @@ from test_api import application
 from test_api import client as client
 from test_api import engine as engine
 from test_globus_adapter import RECEIPT
+from test_globus_session import profile
 from test_lidl_routes import HEADERS
 from test_lidl_routes import authorized as authorized
 from test_lidl_sync import database as database
@@ -20,7 +22,8 @@ from test_lidl_sync import database as database
 from cartalytix.credentials import TokenCipher
 from cartalytix.models import ProviderConnection, Receipt, ReceiptItem, SyncRun
 from cartalytix.providers.common import ProviderPayload
-from cartalytix.providers.globus.client import GlobusAccount, GlobusError
+from cartalytix.providers.globus.client import GlobusClient, GlobusError
+from cartalytix.providers.globus.session import GlobusSession, decode_session
 from cartalytix.settings import Settings
 from cartalytix.sync import enqueue_sync, run_sync
 
@@ -33,26 +36,29 @@ def create(client: TestClient) -> str:
     return str(response.json().get("id"))
 
 
-def test_pasted_cookie_login_stores_only_encrypted_cookie(
+def test_username_password_login_stores_only_encrypted_session(
     authorized: TestClient, engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    seen: list[str] = []
+    seen: list[tuple[str, str]] = []
 
-    def identity(cookie: str) -> GlobusAccount:
-        seen.append(cookie)
-        return GlobusAccount("42", "real@example.com")
+    def sign_in(username: str, password: str) -> GlobusSession:
+        seen.append((username, password))
+        return GlobusSession(
+            "private-cookie", "private-session", "42", "Chrome/140", email="real@example.com"
+        )
 
-    monkeypatch.setattr("cartalytix.globus_routes.fetch_identity", identity)
+    monkeypatch.setattr("cartalytix.globus_routes.login", sign_in, raising=False)
     identifier = create(authorized)
     response = authorized.post(
         f"{PREFIX}/{identifier}/login",
-        json={"cookie": " oidc_session=private-cookie "},
+        json={"username": " user@example.com ", "password": "private-password"},
         headers=HEADERS,
     )
     assert response.status_code == 200, response.text
     assert response.json().get("status") == "connected"
-    assert "private-cookie" not in response.text
-    assert seen == ["private-cookie"]
+    for secret in ("private-cookie", "private-session", "private-password"):
+        assert secret not in response.text
+    assert seen == [("user@example.com", "private-password")]
     with Session(engine) as db:
         connection = db.get(ProviderConnection, UUID(identifier))
         assert connection is not None and connection.encrypted_refresh_token is not None
@@ -61,34 +67,100 @@ def test_pasted_cookie_login_stores_only_encrypted_cookie(
             "real@example.com",
         )
         cipher = TokenCipher(application(authorized).state.settings)
-        assert cipher.decrypt(connection.encrypted_refresh_token) == "private-cookie"
+        decrypted = cipher.decrypt(connection.encrypted_refresh_token)
+        stored = decode_session(decrypted)
+        assert stored is not None
+        assert (stored.cookie, stored.session_id, stored.subject) == (
+            "private-cookie",
+            "private-session",
+            "42",
+        )
+        assert "private-password" not in decrypted
+        assert "user@example.com" not in decrypted
 
 
-def test_invalid_rejected_and_foreign_account_cookies(
-    authorized: TestClient, monkeypatch: pytest.MonkeyPatch
+def test_invalid_rejected_and_foreign_account_credentials(
+    authorized: TestClient, engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     identifier = create(authorized)
     url = f"{PREFIX}/{identifier}/login"
-    response = authorized.post(url, json={"cookie": "a;b"}, headers=HEADERS)
+    response = authorized.post(url, json={"cookie": "old-workflow"}, headers=HEADERS)
     assert response.status_code == 422
-    assert response.json().get("error", {}).get("code") == "session_cookie_invalid"
+    assert response.json().get("error", {}).get("code") == "validation_error"
 
-    def rejected(cookie: str) -> GlobusAccount:
-        raise GlobusError("session_cookie_rejected")
+    def rejected(username: str, password: str) -> GlobusSession:
+        raise GlobusError("credentials_rejected")
 
-    monkeypatch.setattr("cartalytix.globus_routes.fetch_identity", rejected)
-    response = authorized.post(url, json={"cookie": "c1"}, headers=HEADERS)
+    credentials = {"username": "card-number", "password": "private-password"}
+    monkeypatch.setattr("cartalytix.globus_routes.login", rejected, raising=False)
+    response = authorized.post(url, json=credentials, headers=HEADERS)
     assert response.status_code == 422
-    assert response.json().get("error", {}).get("code") == "session_cookie_rejected"
+    assert response.json().get("error", {}).get("code") == "credentials_rejected"
     monkeypatch.setattr(
-        "cartalytix.globus_routes.fetch_identity", lambda cookie: GlobusAccount("1", None)
+        "cartalytix.globus_routes.login",
+        lambda username, password: GlobusSession("c1", "s1", "1", "Chrome/140"),
     )
-    assert authorized.post(url, json={"cookie": "c1"}, headers=HEADERS).status_code == 200
+    assert authorized.post(url, json=credentials, headers=HEADERS).status_code == 200
+    with Session(engine) as db:
+        original = db.get(ProviderConnection, UUID(identifier))
+        assert original is not None
+        encrypted = original.encrypted_refresh_token
     monkeypatch.setattr(
-        "cartalytix.globus_routes.fetch_identity", lambda cookie: GlobusAccount("2", None)
+        "cartalytix.globus_routes.login",
+        lambda username, password: GlobusSession("c2", "s2", "2", "Chrome/140"),
     )
-    response = authorized.post(url, json={"cookie": "c2"}, headers=HEADERS)
+    response = authorized.post(url, json=credentials, headers=HEADERS)
     assert response.json().get("error", {}).get("code") == "account_mismatch"
+    with Session(engine) as db:
+        unchanged = db.get(ProviderConnection, UUID(identifier))
+        assert unchanged is not None
+        assert unchanged.encrypted_refresh_token == encrypted
+
+
+@pytest.mark.parametrize("username", ["", "   ", "x" * 255])
+def test_username_validation_precedes_provider_login(
+    authorized: TestClient, username: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected(username: str, password: str) -> GlobusSession:
+        pytest.fail("Invalid input must not reach Globus")
+
+    monkeypatch.setattr("cartalytix.globus_routes.login", unexpected, raising=False)
+    response = authorized.post(
+        f"{PREFIX}/{create(authorized)}/login",
+        json={"username": username, "password": "private-password"},
+        headers=HEADERS,
+    )
+    assert response.status_code == 422
+    assert "private-password" not in response.text
+
+
+def test_login_preserves_session_when_provider_rejects_reauthentication(
+    authorized: TestClient, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    identifier = create(authorized)
+    with Session(engine) as db, db.begin():
+        connection = db.get(ProviderConnection, UUID(identifier))
+        assert connection is not None
+        connection.account_subject = "42"
+        connection.status = "connected"
+        connection.encrypted_refresh_token = b"unchanged-encrypted-session"
+
+    def rejected(username: str, password: str) -> GlobusSession:
+        raise GlobusError("captcha_required")
+
+    monkeypatch.setattr("cartalytix.globus_routes.login", rejected, raising=False)
+    response = authorized.post(
+        f"{PREFIX}/{identifier}/login",
+        json={"username": "user@example.com", "password": "private-password"},
+        headers=HEADERS,
+    )
+    assert response.status_code == 422
+    assert response.json().get("error", {}).get("code") == "captcha_required"
+    with Session(engine) as db:
+        connection = db.get(ProviderConnection, UUID(identifier))
+        assert connection is not None
+        assert connection.status == "connected"
+        assert connection.encrypted_refresh_token == b"unchanged-encrypted-session"
 
 
 def test_globus_is_listed_as_available(authorized: TestClient) -> None:
@@ -150,3 +222,50 @@ def test_sync_imports_parsed_pdf_receipts(
             ("TESTOVACÍ VODA 1,5L", Decimal("1"), Decimal("15.90")),
             ("ŠUNKA VÁŽENÁ", Decimal("0.25"), Decimal("50.00")),
         ]
+
+
+def test_sync_persists_rotated_globus_session_encrypted(
+    database: tuple[Engine, Settings, UUID, UUID],
+) -> None:
+    engine, config, owner, connection = database
+    cipher = TokenCipher(config)
+    original = GlobusSession("old-cookie", "old-session", "42", "Chrome/140")
+    with Session(engine) as db, db.begin():
+        row = db.get(ProviderConnection, connection)
+        assert row is not None
+        row.provider = "globus"
+        row.account_subject = "42"
+        row.encrypted_refresh_token = cipher.encrypt(original.serialize())
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/session/refresh"):
+            return httpx.Response(
+                200,
+                json={"session_id": "new-session"},
+                headers={"set-cookie": "oidc_session=new-cookie; Secure; Path=/"},
+            )
+        if request.url.path.endswith("/auth-status"):
+            return httpx.Response(200, json=profile())
+        return httpx.Response(200, json={"receipts": [], "totalCount": 0})
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as http:
+
+        def factory(
+            credential: str,
+            save_refresh: Callable[[str], None],
+            *,
+            heartbeat: Callable[[], None] | None = None,
+        ) -> GlobusClient:
+            return GlobusClient(credential, save_refresh, http=http, delay=0, heartbeat=heartbeat)
+
+        run = enqueue_sync(engine, connection, owner)
+        run_sync(engine, run.id, config, client_factory=factory)
+    with Session(engine) as db:
+        result = db.get(SyncRun, run.id)
+        stored = db.get(ProviderConnection, connection)
+        assert result is not None and result.status == "completed"
+        assert stored is not None and stored.encrypted_refresh_token is not None
+        renewed = decode_session(cipher.decrypt(stored.encrypted_refresh_token))
+        assert renewed is not None and renewed.cookie == "new-cookie"
+        assert renewed.session_id == "new-session"
+        assert stored.account_subject == "42"
