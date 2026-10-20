@@ -43,9 +43,11 @@ def challenge() -> dict[str, Any]:
 
 
 def authenticated() -> dict[str, Any]:
-    claims = base64.urlsafe_b64encode(
-        json.dumps({"user_id": "42", "expires": 4102444800}).encode()
-    ).decode().rstrip("=")
+    claims = (
+        base64.urlsafe_b64encode(json.dumps({"user_id": "42", "expires": 4102444800}).encode())
+        .decode()
+        .rstrip("=")
+    )
     return {
         "session": {
             "access_token": f"header.{claims}.signature",

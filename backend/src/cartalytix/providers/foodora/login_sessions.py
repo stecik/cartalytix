@@ -81,11 +81,7 @@ class LoginSessions:
     def cancel(self, owner: UUID, connection: UUID, identifier: str) -> None:
         with self._guard:
             session = self._sessions.get(identifier)
-            if (
-                session is None
-                or session.owner_id != owner
-                or session.connection_id != connection
-            ):
+            if session is None or session.owner_id != owner or session.connection_id != connection:
                 raise FoodoraError("login_expired")
             self._sessions.pop(identifier)
             session.clear()
@@ -113,10 +109,7 @@ class LoginSessions:
             return session
 
     def _require_live(self, identifier: str, session: LoginSession) -> None:
-        if (
-            self._sessions.get(identifier) is not session
-            or session.expires_at <= self._clock()
-        ):
+        if self._sessions.get(identifier) is not session or session.expires_at <= self._clock():
             raise FoodoraError("login_expired")
 
     def _run(
@@ -158,8 +151,7 @@ class LoginSessions:
         except FoodoraError as error:
             with self._guard:
                 live = (
-                    self._sessions.get(identifier) is session
-                    and session.expires_at > self._clock()
+                    self._sessions.get(identifier) is session and session.expires_at > self._clock()
                 )
                 if not live:
                     self._discard(identifier, session)
