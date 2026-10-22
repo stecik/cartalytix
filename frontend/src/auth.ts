@@ -37,7 +37,8 @@ export async function authenticate(
 export interface CredentialsChange {
   /** Omitted for the forced change right after signing in with an issued password. */
   current_password?: string;
-  new_password: string;
+  /** Omitted when only the e-mail changes. */
+  new_password?: string;
   email?: string;
 }
 

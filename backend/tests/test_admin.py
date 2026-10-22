@@ -94,6 +94,10 @@ def test_first_login_requires_new_email_and_password(client: TestClient, engine:
     change = {"new_password": "New-admin-pass"}
     same_email = client.post("/api/v1/auth/credentials", json=change, headers=ORIGIN)
     assert same_email.json().get("error", {}).get("code") == "email_change_required"
+    # The forced change must replace the issued password, not just the e-mail.
+    email_only = {"email": "boss@example.com"}
+    no_password = client.post("/api/v1/auth/credentials", json=email_only, headers=ORIGIN)
+    assert no_password.json().get("error", {}).get("code") == "weak_password"
     for weak in ["Sh0rt!", "no-uppercase", "NO-LOWERCASE", "NoSpecial1"]:
         rejected = client.post(
             "/api/v1/auth/credentials",
@@ -160,6 +164,23 @@ def test_admin_creates_user_who_must_change_password(client: TestClient, engine:
         assert denied.json().get("error", {}).get("code") == "invalid_current_password"
     again["current_password"] = "My-own-pass1"
     assert client.post("/api/v1/auth/credentials", json=again, headers=ORIGIN).status_code == 200
+    # The e-mail alone can change too, but only with the current password and to a new value.
+    current = {"current_password": "Another-pass2"}
+    for attempt, code in [
+        ({"email": "renamed@example.com"}, "invalid_current_password"),
+        ({**current, "email": "new@example.com"}, "credentials_unchanged"),
+        ({**current, "email": "owner@example.com"}, "email_taken"),
+    ]:
+        denied = client.post("/api/v1/auth/credentials", json=attempt, headers=ORIGIN)
+        assert denied.json().get("error", {}).get("code") == code
+    renamed = client.post(
+        "/api/v1/auth/credentials",
+        json={**current, "email": "Renamed@Example.com"},
+        headers=ORIGIN,
+    )
+    assert renamed.json().get("email") == "renamed@example.com"
+    client.post("/api/v1/auth/logout", headers=ORIGIN)
+    sign_in(client, "renamed@example.com", "Another-pass2")
 
 
 def test_admin_resets_disables_and_deletes_users(client: TestClient, engine: Engine) -> None:

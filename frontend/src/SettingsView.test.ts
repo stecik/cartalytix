@@ -51,6 +51,51 @@ describe("settings PWA installation", () => {
   });
 });
 
+describe("settings sign-in details", () => {
+  it("changes only the email with the current password and reports API errors", async () => {
+    const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, is_admin: false, must_change_password: false };
+    const api = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ items: [] }));
+    const { wrapper, client } = render(false, user, api);
+    try {
+      expect(wrapper.text()).toContain("Signed in as test@example.com");
+      await wrapper.get('[data-action="change-credentials"]').trigger("click");
+      await wrapper.get("#credentials-current-password").setValue("Old-pass1!");
+      await wrapper.get("form").trigger("submit");
+      expect(wrapper.get('[role="alert"]').text()).toBe("Change the email address or the password.");
+      await wrapper.get("#credentials-email").setValue("New@Example.com");
+      api.mockResolvedValueOnce(Response.json({ error: { code: "invalid_current_password", message: "x" } }, { status: 403 }));
+      await wrapper.get("form").trigger("submit");
+      await flushPromises();
+      expect(wrapper.get('[role="alert"]').text()).toBe("The current password is incorrect.");
+      api.mockResolvedValueOnce(Response.json({ ...user, email: "new@example.com" }));
+      await wrapper.get("form").trigger("submit");
+      await flushPromises();
+      expect(api).toHaveBeenLastCalledWith("/api/v1/auth/credentials", expect.objectContaining({ method: "POST", body: JSON.stringify({ current_password: "Old-pass1!", email: "New@Example.com" }) }));
+      expect(wrapper.find("dialog").exists()).toBe(false);
+      expect(wrapper.text()).toContain("Signed in as new@example.com");
+      expect(wrapper.text()).toContain("Sign-in details saved");
+    } finally { wrapper.unmount(); client.clear(); }
+  });
+
+  it("requires a strong, confirmed new password", async () => {
+    const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, is_admin: true, must_change_password: false };
+    const api = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ items: [] }));
+    const { wrapper, client } = render(false, user, api);
+    try {
+      await wrapper.get('[data-action="change-credentials"]').trigger("click");
+      await wrapper.get("#credentials-current-password").setValue("Old-pass1!");
+      await wrapper.get("#credentials-new-password").setValue("weak");
+      await wrapper.get("form").trigger("submit");
+      expect(wrapper.get('[role="alert"]').text()).toContain("at least 8 characters");
+      await wrapper.get("#credentials-new-password").setValue("New-pass1!");
+      await wrapper.get("#credentials-confirm-password").setValue("Other-pass1!");
+      await wrapper.get("form").trigger("submit");
+      expect(wrapper.get('[role="alert"]').text()).toBe("The new passwords do not match.");
+      expect(api.mock.calls.some(([path]) => String(path).endsWith("/auth/credentials"))).toBe(false);
+    } finally { wrapper.unmount(); client.clear(); }
+  });
+});
+
 describe("settings appearance", () => {
   it.each([false, true])("saves a theme immediately and rolls it back on API failure=%s", async (fail) => {
     const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, is_admin: false, must_change_password: false };

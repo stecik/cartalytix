@@ -12,6 +12,7 @@ import { isThemePreference, themePreference } from "../theme";
 import AppDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
 import AppSelect from "../components/AppSelect.vue";
+import CredentialsDialog from "../components/CredentialsDialog.vue";
 import McpScopeSwitches from "../components/McpScopeSwitches.vue";
 import SegmentedToggle from "../components/SegmentedToggle.vue";
 
@@ -48,6 +49,12 @@ function connectedOn(value: string): string {
   return new Intl.DateTimeFormat(locale.value === "cs" ? "cs-CZ" : "en-GB", { dateStyle: "medium" }).format(new Date(value));
 }
 const settings = useUserSettings();
+const editingCredentials = ref(false);
+const credentialsSaved = ref(false);
+function onCredentialsSaved(): void {
+  editingCredentials.value = false;
+  credentialsSaved.value = true;
+}
 const pwaInstall = inject(pwaInstallKey);
 const showInstallHelp = ref(false);
 
@@ -182,6 +189,19 @@ const views = computed(() => [
         <p role="status">{{ t("installHelp") }}</p>
       </div>
     </section>
+    <section v-if="session.data.value" class="settings-section" aria-labelledby="account-security-heading">
+      <header class="settings-section-heading">
+        <h2 id="account-security-heading">{{ t("accountSecurity") }}</h2>
+        <span class="settings-save-note" :class="{ saved: credentialsSaved }" aria-live="polite">{{ credentialsSaved ? t("signInDetailsSaved") : "" }}</span>
+      </header>
+      <div class="settings-row">
+        <div class="settings-copy">
+          <h3>{{ t("signInDetails") }}</h3>
+          <p>{{ t("signInDetailsHint", { email: session.data.value.email }) }}</p>
+        </div>
+        <button type="button" class="button secondary settings-install" data-action="change-credentials" @click="credentialsSaved = false; editingCredentials = true">{{ t("changeSignInDetails") }}</button>
+      </div>
+    </section>
     <section v-if="!isAdmin && Array.isArray(grants.data.value?.items)" class="settings-section" aria-labelledby="mcp-heading">
       <header class="settings-section-heading">
         <h2 id="mcp-heading">{{ t("mcpApps") }}</h2>
@@ -216,6 +236,7 @@ const views = computed(() => [
         <p class="settings-copy">{{ t("mcpNoApps") }}</p>
       </div>
     </section>
+    <CredentialsDialog v-if="editingCredentials && session.data.value" :email="session.data.value.email" @close="editingCredentials = false" @saved="onCredentialsSaved" />
     <AppDialog v-if="revoking" :title="t('mcpRevokeTitle')" :busy="revoke.isPending.value" @close="revoking = null">
       <p>{{ t("mcpRevokeHelp", { client: revoking.client_name }) }}</p>
       <p v-if="revoke.isError.value" class="form-alert" role="alert">{{ t("mcpRevokeFailed") }}</p>

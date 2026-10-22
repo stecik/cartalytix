@@ -56,7 +56,8 @@ class CredentialsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # Not needed for the forced change right after signing in with an issued password.
     current_password: str | None = Field(default=None, max_length=1024)
-    new_password: str = Field(min_length=1, max_length=1024)
+    # Optional only for a voluntary change of the e-mail alone.
+    new_password: str | None = Field(default=None, min_length=1, max_length=1024)
     email: EmailStr | None = None
 
 

@@ -226,6 +226,7 @@ def create_app(
             "weak_password": PASSWORD_RULE,
             "email_change_required": "Choose a new email address",
             "email_taken": "An account with this email already exists",
+            "credentials_unchanged": "Change the email address or the password",
             "admin_forbidden": "Administrators manage accounts only",
             "admin_required": "Administrator access required",
             "admin_protected": "Administrator accounts cannot be changed here",
@@ -309,19 +310,26 @@ def create_app(
             user.password_hash, payload.current_password or ""
         ):
             raise HTTPException(403, "invalid_current_password")
-        if not is_strong_password(payload.new_password):
+        new_password = payload.new_password
+        if new_password is None and user.must_change_password:
             raise HTTPException(422, "weak_password")
-        if verify_password(user.password_hash, payload.new_password):
-            raise HTTPException(422, "password_unchanged")
+        if new_password is not None:
+            if not is_strong_password(new_password):
+                raise HTTPException(422, "weak_password")
+            if verify_password(user.password_hash, new_password):
+                raise HTTPException(422, "password_unchanged")
         email = str(payload.email).strip().casefold() if payload.email else user.email
         # The first-start administrator must replace the well-known e-mail as well.
         if user.is_admin and user.must_change_password and email == user.email:
             raise HTTPException(422, "email_change_required")
+        if new_password is None and email == user.email:
+            raise HTTPException(422, "credentials_unchanged")
         if email != user.email:
             if db.scalar(select(User.id).where(User.email == email)) is not None:
                 raise HTTPException(409, "email_taken")
             user.email = email
-        user.password_hash = hash_password(payload.new_password)
+        if new_password is not None:
+            user.password_hash = hash_password(new_password)
         user.must_change_password = False
         # Other devices signed in with the old password are signed out.
         current = token_hash(request.cookies.get(COOKIE_NAME, ""))
