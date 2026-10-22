@@ -10,9 +10,9 @@ x-backend: &backend
     CARTALYTIX_COOKIE_SECURE: ${CARTALYTIX_COOKIE_SECURE:-false}
     CARTALYTIX_TRUSTED_PROXY_HOSTS: '${CARTALYTIX_TRUSTED_PROXY_HOSTS:-[]}'
     CARTALYTIX_PUBLIC_URL: ${CARTALYTIX_PUBLIC_URL:-}
-    CARTALYTIX_TOKEN_KEY_FILE: /run/secrets/lidl_token_key
+    CARTALYTIX_TOKEN_KEY_FILE: /run/secrets/token_key
   secrets:
-    - lidl_token_key
+    - token_key
   depends_on:
     postgres:
       condition: service_healthy
@@ -46,7 +46,9 @@ services:
       start_period: 15s
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      target: development
     environment:
       API_PROXY_TARGET: http://api:8000
       # Docker Desktop does not reliably forward host file events.
@@ -121,5 +123,5 @@ volumes:
   celery-beat-data:
 
 secrets:
-  lidl_token_key:
-    file: ${TOKEN_KEY_PATH:-./.secrets/lidl.key}
+  token_key:
+    file: ${TOKEN_KEY_PATH:-./.secrets/token.key}

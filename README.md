@@ -103,7 +103,7 @@ There is no public registration.
 
 ```powershell
 uv --directory backend sync --locked --extra browser
-uv --directory backend run --no-sync python -c "from pathlib import Path; from cryptography.fernet import Fernet; p=Path('../.secrets/lidl.key'); p.parent.mkdir(exist_ok=True); p.open('xb').write(Fernet.generate_key())"
+uv --directory backend run --no-sync python -c "from pathlib import Path; from cryptography.fernet import Fernet; p=Path('../.secrets/token.key'); p.parent.mkdir(exist_ok=True); p.open('xb').write(Fernet.generate_key())"
 docker compose build
 docker compose up -d
 ```
@@ -128,8 +128,17 @@ Frontend source changes reload automatically. For mobile testing on the same
 Wi-Fi, use the computer's IP and add that exact origin to
 `CARTALYTIX_ALLOWED_ORIGINS` in `.env`. The API is bound to `127.0.0.1:8000`;
 PostgreSQL and Redis have no published ports. No local Nginx or `work/` files
-are required. This Compose setup is for development; production serves the
-frontend build and `/api/` through the existing VPS Nginx under one HTTPS origin.
+are required. This Compose setup is for development. In production the
+`frontend` image (Dockerfile target `production`) serves the build with Nginx and
+forwards `/api/`, `/mcp` and OAuth discovery to the API; the external HTTPS proxy
+only forwards the whole origin to its port.
+
+## Release
+
+Set the same version in `backend/pyproject.toml` (then `uv lock`) and
+`frontend/package.json`, merge to `main`, then push tag `vX.Y.Z`. The Release
+workflow runs CI, pushes `ghcr.io/stecik/cartalytix-{backend,frontend}` as
+`X.Y.Z` and `latest` and creates the GitHub release with generated notes.
 
 Create the encryption key once; keep it outside Git and back it up separately
 from the database. `TOKEN_KEY_PATH` overrides its host path. Losing or replacing

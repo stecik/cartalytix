@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, nullcontext, suppress
 from datetime import UTC, datetime, timedelta
+from importlib.metadata import version
 from secrets import token_urlsafe
 from typing import Protocol
 
@@ -166,7 +167,7 @@ def create_app(
             if engine is None:
                 database.dispose()
 
-    app = FastAPI(title="Cartalytix", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Cartalytix", version=version("cartalytix"), lifespan=lifespan)
     if config.trusted_proxy_hosts:
         app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=config.trusted_proxy_hosts)
     app.state.engine = database

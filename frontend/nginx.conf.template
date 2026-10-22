@@ -1,0 +1,47 @@
+# Serves the built SPA and forwards API, MCP and OAuth discovery paths to FastAPI.
+# Only the external reverse proxy (TRUSTED_PROXY) may set the client address.
+set_real_ip_from ${TRUSTED_PROXY};
+real_ip_header X-Forwarded-For;
+
+map $http_x_forwarded_proto $forwarded_proto {
+    default $http_x_forwarded_proto;
+    "" $scheme;
+}
+
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    client_max_body_size 10m;
+    # Docker DNS; re-resolves the API after its container is recreated.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    location ~ ^/(api|mcp|\.well-known/oauth-(protected-resource|authorization-server))(/|$) {
+        set $api http://${API_UPSTREAM};
+        proxy_pass $api;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    location ~ ^/(sw\.js|registerSW\.js|manifest\.webmanifest)$ {
+        add_header Cache-Control "no-cache";
+    }
+
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location / {
+        try_files $uri /index.html;
+    }
+}
