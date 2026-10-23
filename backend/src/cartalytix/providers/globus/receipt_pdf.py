@@ -18,6 +18,8 @@ QUANTITY = re.compile(
     rf"^(?P<quantity>-?\d+,\d{{3}})\s+x\s+(?P<unit_price>{AMOUNT})\s+Kč/(?P<unit>\S+)"
     rf"\s+(?P<amount>{AMOUNT})$"
 )
+# EAN or in-store PLU printed below an item name.
+CODE = re.compile(r"^\d{4,14}$")
 TOTAL = re.compile(rf"^CELKEM\s+(?P<amount>{AMOUNT})\s+Kč$")
 SAVINGS = re.compile(rf"^UŠETŘILI JSTE\s+(?P<amount>{AMOUNT})\s+Kč$")
 PAYMENT = re.compile(rf"^(?P<method>[^\W\d][^:\d]*?)\s{{2,}}(?P<amount>{AMOUNT})$")
@@ -38,11 +40,21 @@ def pdf_text(data: bytes) -> str:
 
 
 def parse_items(block: list[str], issues: set[str]) -> tuple[list[dict[str, Any]], list[str]]:
-    """A "(vat)" line either carries its amount or is followed by a quantity line."""
+    """A "(vat)" line either carries its amount or is followed by a quantity line.
+
+    Newer receipts print one product code line right below the item name.
+    """
     items: list[dict[str, Any]] = []
     unparsed: list[str] = []
 
-    def add(head: re.Match[str], quantity: str, unit: str | None, price: str, amount: str) -> None:
+    def add(
+        head: re.Match[str],
+        code: str | None,
+        quantity: str,
+        unit: str | None,
+        price: str,
+        amount: str,
+    ) -> None:
         count, unit_price, value = money(quantity), money(price), money(amount)
         if (count * unit_price).quantize(CENT, ROUND_HALF_UP) != value:
             issues.add("quantity_price_mismatch")
@@ -50,6 +62,7 @@ def parse_items(block: list[str], issues: set[str]) -> tuple[list[dict[str, Any]
             {
                 "name": head.group("name"),
                 "vat_code": int(head.group("vat")),
+                "code": code,
                 "quantity": str(count),
                 "unit": unit,
                 "unit_price": str(unit_price),
@@ -59,30 +72,44 @@ def parse_items(block: list[str], issues: set[str]) -> tuple[list[dict[str, Any]
         )
 
     pending: re.Match[str] | None = None
+    pending_code: str | None = None
+    # Only the line right after a single-line item may carry that item's code.
+    coded_last = True
     for line in block:
         if pending is not None:
+            if pending_code is None and CODE.match(line):
+                pending_code = line
+                continue
             quantity = QUANTITY.match(line)
             if quantity:
                 add(
                     pending,
+                    pending_code,
                     quantity.group("quantity"),
                     quantity.group("unit"),
                     quantity.group("unit_price"),
                     quantity.group("amount"),
                 )
-                pending = None
+                pending, pending_code, coded_last = None, None, True
                 continue
-            unparsed.append(pending.group(0))
-            pending = None
+            unparsed.extend(
+                [pending.group(0)] + ([pending_code] if pending_code is not None else [])
+            )
+            pending, pending_code = None, None
         if single := SINGLE.match(line):
             amount = single.group("amount")
-            add(single, "1", None, amount, amount)
+            add(single, None, "1", None, amount, amount)
+            coded_last = False
         elif head := HEAD.match(line):
             pending = head
+        elif not coded_last and CODE.match(line):
+            items[-1]["code"] = line
+            coded_last = True
         else:
             unparsed.append(line)
+            coded_last = True
     if pending is not None:
-        unparsed.append(pending.group(0))
+        unparsed.extend([pending.group(0)] + ([pending_code] if pending_code is not None else []))
     return items, unparsed
 
 

@@ -10,7 +10,7 @@ from typing import Any
 from cartalytix.providers.globus.client import GlobusError
 from cartalytix.providers.globus.receipt_pdf import CENT, parse
 
-PARSER_VERSION = "globus-cz-pdf-1"
+PARSER_VERSION = "globus-cz-pdf-2"
 MERCHANT = "Globus"
 
 
@@ -41,7 +41,7 @@ def validate_receipt(
             "unit": item.get("unit"),
             "unit_price": item.get("unit_price"),
             "original_amount": item.get("amount"),
-            "code": None,
+            "code": item.get("code"),
             "is_weight": item.get("is_weight"),
             "discounts": [],
         }

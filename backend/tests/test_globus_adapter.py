@@ -72,6 +72,32 @@ def test_receipt_maps_items_total_and_local_date() -> None:
     assert items[2].get("is_weight") is True
 
 
+def test_receipt_with_product_code_lines_keeps_codes_on_items() -> None:
+    # Newer receipts print an EAN (or a short in-store PLU) below each item name.
+    text = (
+        RECEIPT.replace("SYNTETICKÝ CHLÉB 500G (2)\n", "SYNTETICKÝ CHLÉB 500G (2)\n8590000000017\n")
+        .replace("15,90\n", "15,90\n103027\n")
+        .replace("ŠUNKA VÁŽENÁ          (2)\n", "ŠUNKA VÁŽENÁ          (2)\n8590000000024\n")
+    )
+    receipt = validate_receipt(SUMMARY, detail(text), "r1")
+    assert receipt is not None
+    assert receipt.get("issues") == []
+    items = receipt.get("items", [])
+    assert [(i.get("name"), i.get("code")) for i in items] == [
+        ("SYNTETICKÝ CHLÉB 500G", "8590000000017"),
+        ("TESTOVACÍ VODA 1,5L", "103027"),
+        ("ŠUNKA VÁŽENÁ", "8590000000024"),
+    ]
+    assert items[0].get("original_amount") == "21.00"
+
+
+def test_code_line_without_item_is_a_quality_issue() -> None:
+    text = RECEIPT.replace("15,90\n", "15,90\n103027\n8590000000017\n")
+    receipt = validate_receipt(SUMMARY, detail(text), "r1")
+    assert receipt is not None
+    assert receipt.get("issues") == ["unparsed_line"]
+
+
 def test_unknown_lines_and_list_total_mismatch_are_quality_issues() -> None:
     text = RECEIPT.replace(
         "TESTOVACÍ VODA 1,5L   (1)          15,90",
