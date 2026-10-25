@@ -5,7 +5,7 @@
   --green-hover: #285744;
   --paper-rgb: 247, 246, 240;
   --paper: rgb(var(--paper-rgb));
-  --paper-overlay: rgba(var(--paper-rgb), 0.9490196078431372);
+  --paper-overlay: rgba(var(--paper-rgb), 0.95);
   --white-rgb: 255, 255, 255;
   --white: rgb(var(--white-rgb));
   --white-overlay-14: rgba(var(--white-rgb), 0.14);
@@ -54,7 +54,7 @@
   --text-connection-icon: #879b85;
   --surface-monogram-rgb: 233, 236, 223;
   --surface-monogram: rgb(var(--surface-monogram-rgb));
-  --surface-row-hover: rgba(var(--surface-monogram-rgb), 0.4392156862745098);
+  --surface-row-hover: rgba(var(--surface-monogram-rgb), 0.45);
   --text-monogram: #6e8069;
   --text-status: #7b8276;
   --status-unavailable: #a5ad9a;
@@ -83,8 +83,8 @@
   --text-positive: #3f7a55;
   --text-negative: #a0533f;
   --receipt-shadow-rgb: 23, 49, 31;
-  --shadow-receipt: rgba(var(--receipt-shadow-rgb), 0.1411764705882353);
-  --shadow-toggle: rgba(var(--receipt-shadow-rgb), 0.12156862745098039);
+  --shadow-receipt: rgba(var(--receipt-shadow-rgb), 0.15);
+  --shadow-toggle: rgba(var(--receipt-shadow-rgb), 0.12);
   --surface-receipt: #fffef8;
   --text-receipt: #2b2d27;
   --border-receipt: #b7baae;
@@ -106,7 +106,7 @@
   --surface-account-expanded: #f0f4eb;
   --surface-reconnect-rgb: 234, 240, 231;
   --surface-reconnect: rgb(var(--surface-reconnect-rgb));
-  --surface-account-hover: rgba(var(--surface-reconnect-rgb), 0.25098039215686274);
+  --surface-account-hover: rgba(var(--surface-reconnect-rgb), 0.25);
   --focus-account: #6c8d79;
   --status-idle: #8b938b;
   --status-connected: #24734f;

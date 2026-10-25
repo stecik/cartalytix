@@ -53,6 +53,7 @@ const links = computed(() => {
   if (!user || user.must_change_password) return [];
   return user.is_admin ? adminLinks : userLinks;
 });
+const mobileLinks = computed(() => links.value.filter((link) => link.name !== "settings"));
 const settings = useUserSettings();
 watch(
   () => session.data.value?.theme,
@@ -145,7 +146,7 @@ watch(
     <div class="app-main">
       <header class="topbar">
         <RouterLink v-if="!isLogin" to="/" class="mobile-wordmark">
-<AppIcon name="mark" />{{ t("brand") }}
+<AppIcon name="mark" /><span>{{ t("brand") }}</span>
 </RouterLink>
         <span v-if="!isLogin" class="account-email">{{
           session.data.value?.email
@@ -159,6 +160,16 @@ watch(
             <AppIcon name="download" /><span>{{ t("install") }}</span>
           </button>
           <AppSelect class="language-select" compact :model-value="locale" :options="languages" :label="t('language')" @update:model-value="changeLanguage" />
+          <RouterLink
+            v-if="!isLogin && links.length"
+            to="/settings"
+            class="text-button mobile-settings"
+            :class="{ active: route.name === 'settings' }"
+            :aria-label="t('settings')"
+            :title="t('settings')"
+          >
+            <AppIcon name="gear" />
+          </RouterLink>
           <button
             v-if="!isLogin"
             class="text-button logout-button"
@@ -188,9 +199,9 @@ watch(
         <RouterView />
       </main>
     </div>
-    <nav v-if="!isLogin && links.length" :aria-label="t('navigation')" class="mobile-nav">
+    <nav v-if="!isLogin && mobileLinks.length" :aria-label="t('navigation')" class="mobile-nav">
       <RouterLink
-        v-for="link in links"
+        v-for="link in mobileLinks"
         :key="link.to"
         :to="link.to"
         :class="{ active: route.name === link.name || (link.name === 'receipts' && route.name === 'receipt-detail') || (link.name === 'items' && route.name === 'item-detail') }"
