@@ -12,6 +12,7 @@ import { isThemePreference, themePreference } from "../theme";
 import AppDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
 import AppSelect from "../components/AppSelect.vue";
+import DiagnosticLogsDialog from "../components/DiagnosticLogsDialog.vue";
 import CredentialsDialog from "../components/CredentialsDialog.vue";
 import McpScopeSwitches from "../components/McpScopeSwitches.vue";
 import SegmentedToggle from "../components/SegmentedToggle.vue";
@@ -57,6 +58,7 @@ function onCredentialsSaved(): void {
 }
 const pwaInstall = inject(pwaInstallKey);
 const showInstallHelp = ref(false);
+const downloadingLogs = ref(false);
 
 async function installApp(): Promise<void> {
   if (pwaInstall?.available.value) {
@@ -188,6 +190,13 @@ const views = computed(() => [
       <div v-if="showInstallHelp" class="settings-install-help">
         <p role="status">{{ t("installHelp") }}</p>
       </div>
+      <div v-if="session.data.value && !isAdmin" class="settings-row">
+        <div class="settings-copy">
+          <h3>{{ t("diagnosticsDownload") }}</h3>
+          <p>{{ t("diagnosticsHint") }}</p>
+        </div>
+        <button type="button" class="button secondary settings-install" data-action="download-logs" @click="downloadingLogs = true"><AppIcon name="download" />{{ t("diagnosticsDownload") }}</button>
+      </div>
     </section>
     <section v-if="session.data.value" class="settings-section" aria-labelledby="account-security-heading">
       <header class="settings-section-heading">
@@ -236,6 +245,7 @@ const views = computed(() => [
         <p class="settings-copy">{{ t("mcpNoApps") }}</p>
       </div>
     </section>
+    <DiagnosticLogsDialog v-if="downloadingLogs && session.data.value && !isAdmin" @close="downloadingLogs = false" />
     <CredentialsDialog v-if="editingCredentials && session.data.value" :email="session.data.value.email" @close="editingCredentials = false" @saved="onCredentialsSaved" />
     <AppDialog v-if="revoking" :title="t('mcpRevokeTitle')" :busy="revoke.isPending.value" @close="revoking = null">
       <p>{{ t("mcpRevokeHelp", { client: revoking.client_name }) }}</p>

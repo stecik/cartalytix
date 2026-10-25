@@ -18,7 +18,9 @@ from sqlalchemy import Engine, delete, or_, select, text, true, update
 from sqlalchemy.orm import Session
 
 from cartalytix.credentials import CredentialError, TokenCipher
+from cartalytix.diagnostics import exception_context, issue_codes
 from cartalytix.models import (
+    DiagnosticEvent,
     Discount,
     ProviderConnection,
     RawDocument,
@@ -610,6 +612,11 @@ def run_sync(
         if not acquired:
             return
         client: ProviderClient | None = None
+        owner_id: UUID | None = None
+        diagnostic_events: list[DiagnosticEvent] = []
+        current_raw_id: UUID | None = None
+        current_receipt_id: str | None = None
+        provider = "unknown"
         try:
             with Session(engine) as db, db.begin():
                 run = db.get(SyncRun, run_id)
@@ -618,6 +625,7 @@ def run_sync(
                     return
                 if connection is None or connection.provider not in PROVIDERS:
                     raise SyncError("connection_not_found")
+                owner_id, provider = connection.owner_id, connection.provider
                 spec = PROVIDERS[connection.provider]
                 encrypted = connection.encrypted_refresh_token
                 if not encrypted or connection.status in {"not_connected", "reauth_required"}:
@@ -666,8 +674,10 @@ def run_sync(
             for identifier, summary in summaries.items():
                 if identifier in existing and not refresh_existing:
                     continue
+                current_raw_id, current_receipt_id = None, identifier
                 detail = client.detail(identifier)
                 raw_id = _raw(engine, connection_id, identifier, detail, spec.parser_version)
+                current_raw_id = raw_id
                 if spec.detail_id(detail) != identifier:
                     raise SyncError("receipt_identity_mismatch")
                 normalized = spec.normalize(summary, detail, identifier)
@@ -679,6 +689,22 @@ def run_sync(
                     continue
                 if normalized.get("issues"):
                     quality_failed = True
+                    if len(diagnostic_events) < 100:
+                        diagnostic_events.append(
+                            DiagnosticEvent(
+                                owner_id=owner_id,
+                                component="import",
+                                code="quality_error",
+                                context={
+                                    "run_id": str(run_id),
+                                    "connection_id": str(connection_id),
+                                    "provider": provider,
+                                    "receipt_id": identifier,
+                                    "raw_document_id": str(raw_id),
+                                    "issues": issue_codes(normalized.get("issues")),
+                                },
+                            )
+                        )
                     continue
                 _save_receipt(
                     engine,
@@ -688,6 +714,7 @@ def run_sync(
                     normalized,
                     normalized.get("merchant") or spec.merchant,
                 )
+                current_raw_id = None
                 with Session(engine) as db, db.begin():
                     run = db.get(SyncRun, run_id)
                     if run is not None:
@@ -721,6 +748,40 @@ def run_sync(
             with Session(engine) as db, db.begin():
                 run = db.get(SyncRun, run_id)
                 connection = db.get(ProviderConnection, connection_id)
+                if current_raw_id is not None and all(
+                    event.context.get("raw_document_id") != str(current_raw_id)
+                    for event in diagnostic_events
+                ):
+                    diagnostic_events.append(
+                        DiagnosticEvent(
+                            owner_id=owner_id,
+                            component="import",
+                            code=code,
+                            context={
+                                "run_id": str(run_id),
+                                "connection_id": str(connection_id),
+                                "provider": provider,
+                                "receipt_id": current_receipt_id,
+                                "raw_document_id": str(current_raw_id),
+                            },
+                        )
+                    )
+                if code in {"sync_failed", "sync_timeout", "credentials_unavailable"}:
+                    diagnostic_events.append(
+                        DiagnosticEvent(
+                            owner_id=owner_id,
+                            component="worker",
+                            code=code,
+                            context={**exception_context(error), "run_id": str(run_id)},
+                        )
+                    )
+                if diagnostic_events:
+                    db.execute(
+                        delete(DiagnosticEvent).where(
+                            DiagnosticEvent.created_at < datetime.now(UTC) - timedelta(days=7)
+                        )
+                    )
+                    db.add_all(diagnostic_events)
                 if run is not None:
                     run.status = "failed"
                     run.error_code = code

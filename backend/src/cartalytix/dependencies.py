@@ -33,6 +33,7 @@ def current_user(request: Request, db: Db) -> User:
             )
         )
         if user is not None:
+            request.state.diagnostic_owner_id = user.id
             return user
     raise HTTPException(401, "authentication_required")
 

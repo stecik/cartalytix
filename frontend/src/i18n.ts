@@ -1,6 +1,18 @@
 import { createI18n } from "vue-i18n";
 
 const en = {
+  diagnosticsDownload: "Download logs",
+  diagnosticsHint: "Export diagnostics for troubleshooting.",
+  diagnosticsPeriod: "Log period",
+  diagnosticsHour: "1 hour",
+  diagnosticsDay: "24 hours",
+  diagnosticsWeek: "7 days",
+  diagnosticsImports: "Import diagnostics",
+  diagnosticsTechnical: "Technical errors",
+  diagnosticsPrivacy: "Import diagnostics may include failed source receipts. Passwords and tokens are excluded.",
+  diagnosticsTechnicalHistory: "Technical errors are recorded only after this feature is deployed.",
+  diagnosticsFailed: "Could not download logs. Try again.",
+  diagnosticsPreparing: "Preparing logs…",
   categories: "Categories",
   categoriesIntro: "Organize purchased products across receipts. Each product has one category per store account and currency.",
   manageCategories: "Your categories",
@@ -557,6 +569,18 @@ const en = {
 type Catalog = { [Key in keyof typeof en]: string };
 
 const cs: Catalog = {
+  diagnosticsDownload: "Stáhnout logy",
+  diagnosticsHint: "Export diagnostiky pro řešení problémů.",
+  diagnosticsPeriod: "Období logů",
+  diagnosticsHour: "1 hodina",
+  diagnosticsDay: "24 hodin",
+  diagnosticsWeek: "7 dní",
+  diagnosticsImports: "Diagnostika importů",
+  diagnosticsTechnical: "Technické chyby",
+  diagnosticsPrivacy: "Diagnostika importů může obsahovat zdrojové účtenky neúspěšných importů. Hesla a tokeny jsou vynechány.",
+  diagnosticsTechnicalHistory: "Technické chyby se zaznamenávají až od nasazení této funkce.",
+  diagnosticsFailed: "Logy se nepodařilo stáhnout. Zkuste to znovu.",
+  diagnosticsPreparing: "Připravuji logy…",
   categories: "Kategorie",
   searchCategories: "Hledat kategorie",
   browseCategories: "Procházet kategorie",

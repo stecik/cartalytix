@@ -24,6 +24,8 @@ from cartalytix.category_routes import router as category_router
 from cartalytix.connection_routes import connection_outputs
 from cartalytix.connection_routes import router as connection_router
 from cartalytix.dependencies import COOKIE_NAME, ActiveUser, Db, Owner, SessionUser
+from cartalytix.diagnostics import HTTP_ERROR_CODES, capture_error
+from cartalytix.diagnostics_routes import router as diagnostics_router
 from cartalytix.foodora_routes import router as foodora_router
 from cartalytix.globus_routes import router as globus_router
 from cartalytix.i18n import translate
@@ -194,6 +196,7 @@ def create_app(
     app.include_router(category_router)
     app.include_router(oauth_router)
     app.include_router(admin_router)
+    app.include_router(diagnostics_router)
     if mcp:
         app.router.routes.extend(mcp.routes)
 
@@ -214,6 +217,18 @@ def create_app(
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
+        if exc.status_code >= 500:
+            await asyncio.to_thread(
+                capture_error,
+                database,
+                getattr(request.state, "diagnostic_owner_id", None),
+                "api",
+                exc.detail
+                if isinstance(exc.detail, str) and exc.detail in HTTP_ERROR_CODES
+                else "http_error",
+                route=getattr(request.scope.get("route"), "path", None),
+                status=exc.status_code,
+            )
         messages = {
             "authentication_required": "Authentication required",
             "invalid_credentials": "Invalid email or password",
@@ -234,6 +249,20 @@ def create_app(
         }
         code = str(exc.detail)
         return error_response(request, exc.status_code, code, messages.get(code, "Request failed"))
+
+    @app.exception_handler(Exception)
+    async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        await asyncio.to_thread(
+            capture_error,
+            database,
+            getattr(request.state, "diagnostic_owner_id", None),
+            "api",
+            "internal_error",
+            error=exc,
+            route=getattr(request.scope.get("route"), "path", None),
+            status=500,
+        )
+        return error_response(request, 500, "internal_error", "Request failed")
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, _exc: RequestValidationError) -> JSONResponse:

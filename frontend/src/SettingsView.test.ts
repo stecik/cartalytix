@@ -179,3 +179,66 @@ describe("settings connected AI apps", () => {
     } finally { wrapper.unmount(); client.clear(); }
   });
 });
+
+describe("settings diagnostic download", () => {
+  const owner: User = { id: "owner", email: "owner@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, is_admin: false, must_change_password: false };
+  it("downloads selected periods and independent diagnostic groups", async () => {
+    const api = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ items: [] }));
+    const { wrapper, client } = render(false, owner, api);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const create = vi.fn(() => "blob:diagnostics");
+    const revoke = vi.fn();
+    vi.stubGlobal("URL", class extends URL { static createObjectURL = create; static revokeObjectURL = revoke; });
+    try {
+      await flushPromises();
+      await wrapper.get('[data-action="download-logs"]').trigger("click");
+      expect(wrapper.get<HTMLInputElement>('input[aria-label="Import diagnostics"]').element.checked).toBe(true);
+      expect(wrapper.get<HTMLInputElement>('input[aria-label="Technical errors"]').element.checked).toBe(false);
+      expect(wrapper.get('button[aria-label="Log period"]').text()).toContain("24 hours");
+      expect(wrapper.get("dialog").text()).toContain("failed source receipts");
+      for (const [label, hours, imports, technical] of [["1 hour", "1", true, true], ["7 days", "168", false, true], ["24 hours", "24", true, false]] as const) {
+        await wrapper.get('button[aria-label="Log period"]').trigger("click");
+        await wrapper.findAll('[role="option"]').find((option) => option.text() === label)?.trigger("click");
+        await wrapper.get('input[aria-label="Import diagnostics"]').setValue(imports);
+        await wrapper.get('input[aria-label="Technical errors"]').setValue(technical);
+        api.mockResolvedValueOnce(new Response("zip", { headers: { "Content-Disposition": 'attachment; filename="cartalytix-logs-test.zip"' } }));
+        await wrapper.get("form").trigger("submit");
+        await flushPromises();
+        expect(api).toHaveBeenLastCalledWith("/api/v1/diagnostics/download?hours=" + hours + "&imports=" + imports + "&technical=" + technical, expect.objectContaining({ credentials: "same-origin", cache: "no-store" }));
+      }
+      expect(click).toHaveBeenCalledTimes(3);
+      expect(create).toHaveBeenCalledTimes(3);
+      expect(revoke).toHaveBeenCalledWith("blob:diagnostics");
+      await wrapper.get('input[aria-label="Import diagnostics"]').setValue(false);
+      expect(wrapper.get<HTMLButtonElement>('button[type="submit"]').element.disabled).toBe(true);
+    } finally { wrapper.unmount(); client.clear(); click.mockRestore(); }
+  });
+  it("blocks duplicates while pending and allows retry after an error", async () => {
+    const api = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ items: [] }));
+    const { wrapper, client } = render(false, owner, api);
+    try {
+      await flushPromises();
+      await wrapper.get('[data-action="download-logs"]').trigger("click");
+      let finish: (value: Response) => void = () => undefined;
+      api.mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; }));
+      await wrapper.get("form").trigger("submit");
+      await wrapper.get("form").trigger("submit");
+      expect(wrapper.get("dialog").attributes("aria-busy")).toBe("true");
+      expect(wrapper.get<HTMLButtonElement>('button[type="submit"]').element.disabled).toBe(true);
+      expect(api.mock.calls.filter(([url]) => String(url).includes("/diagnostics/download"))).toHaveLength(1);
+      finish(new Response(null, { status: 503 }));
+      await flushPromises();
+      expect(wrapper.get('[role="alert"]').text()).toContain("Could not download logs");
+      expect(wrapper.get<HTMLButtonElement>('button[type="submit"]').element.disabled).toBe(false);
+      api.mockResolvedValueOnce(new Response(null, { status: 503 }));
+      await wrapper.get("form").trigger("submit");
+      await flushPromises();
+      expect(api.mock.calls.filter(([url]) => String(url).includes("/diagnostics/download"))).toHaveLength(2);
+    } finally { wrapper.unmount(); client.clear(); }
+  });
+  it("hides purchase diagnostics from administrators", async () => {
+    const { wrapper, client } = render(false, { ...owner, is_admin: true });
+    try { expect(wrapper.find('[data-action="download-logs"]').exists()).toBe(false); }
+    finally { wrapper.unmount(); client.clear(); }
+  });
+});

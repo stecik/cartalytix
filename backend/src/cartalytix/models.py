@@ -178,6 +178,19 @@ class SyncRun(Base):
     )
 
 
+class DiagnosticEvent(Base):
+    __tablename__ = "diagnostic_events"
+    __table_args__ = (Index("ix_diagnostic_events_owner_created", "owner_id", "created_at"),)
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+    component: Mapped[str] = mapped_column(String(16))
+    code: Mapped[str] = mapped_column(String(64))
+    context: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class RawDocument(Base):
     __tablename__ = "raw_documents"
     __table_args__ = (UniqueConstraint("connection_id", "external_id", "checksum"),)
