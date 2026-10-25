@@ -89,7 +89,7 @@ def test_owner_period_redaction_and_failed_sources(client: TestClient, engine: E
                     code="invalid_receipt",
                     context={
                         "raw_document_id": str(foreign_raw.id),
-                    "run_id": str(uuid4()),
+                        "run_id": str(uuid4()),
                         "provider": "lidl",
                         "issues": ["invalid_total", {"token": "secret"}],
                         "message": "synthetic-private-message",
