@@ -91,6 +91,86 @@ def test_receipt_with_product_code_lines_keeps_codes_on_items() -> None:
     assert items[0].get("original_amount") == "21.00"
 
 
+@pytest.mark.parametrize("marker", ["M", "P", "E"])
+def test_weighing_marker_preserves_weighted_item(marker: str) -> None:
+    text = RECEIPT.replace("ŠUNKA VÁŽENÁ          (2)", f"ŠUNKA VÁŽENÁ          (2,{marker})")
+    receipt = validate_receipt(SUMMARY, detail(text), "r1")
+    assert receipt is not None and receipt.get("issues") == []
+    item = receipt.get("items", [])[-1]
+    assert (item.get("quantity"), item.get("unit"), item.get("original_amount")) == (
+        "0.250",
+        "kg",
+        "50.00",
+    )
+    assert item.get("is_weight") is True
+
+
+def test_weighted_produce_and_included_recycling_note_reconcile() -> None:
+    text = """Duplikát pokladní účtenky
+(datum 02.03.2026, provoz 4001, pokladna 7, účet 1234)
+Kč
+LIMONÁDA 0,5L (1) 24,90
+8590000000017
+HROZNY 500G (2) 59,90
+8590000000024
+TESTOVACÍ ADAPTÉR (1) 149,90
+8590000000031
+vč. recyklačního příspěvku 0,84 Kč/ks
+TESTOVACÍ ZELENINA KG (2,P)
+101385
+0,225 kg x 69,90 Kč/kg 15,73
+________________________________________
+CELKEM 250,43 Kč
+02/03/2026 10:15:30
+PLATEBNÍ KARTA  250,43
+Zákl.DPH DPH
+2 12% DPH 67,52 8,11
+1 21% DPH 144,46 30,34
+"""
+    receipt = validate_receipt({**SUMMARY, "total": 250}, detail(text), "r1")
+    assert receipt is not None and receipt.get("issues") == []
+    assert receipt.get("total") == "250.43"
+    items = receipt.get("items", [])
+    assert len(items) == 4
+    assert items[2].get("original_amount") == "149.90"
+    assert items[3] == {
+        "name": "TESTOVACÍ ZELENINA KG",
+        "quantity": "0.225",
+        "unit": "kg",
+        "unit_price": "69.90",
+        "original_amount": "15.73",
+        "code": "101385",
+        "is_weight": True,
+        "discounts": [],
+    }
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "ŠUNKA VÁŽENÁ          (2,X)\n0,250 kg x 200,00 Kč/kg 50,00",
+        "ŠUNKA VÁŽENÁ          (2,P)\n0,250 ks x 200,00 Kč/kg 50,00",
+    ],
+)
+def test_unknown_marker_or_conflicting_quantity_unit_is_rejected(line: str) -> None:
+    text = RECEIPT.replace(
+        "ŠUNKA VÁŽENÁ          (2)\n  0,250      x   200,00 Kč/kg      50,00", line
+    )
+    receipt = validate_receipt(SUMMARY, detail(text), "r1")
+    assert receipt is not None
+    assert receipt.get("issues") == ["items_unreconciled", "unparsed_line"]
+
+
+@pytest.mark.parametrize(
+    "note",
+    ["recyklační příspěvek 0,84 Kč/ks", "vč. recyklačního příspěvku 0,84 Kč/ks NAVÍC"],
+)
+def test_other_fee_lines_are_not_silently_ignored(note: str) -> None:
+    text = RECEIPT.replace("15,90\n", f"15,90\n{note}\n")
+    receipt = validate_receipt(SUMMARY, detail(text), "r1")
+    assert receipt is not None and receipt.get("issues") == ["unparsed_line"]
+
+
 def test_code_line_without_item_is_a_quality_issue() -> None:
     text = RECEIPT.replace("15,90\n", "15,90\n103027\n8590000000017\n")
     receipt = validate_receipt(SUMMARY, detail(text), "r1")

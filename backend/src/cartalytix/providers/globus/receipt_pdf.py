@@ -13,11 +13,13 @@ HEADER = re.compile(
 )
 STAMP = re.compile(r"^(?P<d>\d{2})/(?P<m>\d{2})/(?P<y>\d{4})\s+(?P<t>\d{2}:\d{2}:\d{2})$")
 SINGLE = re.compile(rf"^(?P<name>\S.*?)\s+\((?P<vat>\d)\)\s+(?P<amount>{AMOUNT})$")
-HEAD = re.compile(r"^(?P<name>\S.*?)\s+\((?P<vat>\d)\)$")
+HEAD = re.compile(r"^(?P<name>\S.*?)\s+\((?P<vat>\d)(?:,[MPE])?\)$")
 QUANTITY = re.compile(
-    rf"^(?P<quantity>-?\d+,\d{{3}})\s+x\s+(?P<unit_price>{AMOUNT})\s+Kč/(?P<unit>\S+)"
+    rf"^(?P<quantity>-?\d+,\d{{3}})\s+(?:(?P<quantity_unit>\S+)\s+)?x\s+"
+    rf"(?P<unit_price>{AMOUNT})\s+Kč/(?P<unit>\S+)"
     rf"\s+(?P<amount>{AMOUNT})$"
 )
+INCLUDED_RECYCLING = re.compile(rf"^vč\. recyklačního příspěvku (?:{AMOUNT}) Kč/ks$")
 # EAN or in-store PLU printed below an item name.
 CODE = re.compile(r"^\d{4,14}$")
 TOTAL = re.compile(rf"^CELKEM\s+(?P<amount>{AMOUNT})\s+Kč$")
@@ -81,7 +83,7 @@ def parse_items(block: list[str], issues: set[str]) -> tuple[list[dict[str, Any]
                 pending_code = line
                 continue
             quantity = QUANTITY.match(line)
-            if quantity:
+            if quantity and quantity.group("quantity_unit") in {None, quantity.group("unit")}:
                 add(
                     pending,
                     pending_code,
@@ -104,6 +106,9 @@ def parse_items(block: list[str], issues: set[str]) -> tuple[list[dict[str, Any]
             pending = head
         elif not coded_last and CODE.match(line):
             items[-1]["code"] = line
+            coded_last = True
+        elif items and INCLUDED_RECYCLING.match(line):
+            # This component is already included in the preceding item's price.
             coded_last = True
         else:
             unparsed.append(line)
