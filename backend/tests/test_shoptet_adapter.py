@@ -132,3 +132,85 @@ def test_client_signs_in_again_after_session_expiry() -> None:
     with httpx.Client(transport=shoptet([False])) as http, pytest.raises(ShoptetError) as error:
         ShoptetClient(bad, lambda _value: None, site=SITE, http=http, delay=0).page(1)
     assert error.value.code == "auth_required"
+
+
+@pytest.mark.parametrize("csrf", [True, False])
+@pytest.mark.parametrize("via_client", [True, False])
+def test_rejected_login_retains_post_status_after_verify(csrf: bool, via_client: bool) -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/login/":
+            body = "<script>shoptet.csrf.token = 'private_csrf';</script>" if csrf else ""
+            return httpx.Response(200, text=body)
+        if request.url.path == "/action/Customer/Login/":
+            return httpx.Response(403, text="private response content")
+        return httpx.Response(302, headers={"Location": "/login/"})
+
+    credentials = json.dumps({"email": "owner@example.com", "password": "private_password"})
+    with (
+        httpx.Client(transport=httpx.MockTransport(handle)) as http,
+        pytest.raises(ShoptetError) as error,
+    ):
+        if via_client:
+            ShoptetClient(credentials, lambda _value: None, site=SITE, http=http).page(1)
+        else:
+            sign_in("owner@example.com", "private_password", site=SITE, http=http)
+    assert error.value.code == ("auth_required" if via_client else "credentials_rejected")
+    assert error.value.diagnostic == {"phase": "login", "status": 403, "csrf_present": csrf}
+
+
+def test_login_verify_redirect_reports_session_not_authenticated() -> None:
+    with httpx.Client(transport=shoptet([False])) as http, pytest.raises(ShoptetError) as error:
+        sign_in("owner@example.com", "wrong", site=SITE, http=http)
+    assert error.value.diagnostic == {
+        "phase": "login_verify",
+        "status": 302,
+        "reason": "session_not_authenticated",
+        "csrf_present": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("path", "phase"),
+    [
+        ("/login/", "login_page"),
+        ("/action/Customer/Login/", "login"),
+        ("/klient/nastaveni/", "login_verify"),
+    ],
+)
+def test_login_transport_failure_reports_active_phase(path: str, phase: str) -> None:
+    upstream = shoptet([False])
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == path:
+            raise httpx.ConnectError("private password csrf response", request=request)
+        return upstream.handle_request(request)
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handle)) as http,
+        pytest.raises(ShoptetError) as error,
+    ):
+        sign_in("owner@example.com", "secret", site=SITE, http=http)
+    assert error.value.code == "provider_unavailable"
+    assert error.value.diagnostic.get("phase") == phase
+    assert error.value.diagnostic.get("transport") == "ConnectError"
+    assert "private" not in json.dumps(error.value.diagnostic)
+
+
+@pytest.mark.parametrize("detail", [True, False])
+@pytest.mark.parametrize("status", [403, 302])
+def test_order_failure_reports_history_or_detail_phase(detail: bool, status: int) -> None:
+    upstream = shoptet([False])
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/klient/objednavky/":
+            return httpx.Response(status, headers={"Location": "/login/"})
+        return upstream.handle_request(request)
+
+    credentials = json.dumps({"email": "owner@example.com", "password": "secret"})
+    with httpx.Client(transport=httpx.MockTransport(handle)) as http:
+        client = ShoptetClient(credentials, lambda _value: None, site=SITE, http=http, delay=0)
+        with pytest.raises(ShoptetError) as error:
+            client.detail("100") if detail else client.page(1)
+    assert error.value.code == ("auth_required" if status == 302 else "provider_unavailable")
+    assert error.value.diagnostic.get("phase") == ("detail" if detail else "history")
+    assert error.value.diagnostic.get("status") == status

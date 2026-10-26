@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from cartalytix.models import DiagnosticEvent
+from cartalytix.providers.common import safe_auth_diagnostic
 
 HTTP_ERROR_CODES = frozenset(
     {"service_unavailable", "credentials_unavailable", "provider_unavailable", "rate_limited"}
@@ -48,12 +49,21 @@ def capture_error(
     error: BaseException | None = None,
     route: str | None = None,
     status: int | None = None,
+    auth: dict[str, Any] | None = None,
+    provider: str | None = None,
+    connection_id: UUID | None = None,
 ) -> None:
     context = exception_context(error) if error is not None else {}
     if route is not None:
         context["route"] = route
     if status is not None:
         context["status"] = status
+    if diagnostic := safe_auth_diagnostic(auth):
+        context["auth"] = diagnostic
+        if provider in {"wolt", "nejkafe", "fermato"}:
+            context["provider"] = provider
+        if connection_id is not None:
+            context["connection_id"] = str(connection_id)
     try:
         with Session(engine) as db, db.begin():
             db.execute(

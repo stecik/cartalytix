@@ -110,6 +110,110 @@ def test_exchange_failures(response: httpx.Response, code: str) -> None:
     assert error.value.code == code
 
 
+def test_login_rejection_keeps_safe_diagnostic() -> None:
+    response = httpx.Response(
+        401,
+        json={"error": "invalid_credentials", "token": "private", "description": "private"},
+    )
+    with (
+        httpx.Client(transport=httpx.MockTransport(lambda _: response)) as http,
+        pytest.raises(WoltError) as error,
+    ):
+        exchange_magic_link("magic-1", http=http)
+    assert error.value.code == "magic_link_rejected"
+    assert error.value.diagnostic == {
+        "phase": "login",
+        "status": 401,
+        "reason": "invalid_credentials",
+    }
+
+
+def test_refresh_rejection_keeps_safe_diagnostic_without_retry() -> None:
+    calls = 0
+
+    def handle(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            401,
+            json={
+                "error": "invalid_grant",
+                "error_description": "secret refresh token",
+                "access_token": "secret access token",
+                "refresh_token": "secret refresh token",
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as http:
+        client = WoltClient("r1", lambda _: None, http=http, delay=0)
+        with pytest.raises(WoltError) as error:
+            client.renew()
+        assert error.value.code == "auth_required"
+        assert error.value.diagnostic == {
+            "phase": "refresh",
+            "status": 401,
+            "reason": "invalid_grant",
+        }
+        with pytest.raises(WoltError):
+            client.renew()
+    assert calls == 1
+
+
+def test_refresh_transport_failure_keeps_only_exception_kind() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("secret refresh token", request=request)
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handle)) as http,
+        pytest.raises(WoltError) as error,
+    ):
+        WoltClient("r1", lambda _: None, http=http, delay=0).renew()
+    assert error.value.code == "auth_required"
+    assert error.value.diagnostic == {"phase": "refresh", "transport": "ConnectTimeout"}
+
+
+def test_save_refresh_failure_keeps_safe_diagnostic_without_retry() -> None:
+    calls = 0
+
+    def handle(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"access_token": "a", "refresh_token": "r2"})
+
+    def save(_: str) -> None:
+        raise RuntimeError("private persistence details")
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as http:
+        client = WoltClient("r1", save, http=http, delay=0)
+        with pytest.raises(WoltError) as error:
+            client.renew()
+        assert error.value.code == "auth_required"
+        assert error.value.diagnostic == {"phase": "save_refresh", "reason": "persistence_failed"}
+        with pytest.raises(WoltError):
+            client.renew()
+    assert calls == 1
+
+
+@pytest.mark.parametrize("phase", ["history", "detail"])
+def test_data_rejection_keeps_request_phase(phase: str) -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "authentication.wolt.com":
+            return httpx.Response(200, json={"access_token": "a", "refresh_token": "r1"})
+        return httpx.Response(401, json={"error": "invalid_token", "token": "private"})
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handle)) as http,
+        pytest.raises(WoltError) as error,
+    ):
+        client = WoltClient("r1", lambda _: None, http=http, delay=0)
+        if phase == "history":
+            client.page(1)
+        else:
+            client.detail("p1")
+    assert error.value.code == "auth_required"
+    assert error.value.diagnostic == {"phase": phase, "status": 401, "reason": "invalid_token"}
+
+
 def test_client_rotates_refresh_and_reads_history(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cartalytix.providers.wolt.client.time.sleep", lambda _: None)
     saved: list[str] = []

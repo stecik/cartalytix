@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 import httpx
 
-from cartalytix.providers.common import ProviderError, ProviderPayload
+from cartalytix.providers.common import ProviderError, ProviderPayload, auth_diagnostic
 
 AUTH = "https://authentication.wolt.com"
 API = "https://consumer-api.wolt.com/order-tracking-api/v1/order_history"
@@ -66,21 +66,27 @@ def _client(http: httpx.Client | None) -> tuple[httpx.Client, bool]:
     return (http, False) if http is not None else (httpx.Client(timeout=30), True)
 
 
-def _tokens(response: httpx.Response, rejected: str) -> tuple[str, str]:
+def _tokens(response: httpx.Response, rejected: str, phase: str = "login") -> tuple[str, str]:
     if response.status_code == 429:
-        raise WoltError("login_rate_limited")
+        raise WoltError("login_rate_limited", diagnostic=auth_diagnostic(phase, response=response))
     if response.status_code in {400, 401, 403}:
-        raise WoltError(rejected)
+        raise WoltError(rejected, diagnostic=auth_diagnostic(phase, response=response))
     if response.status_code != 200:
-        raise WoltError("provider_unavailable")
+        raise WoltError(
+            "provider_unavailable", diagnostic=auth_diagnostic(phase, response=response)
+        )
     try:
         data = response.json()
         access, refresh = data.get("access_token"), data.get("refresh_token")
     except ValueError, AttributeError:
-        raise WoltError("provider_response_invalid") from None
+        raise WoltError(
+            "provider_response_invalid", diagnostic=auth_diagnostic(phase, response=response)
+        ) from None
     if not isinstance(access, str) or not access or not isinstance(refresh, str) or not refresh:
         # Includes Wolt asking for an extra access confirmation the app cannot complete.
-        raise WoltError("access_confirmation_required")
+        raise WoltError(
+            "access_confirmation_required", diagnostic=auth_diagnostic(phase, response=response)
+        )
     return access, refresh
 
 
@@ -100,8 +106,10 @@ def exchange_magic_link(token: str, *, http: httpx.Client | None = None) -> Wolt
                 headers=HEADERS,
                 follow_redirects=False,
             )
-        except httpx.HTTPError:
-            raise WoltError("provider_unavailable") from None
+        except httpx.HTTPError as error:
+            raise WoltError(
+                "provider_unavailable", diagnostic=auth_diagnostic("login", error=error)
+            ) from None
     finally:
         if owned:
             client.close()
@@ -109,7 +117,9 @@ def exchange_magic_link(token: str, *, http: httpx.Client | None = None) -> Wolt
     user = _user_claims(access)
     subject, email = user.get("id"), user.get("email")
     if not isinstance(subject, str) or not subject:
-        raise WoltError("account_identity_unavailable")
+        raise WoltError(
+            "account_identity_unavailable", diagnostic=auth_diagnostic("login", response=response)
+        )
     return WoltAccount(
         refresh_token=refresh,
         subject=subject,
@@ -154,14 +164,19 @@ class WoltClient:
                 headers=HEADERS,
                 follow_redirects=False,
             )
-        except httpx.HTTPError:
-            raise WoltError("auth_required") from None
-        access, refresh = _tokens(response, "auth_required")
+        except httpx.HTTPError as error:
+            raise WoltError(
+                "auth_required", diagnostic=auth_diagnostic("refresh", error=error)
+            ) from None
+        access, refresh = _tokens(response, "auth_required", "refresh")
         if refresh != self._refresh:
             try:
                 self._save(refresh)
             except Exception:
-                raise WoltError("auth_required") from None
+                raise WoltError(
+                    "auth_required",
+                    diagnostic={"phase": "save_refresh", "reason": "persistence_failed"},
+                ) from None
             self._refresh = refresh
         self._access = access
         # Wolt access tokens live about 30 minutes; renew well before expiry.
@@ -169,6 +184,7 @@ class WoltClient:
         self._auth_failed = False
 
     def _get(self, url: str, params: dict[str, str]) -> dict[str, Any]:
+        phase = "history" if url == f"{API}/" else "detail"
         for attempt in range(4):
             if self._access is None or self._expires_at <= time.time():
                 self.renew()
@@ -182,28 +198,41 @@ class WoltClient:
                     headers={**HEADERS, "Authorization": f"Bearer {self._access}"},
                     follow_redirects=False,
                 )
-            except httpx.HTTPError:
+            except httpx.HTTPError as error:
                 if attempt == 3:
-                    raise WoltError("provider_unavailable") from None
+                    raise WoltError(
+                        "provider_unavailable", diagnostic=auth_diagnostic(phase, error=error)
+                    ) from None
                 time.sleep(min(60, max(self._delay, 1) * (2**attempt)))
                 continue
             if response.status_code in {401, 403}:
-                raise WoltError("auth_required")
+                raise WoltError(
+                    "auth_required", diagnostic=auth_diagnostic(phase, response=response)
+                )
             if response.status_code == 429 or 500 <= response.status_code <= 599:
                 if attempt == 3:
                     raise WoltError(
-                        "rate_limited" if response.status_code == 429 else "provider_unavailable"
+                        "rate_limited" if response.status_code == 429 else "provider_unavailable",
+                        diagnostic=auth_diagnostic(phase, response=response),
                     )
                 time.sleep(min(60, max(self._delay, 2) * (2**attempt)))
                 continue
             if response.status_code != 200:
-                raise WoltError("provider_unavailable")
+                raise WoltError(
+                    "provider_unavailable", diagnostic=auth_diagnostic(phase, response=response)
+                )
             try:
                 result = json.loads(response.content)
             except ValueError:
-                raise WoltError("provider_response_invalid") from None
+                raise WoltError(
+                    "provider_response_invalid",
+                    diagnostic=auth_diagnostic(phase, response=response),
+                ) from None
             if not isinstance(result, dict):
-                raise WoltError("provider_response_invalid")
+                raise WoltError(
+                    "provider_response_invalid",
+                    diagnostic=auth_diagnostic(phase, response=response),
+                )
             return ProviderPayload(result, response.content)
         raise WoltError("provider_unavailable")
 

@@ -1,9 +1,12 @@
 """Technical diagnostics omit exception messages, credentials and request values."""
 
 import json
-from typing import cast
+from collections.abc import Callable
+from typing import Never, cast
 from uuid import UUID
 
+import httpx
+import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, delete, select
@@ -11,13 +14,91 @@ from sqlalchemy.orm import Session
 from test_api import application, login
 from test_api import client as client
 from test_api import engine as engine
+from test_lidl_routes import HEADERS
+from test_lidl_routes import authorized as authorized
 from test_lidl_sync import Provider, detail
 from test_lidl_sync import database as database
+from test_wolt_adapter import LINK
 
 from cartalytix.dependencies import Owner
-from cartalytix.models import DiagnosticEvent, RawDocument, User
+from cartalytix.models import DiagnosticEvent, ProviderConnection, RawDocument, SyncRun, User
+from cartalytix.providers.shoptet.client import ShoptetError
+from cartalytix.providers.wolt.client import WoltClient, WoltError
 from cartalytix.settings import Settings
 from cartalytix.sync import enqueue_sync, run_sync
+
+
+def test_refresh_rejection_is_recorded_even_without_receipt_source(
+    database: tuple[Engine, Settings, UUID, UUID],
+) -> None:
+    engine, config, owner, connection = database
+    with Session(engine) as db, db.begin():
+        row = db.get(ProviderConnection, connection)
+        assert row is not None
+        row.provider = "wolt"
+
+    def factory(
+        credentials: str,
+        save: Callable[[str], None],
+        *,
+        heartbeat: Callable[[], None] | None = None,
+    ) -> WoltClient:
+        return WoltClient(credentials, save, http=http, delay=0, heartbeat=heartbeat)
+
+    response = httpx.Response(401, json={"error": "invalid_grant", "token": "private-token"})
+    with httpx.Client(transport=httpx.MockTransport(lambda _: response)) as http:
+        run = enqueue_sync(engine, connection, owner)
+        run_sync(engine, run.id, config, client_factory=factory)
+    with Session(engine) as db:
+        event = db.scalar(select(DiagnosticEvent))
+        assert event is not None and event.owner_id == owner
+        assert (event.component, event.code) == ("worker", "auth_required")
+        assert event.context.get("provider") == "wolt"
+        assert event.context.get("connection_id") == str(connection)
+        assert event.context.get("run_id") == str(run.id)
+        assert event.context.get("auth") == {
+            "phase": "refresh",
+            "status": 401,
+            "reason": "invalid_grant",
+        }
+        assert "private" not in json.dumps(event.context)
+        stored = db.get(SyncRun, run.id)
+        assert stored is not None and stored.error_code == "auth_required"
+
+
+@pytest.mark.parametrize("provider", ["wolt", "nejkafe"])
+def test_failed_link_login_records_owned_safe_diagnostics(
+    authorized: TestClient, engine: Engine, monkeypatch: pytest.MonkeyPatch, provider: str
+) -> None:
+    prefix = f"/api/v1/providers/{provider}/connections"
+    identifier = authorized.post(prefix, json={}, headers=HEADERS).json().get("id")
+    assert identifier
+
+    def rejected(*args: object, **kwargs: object) -> Never:
+        kind = WoltError if provider == "wolt" else ShoptetError
+        raise kind("credentials_rejected", diagnostic={"phase": "login", "status": 403})
+
+    monkeypatch.setattr(
+        "cartalytix.wolt_routes.exchange_magic_link"
+        if provider == "wolt"
+        else "cartalytix.shoptet_routes.sign_in",
+        rejected,
+    )
+    payload = (
+        {"link": LINK}
+        if provider == "wolt"
+        else {"email": "owner@example.com", "password": "private-password"}
+    )
+    response = authorized.post(f"{prefix}/{identifier}/login", json=payload, headers=HEADERS)
+    assert response.status_code == 422
+    with Session(engine) as db:
+        event = db.scalar(select(DiagnosticEvent))
+        assert event is not None and event.owner_id is not None
+        assert event.component == "api"
+        assert event.context.get("provider") == provider
+        assert event.context.get("connection_id") == identifier
+        assert event.context.get("auth") == {"phase": "login", "status": 403}
+        assert "private" not in json.dumps(event.context)
 
 
 def test_unexpected_api_error_is_recorded_without_private_values(

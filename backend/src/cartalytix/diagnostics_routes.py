@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from cartalytix.dependencies import Db, Owner
 from cartalytix.models import DiagnosticEvent, ProviderConnection, RawDocument, Receipt, SyncRun
+from cartalytix.providers.common import safe_auth_diagnostic
 from cartalytix.sync import PROVIDERS
 
 router = APIRouter(prefix="/api/v1/diagnostics", tags=["diagnostics"])
@@ -97,12 +98,17 @@ def _redact_source(value: object, depth: int = 0) -> tuple[object, bool]:
 def _event(event: DiagnosticEvent) -> dict[str, Any]:
     context = event.context if isinstance(event.context, dict) else {}
     safe: dict[str, Any] = {}
+    for key in ("run_id", "connection_id"):
+        if identifier := _uuid(context.get(key)):
+            safe[key] = identifier
+    if isinstance(context.get("provider"), str) and context.get("provider") in PROVIDERS:
+        safe["provider"] = context.get("provider")
+    if auth := safe_auth_diagnostic(context.get("auth")):
+        safe["auth"] = auth
     if event.component == "import":
-        for key in ("run_id", "connection_id", "receipt_id", "raw_document_id"):
+        for key in ("receipt_id", "raw_document_id"):
             if identifier := _uuid(context.get(key)):
                 safe[key] = identifier
-        if isinstance(context.get("provider"), str) and context.get("provider") in PROVIDERS:
-            safe["provider"] = context.get("provider")
         issues = context.get("issues")
         if isinstance(issues, list):
             safe["issues"] = [code for value in issues[:100] if (code := _code(value))]

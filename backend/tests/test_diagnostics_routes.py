@@ -23,6 +23,46 @@ from cartalytix.models import (
 )
 
 
+def test_auth_diagnostics_survive_export_with_only_allowlisted_fields(
+    client: TestClient, engine: Engine
+) -> None:
+    login(client)
+    with Session(engine) as db, db.begin():
+        own = db.scalar(select(ProviderConnection).where(ProviderConnection.name == "My Lidl"))
+        assert own is not None
+        run_id = str(uuid4())
+        connection_id = str(own.id)
+        db.add(
+            DiagnosticEvent(
+                owner_id=own.owner_id,
+                component="worker",
+                code="auth_required",
+                context={
+                    "provider": "wolt",
+                    "connection_id": connection_id,
+                    "run_id": run_id,
+                    "auth": {
+                        "phase": "refresh",
+                        "status": 401,
+                        "reason": "invalid_grant",
+                        "body": "private-token",
+                        "csrf_token": "private-csrf",
+                    },
+                },
+            )
+        )
+    response = client.get("/api/v1/diagnostics/download?imports=false&technical=true")
+    assert response.status_code == 200
+    with ZipFile(io.BytesIO(response.content)) as archive:
+        technical = json.loads(archive.read("technical-errors.json"))
+        context = technical.get("events", [])[0].get("context", {})
+        assert context.get("auth") == {"phase": "refresh", "status": 401, "reason": "invalid_grant"}
+        assert context.get("provider") == "wolt"
+        assert context.get("connection_id") == connection_id
+        assert context.get("run_id") == run_id
+        assert b"private-" not in archive.read("technical-errors.json")
+
+
 def test_diagnostics_requires_authentication(client: TestClient) -> None:
     assert client.get("/api/v1/diagnostics/download").status_code == 401
 

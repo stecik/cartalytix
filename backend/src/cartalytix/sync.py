@@ -31,7 +31,7 @@ from cartalytix.models import (
 from cartalytix.providers.bolt.client import BoltClient
 from cartalytix.providers.bolt.normalization import PARSER_VERSION as BOLT_PARSER_VERSION
 from cartalytix.providers.bolt.normalization import validate_order as validate_bolt_order
-from cartalytix.providers.common import ProviderError, ProviderPayload
+from cartalytix.providers.common import ProviderError, ProviderPayload, safe_auth_diagnostic
 from cartalytix.providers.foodora.client import FoodoraClient
 from cartalytix.providers.foodora.normalization import PARSER_VERSION as FOODORA_PARSER_VERSION
 from cartalytix.providers.foodora.normalization import validate_order as validate_foodora_order
@@ -766,13 +766,24 @@ def run_sync(
                             },
                         )
                     )
-                if code in {"sync_failed", "sync_timeout", "credentials_unavailable"}:
+                auth = (
+                    safe_auth_diagnostic(error.diagnostic)
+                    if isinstance(error, ProviderError)
+                    else {}
+                )
+                if auth or code in {"sync_failed", "sync_timeout", "credentials_unavailable"}:
                     diagnostic_events.append(
                         DiagnosticEvent(
                             owner_id=owner_id,
                             component="worker",
                             code=code,
-                            context={**exception_context(error), "run_id": str(run_id)},
+                            context={
+                                **exception_context(error),
+                                "run_id": str(run_id),
+                                "connection_id": str(connection_id),
+                                "provider": provider,
+                                **({"auth": auth} if auth else {}),
+                            },
                         )
                     )
                 if diagnostic_events:

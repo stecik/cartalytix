@@ -11,6 +11,7 @@ from sqlalchemy import Engine
 from cartalytix.connection_routes import account_guard, owned_connection, persist_credentials
 from cartalytix.credentials import CredentialError, TokenCipher
 from cartalytix.dependencies import Db, Owner
+from cartalytix.diagnostics import capture_error
 from cartalytix.providers.shoptet.client import SHOPS, ShoptetError, sign_in
 from cartalytix.schemas import ConnectionOutput, ShoptetLoginInput, ShoptetShop
 from cartalytix.sync import connection_lock
@@ -56,6 +57,17 @@ def login_connection(
         except CredentialError:
             raise HTTPException(503, "credentials_unavailable") from None
         except ShoptetError as error:
+            if error.diagnostic:
+                capture_error(
+                    engine,
+                    owner_id,
+                    "api",
+                    error.code,
+                    error=error,
+                    auth=error.diagnostic,
+                    provider=provider,
+                    connection_id=identifier,
+                )
             raise HTTPException(
                 429 if error.code == "login_rate_limited" else 422, error.code
             ) from None
