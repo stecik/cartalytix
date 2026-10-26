@@ -1,22 +1,32 @@
 # Cartalytix
 
-Self-hosted receipt tracker. First application slice: local password accounts,
-owner-scoped receipt APIs, SQL totals per currency and an English/Czech Vue PWA.
-The Lidl CZ connector imports receipt history, source items and discounts.
-The Mixit.cz connector imports shipped orders (products and mixes); Mixit does not
-itemize shipping, vouchers or credits, so the difference to the paid total is stored
-as a "Shipping and fees" item or a "Discounts and credits" order discount.
-The Shoptet connector (customer area HTML; shops Fermato.cz and Nejkafe.cz) imports all
-orders; the password is stored Fernet-encrypted because Shoptet has no refresh token. Paid fees
-become items, coupons order discounts, Shoptet whole-CZK rounding `rounding_amount`;
-orders shown as 0 Kč use the sum of their lines.
-Other stores remain unavailable. The original Lidl experiment remains in `experiments/`.
+Self-hosted PWA (mobile and desktop) receipt tracker and analyzer
+
+Available connectors:
+
+- Globus
+- Lidl
+- Kaufland
+- Mixit
+- Fermato
+- Nejkafe
+- Wolt
+- Bolt
+- Foodora
+
+Comming soon
+
+- Košík
+- Rohlík
+- Albert
+
+Feel free to create a fork and PR with new connector or function.
 
 | Path | Purpose |
 | --- | --- |
 | `backend/` | Python 3.15, FastAPI, SQLAlchemy, Alembic, Celery; managed by uv |
 | `frontend/` | Vue, TypeScript, Vite, Vue Query, Vue I18n, PWA |
-| `experiments/` | Lidl prototype and `provider-research.md` |
+| `experiments/` | Prototypes and experimental connectors |
 | `ARCHITECTURE.md` | Approved direction and remaining decisions |
 
 ## Architecture
@@ -144,30 +154,9 @@ Create the encryption key once; keep it outside Git and back it up separately
 from the database. `TOKEN_KEY_PATH` overrides its host path. Losing or replacing
 the key requires reconnecting all store accounts.
 
-## Lidl account linking
+## MCP connector (ChatGPT, Codex, Claude)
 
-Add a named Lidl account under Connections, then choose **Connect account**.
-Enter Lidl credentials in the application and a verification code if requested.
-The backend uses ephemeral headless Chrome for device/CAPTCHA initialization and
-HTTP for OAuth/password/MFA. Passwords and codes are never persisted; only the
-validated refresh token is stored encrypted. Choose **Sync now** after linking;
-schedules are optional. All connector code lives in the backend, independently
-of `experiments/`; no experimental service or port is required.
-
-The Docker image includes Chrome. Run one API process: active login continuations
-remain in bounded process-local memory for at most ten minutes and are discarded
-on restart. Existing stored connections and syncs survive restart. Allow up to
-180 seconds for login requests at the external reverse proxy.
-
-This uses an unofficial native OAuth/API flow.
-API changes, login challenges, rate limits and provider history retention can
-interrupt imports or require relinking. Every sync verifies all available list
-pages, downloads missing receipt details and keeps source JSON for rejected
-documents; arithmetic/precision failures do not enter spending aggregates.
-
-## MCP connector (ChatGPT, Codex)
-
-Each user connects their own Cartalytix account to ChatGPT or Codex through the
+Each user connects their own Cartalytix account to ChatGPT, Codex or Claude through the
 MCP endpoint `/mcp` (Streamable HTTP). There is no OpenAI API key and no
 central service. The backend is its own OAuth 2.1 authorization server: dynamic
 client registration, PKCE S256, `resource`-bound tokens. Scope `cartalytix:read` is
@@ -179,26 +168,6 @@ Tokens are opaque, stored only as SHA-256 hashes in PostgreSQL (access 1 h, rota
 refresh 30 days), so they work across workers and restarts. The owner comes only
 from the verified token; tools never accept a user id. Users change permissions or
 revoke access under **Settings → Connected AI apps**.
-
-### Deployment
-
-1. Set `CARTALYTIX_PUBLIC_URL=https://cartalytix.example.com` for the API (add it to the
-   Compose backend environment). Without it the connector is disabled. URLs are
-   derived from this setting, never from the `Host` header.
-2. `CARTALYTIX_TOKEN_KEY_FILE` is required (registered client secrets are
-   Fernet-encrypted); `https://cartalytix.example.com` must be in `CARTALYTIX_ALLOWED_ORIGINS`.
-3. Migration `0010_mcp_oauth` runs with the usual `migrate` service.
-4. Nginx must forward to the API, besides `/api/`:
-   - `/mcp`
-   - `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/mcp`
-   - `/.well-known/oauth-authorization-server` and
-     `/.well-known/oauth-authorization-server/api/v1/oauth`
-5. Keep the original host: `proxy_set_header Host $host;` (other hosts get `421`).
-
-The OAuth issuer is `https://cartalytix.example.com/api/v1/oauth`; the consent page is the
-frontend route `/oauth/consent`. Client registration accepts only ChatGPT
-redirects (`https://chatgpt.com/connector_platform_oauth_redirect`,
-`https://chatgpt.com/connector/oauth/{id}`) and loopback HTTP redirects (Codex).
 
 ### ChatGPT
 
@@ -224,26 +193,22 @@ allow access in the browser; `codex mcp list` then shows `Auth: OAuth`.
 For local testing use `CARTALYTIX_PUBLIC_URL=http://localhost:8080` (HTTP is
 allowed only for localhost outside production); Vite proxies the MCP paths.
 
-## Checks
+### Deployment
 
-```powershell
-uv --directory backend sync --locked --all-groups --extra browser
-uv --directory backend run --no-sync ruff check .
-uv --directory backend run --no-sync ruff format --check .
-uv --directory backend run --no-sync ty check
-uv --directory backend run --no-sync pytest
-npm --prefix frontend run lint
-npm --prefix frontend run typecheck
-npm --prefix frontend test
-npm --prefix frontend run build
-```
+1. Set `CARTALYTIX_PUBLIC_URL=https://cartalytix.example.com` for the API (add it to the
+   Compose backend environment). Without it the connector is disabled. URLs are
+   derived from this setting, never from the `Host` header.
+2. `CARTALYTIX_TOKEN_KEY_FILE` is required (registered client secrets are
+   Fernet-encrypted); `https://cartalytix.example.com` must be in `CARTALYTIX_ALLOWED_ORIGINS`.
+3. Migration `0010_mcp_oauth` runs with the usual `migrate` service.
+4. Nginx must forward to the API, besides `/api/`:
+   - `/mcp`
+   - `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/mcp`
+   - `/.well-known/oauth-authorization-server` and
+     `/.well-known/oauth-authorization-server/api/v1/oauth`
+5. Keep the original host: `proxy_set_header Host $host;` (other hosts get `421`).
 
-GitHub Actions selects affected backend/frontend jobs; docs/experiments-only
-changes skip both. Require the always-running `Required checks` gate in branch
-protection. Install local hooks with `uvx pre-commit install`.
-
-The service worker caches static assets only. Private API responses use
-`no-store`; logout clears the in-memory query cache. Beat dispatches due/pending
-jobs every minute; workers serialize each account's token rotation and imports.
-Broker interruptions keep jobs in the database for retry. Categorization and AI
-remain deferred.
+The OAuth issuer is `https://cartalytix.example.com/api/v1/oauth`; the consent page is the
+frontend route `/oauth/consent`. Client registration accepts only ChatGPT
+redirects (`https://chatgpt.com/connector_platform_oauth_redirect`,
+`https://chatgpt.com/connector/oauth/{id}`) and loopback HTTP redirects (Codex).
