@@ -115,6 +115,41 @@ def test_preview_batch_replace_and_unassign(client: TestClient, engine: Engine) 
     assert client.get("/api/v1/items").json().get("total") == 3
 
 
+def test_excluded_purchases_are_not_offered_for_categorization(
+    client: TestClient, engine: Engine
+) -> None:
+    receipts = seed(engine)
+    login(client)
+    excluded = client.patch(
+        "/api/v1/items/exclusion",
+        json={"name": "Sýr", "currency": "CZK", "excluded": True},
+        headers=ORIGIN,
+    )
+    assert excluded.status_code == 200, excluded.text
+    billa = receipts.get("Billa-3")
+    assert (
+        client.patch(
+            f"/api/v1/receipts/{billa}/exclusion", json={"excluded": True}, headers=ORIGIN
+        ).status_code
+        == 200
+    )
+    wien = receipts.get("Lidl Wien-4")
+    coffee = client.get(f"/api/v1/receipts/{wien}").json().get("items", [])[0].get("id")
+    assert (
+        client.patch(
+            f"/api/v1/receipts/{wien}/items/{coffee}/exclusion",
+            json={"excluded": True},
+            headers=ORIGIN,
+        ).status_code
+        == 200
+    )
+    products = client.get(PRODUCTS).json().get("items")
+    assert [
+        (item.get("name"), item.get("receipt_count"), item.get("total_amount")) for item in products
+    ] == [("Rohlík", 2, "35.00")]
+    assert len(client.get(f"{PRODUCTS}?uncategorized=true").json().get("items")) == 1
+
+
 def test_batch_rejects_foreign_or_missing_items_atomically(
     client: TestClient,
     engine: Engine,
