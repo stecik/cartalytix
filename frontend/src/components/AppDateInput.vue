@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, inject } from "vue";
 import { useI18n } from "vue-i18n";
 import { VueDatePicker } from "@vuepic/vue-datepicker";
 import "@vuepic/vue-datepicker/dist/main.css";
 import { cs, enGB } from "date-fns/locale";
+import { dialogTarget } from "./AppDialog.vue";
 
 /** Calendar date field; the value is an ISO date ("2026-10-18") or "" when empty. */
 const props = withDefaults(
@@ -15,6 +16,9 @@ const { t, locale } = useI18n();
 
 // A pattern, not a function: the picker would also apply a formatter function to the model value.
 const formats = computed(() => ({ input: locale.value === "cs" ? "dd.MM.yyyy" : "dd/MM/yyyy" }));
+
+// Inside a dialog the menu goes into it; fixed positioning keeps the dialog's scroll overflow from clipping it.
+const dialog = inject(dialogTarget, null);
 
 function update(value: unknown): void {
   const next = typeof value === "string" ? value : "";
@@ -38,13 +42,14 @@ function update(value: unknown): void {
     :config="{ keepActionRow: true }"
     :aria-labels="{ clearInput: t('clearDate') }"
     auto-apply
-    teleport
+    :teleport="dialog ?? true"
+    :floating="dialog ? { strategy: 'fixed' } : undefined"
     @update:model-value="update"
   />
 </template>
 
 <style>
-/* The picker menu is teleported to <body>, so its theme cannot be scoped. */
+/* The picker menu is teleported to <body> or the enclosing dialog, so its theme cannot be scoped. */
 .dp--theme-light,
 .dp--theme-dark {
   --dp-font-family: "DM Sans Variable", sans-serif;

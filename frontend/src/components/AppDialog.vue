@@ -1,5 +1,12 @@
+<script lang="ts">
+import type { InjectionKey, Ref } from "vue";
+
+/** Selector of the open dialog once mounted; popups teleport there because a modal sits in the top layer above <body>. */
+export const dialogTarget: InjectionKey<Readonly<Ref<string | null>>> = Symbol("dialogTarget");
+</script>
+
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, useId } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, provide, ref, useId } from "vue";
 import { useI18n } from "vue-i18n";
 import IconButton from "./IconButton.vue";
 
@@ -8,12 +15,17 @@ const emit = defineEmits<{ close: [] }>();
 const { t } = useI18n();
 const dialog = ref<HTMLDialogElement | null>(null);
 const titleId = useId();
+const dialogId = useId();
+const target = ref<string | null>(null);
+provide(dialogTarget, target);
 let previousFocus: HTMLElement | null = null;
 
 onMounted(async () => {
   previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   if (dialog.value?.showModal) dialog.value.showModal();
   else dialog.value?.setAttribute("open", "");
+  // Children mount first, so the selector only becomes valid now.
+  target.value = `#${dialogId}`;
   await nextTick();
   dialog.value?.querySelector<HTMLElement>("[autofocus], input:not([type=checkbox]), [data-action=cancel], button")?.focus();
 });
@@ -38,7 +50,7 @@ function keyboard(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <dialog ref="dialog" class="app-dialog" :aria-labelledby="titleId" :aria-busy="busy" tabindex="-1" @keydown="keyboard" @cancel.prevent="!busy && emit('close')" @click="($event.target === dialog) && !busy && emit('close')">
+  <dialog :id="dialogId" ref="dialog" class="app-dialog" :aria-labelledby="titleId" :aria-busy="busy" tabindex="-1" @keydown="keyboard" @cancel.prevent="!busy && emit('close')" @click="($event.target === dialog) && !busy && emit('close')">
     <div class="dialog-content">
       <header><h2 :id="titleId">{{ title }}</h2><IconButton class="dialog-close" :label="t('dismiss')" :disabled="busy" @click="emit('close')">×</IconButton></header>
       <slot />

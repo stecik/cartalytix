@@ -87,6 +87,43 @@ def test_only_own_manual_receipts_can_be_deleted(client: TestClient, engine: Eng
         assert db.scalar(select(func.count()).select_from(ReceiptItem)) == 0
 
 
+def test_manual_receipt_can_be_edited(client: TestClient, engine: Engine) -> None:
+    login(client)
+    created = client.post("/api/v1/receipts/manual", json={"receipts": [COFFEE]}, headers=ORIGIN)
+    receipt_id = created.json().get("items", [])[0].get("id")
+    item_id = client.get(f"/api/v1/receipts/{receipt_id}").json().get("items", [])[0].get("id")
+    excluded = client.patch(
+        f"/api/v1/receipts/{receipt_id}/items/{item_id}/exclusion",
+        json={"excluded": True},
+        headers=ORIGIN,
+    )
+    assert excluded.status_code == 200, excluded.text
+    edited = {
+        **COFFEE,
+        "merchant": "Kuba paštiky",
+        "provider": None,
+        "items": [
+            {"name": "Paštika", "quantity": "2", "total_amount": "120"},
+            {"name": "Káva zrnková", "total_amount": "250"},
+        ],
+    }
+    response = client.put(f"/api/v1/receipts/{receipt_id}", json=edited, headers=ORIGIN)
+    assert response.status_code == 204, response.text
+    detail = client.get(f"/api/v1/receipts/{receipt_id}").json()
+    assert detail.get("merchant") == "Kuba paštiky"
+    assert detail.get("provider") == "manual"
+    assert detail.get("total_amount") == "370.00"
+    assert [
+        (item.get("name"), item.get("unit_price"), item.get("is_excluded"))
+        for item in detail.get("items", [])
+    ] == [("Paštika", "60.000000", False), ("Káva zrnková", "250.000000", True)]
+    with Session(engine) as db:
+        synced = db.scalar(
+            select(Receipt.id).join(ProviderConnection).where(ProviderConnection.name == "My Lidl")
+        )
+    assert client.put(f"/api/v1/receipts/{synced}", json=edited, headers=ORIGIN).status_code == 409
+
+
 def test_manual_receipt_validation(client: TestClient) -> None:
     login(client)
     for receipt in [

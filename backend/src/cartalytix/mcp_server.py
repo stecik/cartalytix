@@ -55,7 +55,12 @@ from cartalytix.category_schemas import (
 from cartalytix.credentials import TokenCipher
 from cartalytix.item_routes import item_detail, item_totals, items
 from cartalytix.item_routes import set_product_exclusion as product_exclusion_record
-from cartalytix.manual_receipt_routes import create_manual_receipts, delete_manual_receipt, shops
+from cartalytix.manual_receipt_routes import (
+    create_manual_receipts,
+    delete_manual_receipt,
+    shops,
+    update_manual_receipt,
+)
 from cartalytix.models import User
 from cartalytix.oauth import (
     CALCULATOR_SCOPE,
@@ -109,6 +114,7 @@ TOOL_SCOPES = {
     "set_product_exclusion": EXCLUSIONS_WRITE_SCOPE,
     "set_receipt_item_exclusion": EXCLUSIONS_WRITE_SCOPE,
     "add_manual_receipts": RECEIPTS_WRITE_SCOPE,
+    "update_manual_receipt": RECEIPTS_WRITE_SCOPE,
     "delete_manual_receipt": RECEIPTS_WRITE_SCOPE,
 }
 READ_ONLY = ToolAnnotations(
@@ -146,8 +152,9 @@ INSTRUCTIONS = (
     "leaves out a product (exact name and currency) on every current and future receipt, and "
     "set_receipt_item_exclusion leaves out one line (item id from get_receipt) on one receipt. "
     "Receipt writes require cartalytix:receipts:write: add_manual_receipts records purchases the "
-    "user reports (take merchant and provider from list_shops so they join that shop's receipts) "
-    "and delete_manual_receipt permanently removes only manually added receipts."
+    "user reports (take merchant and provider from list_shops so they join that shop's receipts), "
+    "update_manual_receipt replaces a manually added receipt with corrected content, and "
+    "delete_manual_receipt permanently removes only manually added receipts."
 )
 
 Limit = Annotated[int, Field(ge=1, le=PAGE_LIMIT, description="Page size")]
@@ -431,6 +438,33 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
                 db,
                 ManualReceiptsInput(receipts=receipts),
             )
+
+    @server.tool(
+        name="update_manual_receipt",
+        description=(
+            "Replace one manually added receipt (is_manual=true) with new content. Read it with "
+            "get_receipt first and send the whole receipt, including every item to keep; item "
+            "total_amount is the line total. Synced receipts cannot be edited. "
+            "Needs cartalytix:receipts:write."
+        ),
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=True,
+            idempotent_hint=True,
+            open_world_hint=False,
+        ),
+        meta=RECEIPTS_SECURITY,
+    )
+    def update_manual_receipt_tool(
+        receipt_id: UUID, receipt: ManualReceiptInput
+    ) -> ReceiptDetailOutput:
+        with Session(engine) as db:
+            try:
+                owner = _owner(db, scope=RECEIPTS_WRITE_SCOPE)
+                update_manual_receipt(receipt_id, owner, db, receipt)
+                return receipt_detail(receipt_id, owner, db)
+            except HTTPException as exc:
+                raise ToolError(str(exc.detail)) from exc
 
     @server.tool(
         name="delete_manual_receipt",

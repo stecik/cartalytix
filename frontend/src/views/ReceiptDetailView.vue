@@ -8,6 +8,7 @@ import { ApiError, request } from "../api";
 import type { ReceiptDetail, ReceiptDiscount, User } from "../api";
 import AppDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
+import ManualReceiptDialog from "../components/ManualReceiptDialog.vue";
 import ReceiptSource from "../components/ReceiptSource.vue";
 import QueryState from "../components/QueryState.vue";
 import SegmentedToggle from "../components/SegmentedToggle.vue";
@@ -29,6 +30,13 @@ const receipt = useQuery({
 const router = useRouter();
 const client = useQueryClient();
 const deleting = ref(false);
+const editing = ref(false);
+
+async function receiptEdited(): Promise<void> {
+  editing.value = false;
+  await client.invalidateQueries();
+}
+
 const remove = useMutation({
   mutationFn: () => request<void>(`/receipts/${encodeURIComponent(receiptId.value)}`, { method: "DELETE" }),
   onSuccess: async () => {
@@ -106,8 +114,12 @@ function date(value: string): string {
           <div class="included-total"><span>{{ t("includedAmount") }}</span><strong>{{ money(receipt.data.value.included_amount ?? receipt.data.value.total_amount) }}</strong></div>
           <ExclusionAction scope="receipt" :path="`/receipts/${encodeURIComponent(receiptId)}/exclusion`" :excluded="receipt.data.value.is_excluded" />
           <ExclusionStatus v-if="receipt.data.value.is_excluded" reason="receipt" />
-          <AppButton v-if="receipt.data.value.is_manual" type="button" @click="deleting = true">{{ t("deleteReceipt") }}</AppButton>
+          <div v-if="receipt.data.value.is_manual" class="manual-actions">
+            <AppButton type="button" @click="editing = true">{{ t("editReceipt") }}</AppButton>
+            <AppButton type="button" @click="deleting = true">{{ t("deleteReceipt") }}</AppButton>
+          </div>
         </div>
+        <ManualReceiptDialog v-if="editing" :receipt="receipt.data.value" @close="editing = false" @saved="receiptEdited" />
         <AppDialog v-if="deleting" :title="t('deleteReceipt')" :busy="remove.isPending.value" @close="deleting = false">
           <p>{{ t("deleteReceiptHelp") }}</p>
           <p v-if="remove.isError.value" role="alert" class="form-alert">{{ t("deleteReceiptFailed") }}</p>
@@ -191,6 +203,7 @@ function date(value: string): string {
 <style scoped>
 .receipt-back { margin-bottom: 25px; }
 .receipt-accounting { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 18px 0; margin-bottom: 24px; }
+.manual-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .included-total { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-muted); }
 .included-total strong { font-size: 24px; color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
 .receipt-item-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 10px; font-family: "DM Sans Variable", sans-serif; font-size: 12px; }

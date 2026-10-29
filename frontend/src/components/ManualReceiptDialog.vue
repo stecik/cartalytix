@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { request } from "../api";
-import type { ManualReceiptInput, Receipt, Shop } from "../api";
+import type { ManualReceiptInput, Receipt, ReceiptDetail, Shop } from "../api";
 import { providerName } from "../names";
 import AppDateInput from "./AppDateInput.vue";
 import AppDialog from "./AppDialog.vue";
@@ -14,6 +14,8 @@ import SegmentedToggle from "./SegmentedToggle.vue";
 import AppButton from "./AppButton.vue";
 
 const NEW_SHOP = "new";
+/** Without a receipt it adds new ones; with a manual receipt it edits that one in place. */
+const props = defineProps<{ receipt?: ReceiptDetail }>();
 const emit = defineEmits<{ close: []; saved: [receipts: Receipt[]] }>();
 const { t } = useI18n();
 
@@ -21,7 +23,8 @@ function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-const now = new Date();
+const now = props.receipt ? new Date(props.receipt.purchased_at) : new Date();
+const title = computed(() => t(props.receipt ? "editReceipt" : "addReceipt"));
 const mode = ref<"form" | "json">("form");
 const modes = computed(() => [
   { value: "form" as const, label: t("manualReceiptForm") },
@@ -39,19 +42,33 @@ const shopOptions = computed(() => [
   { value: NEW_SHOP, label: t("manualReceiptNewShop") },
 ]);
 const shop = ref(NEW_SHOP);
-const merchant = ref("");
+const merchant = ref(props.receipt?.merchant ?? "");
+// An edited receipt starts on its own shop once the shop list arrives.
+watch(() => shops.data.value, (data) => {
+  const receipt = props.receipt;
+  if (!receipt || !data || shop.value !== NEW_SHOP) return;
+  const index = data.items.findIndex((item) => item.merchant === receipt.merchant && (item.provider ?? "manual") === receipt.provider);
+  if (index >= 0) shop.value = String(index);
+}, { immediate: true });
 const date = ref(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
 const time = ref(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
-const currency = ref("CZK");
-const items = ref([{ name: "", quantity: "1", total: "" }]);
+const currency = ref(props.receipt?.currency ?? "CZK");
+type ItemRow = { name: string; quantity: number | ""; price: number | ""; unit: string | null };
+// Number inputs bind numbers, or "" while empty or invalid; the price is per unit.
+const items = ref<ItemRow[]>(props.receipt?.items.map((item) => ({
+  name: item.name,
+  quantity: Number(item.quantity),
+  price: Number(item.unit_price ?? Number(item.total_amount) / Number(item.quantity)),
+  unit: item.unit,
+})) ?? [{ name: "", quantity: 1, price: "", unit: null }]);
 const json = ref("");
 const problem = ref<"manualReceiptJsonInvalid" | "manualReceiptDateRequired" | null>(null);
 
-function amount(value: string): string {
-  return value.trim().replace(",", ".");
+function lineTotal(item: ItemRow): number {
+  return Math.round(Number(item.quantity || 1) * Number(item.price || 0) * 100) / 100;
 }
 
-const total = computed(() => items.value.reduce((sum, item) => sum + (Number(amount(item.total)) || 0), 0));
+const total = computed(() => items.value.reduce((sum, item) => sum + lineTotal(item), 0));
 
 function formReceipt(): ManualReceiptInput {
   const selected = shop.value === NEW_SHOP ? null : shops.data.value?.items[Number(shop.value)];
@@ -60,7 +77,12 @@ function formReceipt(): ManualReceiptInput {
     provider: selected?.provider ?? null,
     purchased_at: `${date.value}T${time.value || "12:00"}:00`,
     currency: currency.value.trim().toUpperCase(),
-    items: items.value.map((item) => ({ name: item.name.trim(), quantity: amount(item.quantity) || "1", total_amount: amount(item.total) })),
+    items: items.value.map((item) => ({
+      name: item.name.trim(),
+      quantity: String(item.quantity || 1),
+      unit: item.unit,
+      total_amount: lineTotal(item).toFixed(2),
+    })),
   };
 }
 
@@ -83,8 +105,12 @@ async function loadFile(event: Event): Promise<void> {
 }
 
 const save = useMutation({
-  mutationFn: (receipts: ManualReceiptInput[]) => request<{ items: Receipt[] }>("/receipts/manual", { method: "POST", body: JSON.stringify({ receipts }) }),
-  onSuccess: (result) => emit("saved", result.items),
+  mutationFn: async (receipts: ManualReceiptInput[]): Promise<Receipt[]> => {
+    if (!props.receipt) return (await request<{ items: Receipt[] }>("/receipts/manual", { method: "POST", body: JSON.stringify({ receipts }) })).items;
+    await request<void>(`/receipts/${encodeURIComponent(props.receipt.id)}`, { method: "PUT", body: JSON.stringify(receipts[0]) });
+    return [];
+  },
+  onSuccess: (result) => emit("saved", result),
 });
 
 function submit(): void {
@@ -99,8 +125,8 @@ function submit(): void {
 </script>
 
 <template>
-  <AppDialog class="manual-receipt-dialog" :title="t('addReceipt')" :busy="save.isPending.value" @close="emit('close')">
-    <SegmentedToggle v-model="mode" :options="modes" :label="t('addReceipt')" />
+  <AppDialog class="manual-receipt-dialog" :title="title" :busy="save.isPending.value" @close="emit('close')">
+    <SegmentedToggle v-if="!receipt" v-model="mode" :options="modes" :label="title" />
     <form :aria-busy="save.isPending.value" @submit.prevent="submit">
       <template v-if="mode === 'form'">
         <label>{{ t("manualReceiptShop") }}</label>
@@ -127,12 +153,12 @@ function submit(): void {
           <legend>{{ t("manualReceiptItems") }}</legend>
           <div v-for="(item, index) in items" :key="index" class="manual-item">
             <input v-model="item.name" type="text" maxlength="500" required :aria-label="t('manualReceiptItemName')" :placeholder="t('manualReceiptItemName')" :disabled="save.isPending.value">
-            <input v-model="item.quantity" type="text" inputmode="decimal" pattern="\d+([.,]\d+)?" :aria-label="t('quantity')" :placeholder="t('quantity')" :disabled="save.isPending.value">
-            <input v-model="item.total" type="text" inputmode="decimal" pattern="-?\d+([.,]\d{1,2})?" required :aria-label="t('manualReceiptItemTotal')" :placeholder="t('manualReceiptItemTotal')" :disabled="save.isPending.value">
+            <input v-model="item.quantity" type="number" inputmode="decimal" min="0.001" step="any" required :aria-label="t('quantity')" :placeholder="t('quantity')" :disabled="save.isPending.value">
+            <input v-model="item.price" type="number" inputmode="decimal" step="0.01" required :aria-label="t('unitPrice')" :placeholder="t('unitPrice')" :disabled="save.isPending.value">
             <IconButton tone="danger" :label="t('manualReceiptRemoveItem')" :disabled="items.length === 1 || save.isPending.value" @click="items.splice(index, 1)"><AppIcon name="trash" /></IconButton>
           </div>
           <div class="manual-items-footer">
-            <AppButton type="button" :disabled="save.isPending.value" @click="items.push({ name: '', quantity: '1', total: '' })">{{ t("manualReceiptAddItem") }}</AppButton>
+            <AppButton type="button" :disabled="save.isPending.value" @click="items.push({ name: '', quantity: 1, price: '', unit: null })">{{ t("manualReceiptAddItem") }}</AppButton>
             <span>{{ t("receiptTotal") }} <strong>{{ total.toFixed(2) }} {{ currency }}</strong></span>
           </div>
         </fieldset>
@@ -148,7 +174,7 @@ function submit(): void {
       <p v-else-if="save.isError.value" role="alert" class="form-alert">{{ t("manualReceiptFailed") }}</p>
       <div class="dialog-actions">
         <AppButton data-action="cancel" type="button" :disabled="save.isPending.value" @click="emit('close')">{{ t("cancel") }}</AppButton>
-        <AppButton variant="primary" type="submit" :disabled="save.isPending.value">{{ t(save.isPending.value ? "saving" : "addReceipt") }}</AppButton>
+        <AppButton variant="primary" type="submit" :disabled="save.isPending.value">{{ save.isPending.value ? t("saving") : receipt ? t("save") : title }}</AppButton>
       </div>
     </form>
   </AppDialog>
@@ -159,7 +185,7 @@ function submit(): void {
 .manual-when { display: grid; grid-template-columns: 1.4fr 1fr 0.8fr; gap: 12px; }
 .manual-items { border: 0; padding: 0; margin: 24px 0 0; min-width: 0; }
 .manual-items legend { font-size: 12px; font-weight: 550; margin-bottom: 10px; }
-.manual-item { display: grid; grid-template-columns: 1fr 72px 110px 36px; gap: 8px; align-items: center; margin-bottom: 8px; }
+.manual-item { display: grid; grid-template-columns: 1fr 84px 120px 36px; gap: 8px; align-items: center; margin-bottom: 8px; }
 .manual-items-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; font-size: 13px; }
 textarea { width: 100%; padding: 10px 13px; font-family: monospace; font-size: 12px; resize: vertical; }
 input[type=file] { height: auto; padding: 10px 0; border: 0; background: transparent; }

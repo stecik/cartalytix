@@ -80,6 +80,7 @@ TOOLS = {
     "set_receipt_item_exclusion",
     "list_shops",
     "add_manual_receipts",
+    "update_manual_receipt",
     "delete_manual_receipt",
 }
 EXCLUSION_WRITES = {"set_receipt_exclusion", "set_product_exclusion", "set_receipt_item_exclusion"}
@@ -88,7 +89,7 @@ CATEGORY_WRITE_SCOPE = "cartalytix:categories:write"
 CALCULATOR_SCOPE = "cartalytix:calculator"
 EXCLUSIONS_SCOPE = "cartalytix:exclusions:write"
 RECEIPTS_SCOPE = "cartalytix:receipts:write"
-RECEIPT_WRITES = {"add_manual_receipts", "delete_manual_receipt"}
+RECEIPT_WRITES = {"add_manual_receipts", "update_manual_receipt", "delete_manual_receipt"}
 INITIALIZE = {
     "jsonrpc": "2.0",
     "id": 1,
@@ -661,7 +662,13 @@ async def test_mcp_tools_over_oauth(mcp_app: FastAPI, engine: Engine, mode: str)
             records = tool.name in RECEIPT_WRITES
             assert tool.annotations.read_only_hint is not (writable or excludes or records)
             assert tool.annotations.destructive_hint is (
-                tool.name in {"delete_category", "assign_category_items", "delete_manual_receipt"}
+                tool.name
+                in {
+                    "delete_category",
+                    "assign_category_items",
+                    "update_manual_receipt",
+                    "delete_manual_receipt",
+                }
             )
             assert "user_id" not in str(tool.input_schema)
             optional = {"calculate_items_spending": [CALCULATOR_SCOPE]}.get(
@@ -1070,6 +1077,20 @@ def test_manual_receipt_writes_need_their_scope(web: TestClient, engine: Engine)
     with Session(engine) as db:
         synced = db.scalar(select(Receipt.id).where(Receipt.total_amount == Decimal("100.25")))
     refused = call_rpc(web, token, "delete_manual_receipt", {"receipt_id": str(synced)}).json()
+    assert "receipt_not_manual" in str(refused.get("result", {}).get("content"))
+    corrected = {**receipt, "items": [{"name": "Káva", "quantity": "2", "total_amount": "120"}]}
+    updated = call_rpc(
+        web,
+        token,
+        "update_manual_receipt",
+        {"receipt_id": created.get("id"), "receipt": corrected},
+    ).json()
+    detail = updated.get("result", {}).get("structuredContent", {})
+    assert detail.get("total_amount") == "120.00"
+    assert [item.get("unit_price") for item in detail.get("items", [])] == ["60.000000"]
+    refused = call_rpc(
+        web, token, "update_manual_receipt", {"receipt_id": str(synced), "receipt": corrected}
+    ).json()
     assert "receipt_not_manual" in str(refused.get("result", {}).get("content"))
     deleted = call_rpc(web, token, "delete_manual_receipt", {"receipt_id": created.get("id")})
     assert deleted.json().get("result", {}).get("structuredContent") == {"deleted": True}
