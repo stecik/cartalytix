@@ -7,6 +7,7 @@ import { accountOptions } from "../names";
 import AppDateInput from "../components/AppDateInput.vue";
 import AppSelect from "../components/AppSelect.vue";
 import ExclusionFilter from "../components/ExclusionFilter.vue";
+import RangeInput from "../components/RangeInput.vue";
 import ManualReceiptDialog from "../components/ManualReceiptDialog.vue";
 import { request } from "../api";
 import type { Connection, ExclusionMode, ReceiptPage } from "../api";
@@ -38,11 +39,6 @@ function updateQuery(patch: Partial<Record<QueryKey, string>>): void {
   void router.replace({ query });
 }
 
-function inputValue(event: Event): string {
-  return event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement
-    ? event.target.value.trim()
-    : "";
-}
 
 function dayStart(value: string, days = 0): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -140,7 +136,9 @@ function changePage(value: number): void {
       <button type="button" class="button primary add-receipt" @click="adding = true">{{ t("addReceipt") }}</button>
     </header>
     <ManualReceiptDialog v-if="adding" @close="adding = false" @saved="receiptsAdded" />
-    <ExclusionFilter :model-value="exclusion" @update:model-value="updateQuery({ exclusion: $event === 'included' ? '' : $event })" />
+    <div class="exclusion-controls">
+      <ExclusionFilter :model-value="exclusion" @update:model-value="updateQuery({ exclusion: $event === 'included' ? '' : $event })" />
+    </div>
     <div class="receipt-filters" role="search">
       <ReceiptSearch v-model="search" class="filter-search" :exclusion="exclusion" @select="applySearch" />
       <label>
@@ -155,14 +153,7 @@ function changePage(value: number): void {
         <span>{{ t("account") }}</span>
         <AppSelect class="account-select" :model-value="queryValue('connection')" :options="accountOptions(connections.data.value.items, t('allAccounts'))" :label="t('account')" @update:model-value="updateQuery({ connection: $event })" />
       </label>
-      <label class="filter-amount">
-        <span>{{ t("amountMin") }}</span>
-        <input type="number" inputmode="decimal" min="0" step="0.01" :value="queryValue('min')" @change="updateQuery({ min: inputValue($event) })">
-      </label>
-      <label class="filter-amount">
-        <span>{{ t("amountMax") }}</span>
-        <input type="number" inputmode="decimal" min="0" step="0.01" :value="queryValue('max')" @change="updateQuery({ max: inputValue($event) })">
-      </label>
+      <RangeInput class="filter-amount" :label="t('amount')" :min="queryValue('min')" :max="queryValue('max')" :min-label="t('amountMin')" :max-label="t('amountMax')" @update:min="updateQuery({ min: $event })" @update:max="updateQuery({ max: $event })" />
       <button v-if="filtered" type="button" class="button secondary reset-filters" @click="resetFilters">
         {{ t("resetFilters") }}
       </button>
@@ -208,10 +199,9 @@ function changePage(value: number): void {
 
 <style scoped>
 .receipt-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 36px; }
-.exclusion-filter { margin-bottom: 20px; }
+.exclusion-controls { margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .receipt-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
 .receipt-filters .filter-search { flex: 1 1 140px; min-width: 0; }
-.receipt-filters .filter-amount { width: 120px; }
 .receipt-filters input,
 .receipt-filters select { height: 40px; border: 1px solid var(--border-input); border-radius: 4px; background: var(--surface-input); padding: 0 12px; font-size: 13px; }
 .receipt-filters input:focus,

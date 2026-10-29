@@ -122,7 +122,8 @@ def test_sync_imports_delivered_orders_with_fees_and_discounts(
         row = db.get(ProviderConnection, connection)
         assert row is not None
         row.provider = "foodora"
-    orders = Orders([order("done"), order("legacy", total=135), order("active", delivered=False)])
+    done = {**order("done"), "vendor": {"code": "v1", "name": " Pizza Nuova "}}
+    orders = Orders([done, order("legacy", total=135), order("active", delivered=False)])
     run = enqueue_sync(engine, connection, owner)
     run_sync(engine, run.id, config, client_factory=orders.factory)
     with Session(engine) as db:
@@ -132,7 +133,8 @@ def test_sync_imports_delivered_orders_with_fees_and_discounts(
         assert (stored.receipts_imported, stored.receipts_skipped) == (2, 1)
         receipts = {r.external_id: r for r in db.scalars(select(Receipt))}
         assert set(receipts) == {"done", "legacy"}
-        assert receipts["done"].merchant == "Foodora"
+        assert receipts["done"].merchant == "Pizza Nuova"
+        assert receipts["legacy"].merchant == "Foodora"
         assert receipts["done"].total_amount == Decimal("235")
         names = db.scalars(
             select(ReceiptItem.name).where(ReceiptItem.receipt_id == receipts["done"].id)

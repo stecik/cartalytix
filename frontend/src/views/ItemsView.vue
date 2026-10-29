@@ -7,6 +7,7 @@ import { accountOptions } from "../names";
 import AppDateInput from "../components/AppDateInput.vue";
 import AppSelect from "../components/AppSelect.vue";
 import ExclusionFilter from "../components/ExclusionFilter.vue";
+import RangeInput from "../components/RangeInput.vue";
 import { request } from "../api";
 import type { Connection, ExclusionMode, ExclusionReason, ExclusionScope, ItemDetail, ItemExclusion, ItemExclusionPage, ItemPage, ReceiptDetail } from "../api";
 import ItemLedger from "../components/ItemLedger.vue";
@@ -38,11 +39,6 @@ function updateQuery(patch: Partial<Record<QueryKey, string>>): void {
   void router.replace({ query });
 }
 
-function inputValue(event: Event): string {
-  return event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement
-    ? event.target.value.trim()
-    : "";
-}
 
 function dayStart(value: string, days = 0): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -212,14 +208,7 @@ function restored(row: ItemExclusion, result: ReceiptDetail | ItemDetail | undef
         <span>{{ t("account") }}</span>
         <AppSelect class="account-select" :model-value="queryValue('connection')" :options="accountOptions(connections.data.value.items, t('allAccounts'))" :label="t('account')" @update:model-value="updateQuery({ connection: $event })" />
       </label>
-      <label class="filter-amount">
-        <span>{{ t("priceMin") }}</span>
-        <input type="number" inputmode="decimal" min="0" step="0.01" :value="queryValue('min')" @change="updateQuery({ min: inputValue($event) })">
-      </label>
-      <label class="filter-amount">
-        <span>{{ t("priceMax") }}</span>
-        <input type="number" inputmode="decimal" min="0" step="0.01" :value="queryValue('max')" @change="updateQuery({ max: inputValue($event) })">
-      </label>
+      <RangeInput class="filter-amount" :label="t('priceRange')" :min="queryValue('min')" :max="queryValue('max')" :min-label="t('priceMin')" :max-label="t('priceMax')" @update:min="updateQuery({ min: $event })" @update:max="updateQuery({ max: $event })" />
       <button v-if="filtered" type="button" class="button secondary reset-filters" @click="resetFilters">
         {{ t("resetFilters") }}
       </button>
@@ -267,10 +256,6 @@ function restored(row: ItemExclusion, result: ReceiptDetail | ItemDetail | undef
 <style scoped>
 .item-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 36px; }
 .item-display-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-.exclusion-filter { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
-.exclusion-filter :deep(label) { padding: 12px 16px; border-radius: 0; border-bottom: 2px solid transparent; }
-.exclusion-filter :deep(label:first-of-type) { padding-left: 0; }
-.exclusion-filter :deep(label.selected) { background: transparent; box-shadow: none; border-bottom-color: var(--green); }
 .exclusion-scope { width: 176px; }
 .exclusion-scope :deep(.app-select-trigger) { background: transparent; }
 .restoration-status { margin-bottom: 20px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 5px; color: var(--green); background: var(--surface-notice); font-size: 13px; line-height: 1.7; }
@@ -279,7 +264,6 @@ function restored(row: ItemExclusion, result: ReceiptDetail | ItemDetail | undef
 .exclusion-note a { margin-left: 5px; }
 .item-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
 .item-filters .filter-search { flex: 1 1 140px; min-width: 0; }
-.item-filters .filter-amount { width: 120px; }
 .item-filters input,
 .item-filters select { height: 40px; border: 1px solid var(--border-input); border-radius: 4px; background: var(--surface-input); padding: 0 12px; font-size: 13px; }
 .item-filters input:focus,

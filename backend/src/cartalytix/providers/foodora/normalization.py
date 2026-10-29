@@ -31,6 +31,13 @@ def amount(value: object) -> Decimal | None:
     return result if result.is_finite() else None
 
 
+def vendor_name(detail: dict[str, Any]) -> str | None:
+    """Restaurant the order was placed with, like Bolt and Wolt venues."""
+    vendor = detail.get("vendor")
+    name = vendor.get("name") if isinstance(vendor, dict) else None
+    return name.strip()[:256] if isinstance(name, str) and name.strip() else None
+
+
 def _line(name: str, quantity: Decimal, total: Decimal, code: str | None) -> dict[str, Any]:
     return {
         "name": name,
@@ -114,6 +121,7 @@ def validate_order(
     return {
         "id": expected_id,
         "date": date,
+        "merchant": vendor_name(detail) or "Foodora",
         # foodora.cz bills in CZK; the payload has no currency field.
         "currency": "CZK",
         "total": format(paid, "f") if paid is not None else None,
