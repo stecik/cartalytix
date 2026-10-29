@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from cartalytix.providers.shoptet.client import ShoptetClient, ShoptetError, sign_in
-from cartalytix.providers.shoptet.normalization import parse_list, validate_order
+from cartalytix.providers.shoptet.normalization import csrf_token, parse_list, validate_order
 
 SITE = "https://www.nejkafe.cz"
 
@@ -116,6 +116,19 @@ def test_sign_in_returns_hashed_account_and_rejects_bad_password() -> None:
     with httpx.Client(transport=shoptet([False])) as http, pytest.raises(ShoptetError) as error:
         sign_in("owner@example.com", "wrong", site=SITE, http=http)
     assert error.value.code == "credentials_rejected"
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "csrf_Ts3X7ec35f8330fe29f77d36",
+        "csrf_d/QL6YpL6e7ee9ca1ac8a438",
+        "csrf_TP1AAR+Zaf646cf8df1e8813",
+    ],
+)
+def test_csrf_token_keeps_base64_characters(token: str) -> None:
+    # Live Nejkafe tokens carry base64 '+' and '/'; dropping them made every few logins 403.
+    assert csrf_token(f"<script>shoptet.csrf.token = '{token}';</script>") == token
 
 
 def test_client_signs_in_again_after_session_expiry() -> None:

@@ -18,7 +18,7 @@ CODE = re.compile(r"\d{1,20}")
 PAGE = re.compile(r"/klient/objednavky/strana-(\d{1,5})/")
 ORDER_HEADING = re.compile(r"<h2>\s*Objednávka č\.\s*(\d{1,20})\s*</h2>")
 # Shops with CSRF enabled reject forms without it; Shoptet JS normally injects it on submit.
-CSRF_TOKEN = re.compile(r"shoptet\.csrf\.token\s*=\s*'([\w-]{1,200})'")
+CSRF_TOKEN = re.compile(r"shoptet\.csrf\.token\s*=\s*'([\w+/=-]{1,200})'")
 QUANTITY = re.compile(r"([\d\s,.]+?)\s*([^\d\s].*)?")
 
 
