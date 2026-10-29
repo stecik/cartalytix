@@ -157,13 +157,18 @@ def create_connection(
     )
     if count >= 100:
         raise HTTPException(409, "connection_limit_reached")
+    interval = (
+        payload.sync_interval_minutes
+        if "sync_interval_minutes" in payload.model_fields_set
+        else owner.default_sync_interval_minutes
+    )
     connection = ProviderConnection(
         owner_id=owner.id,
         provider=provider.value,
         country="CZ",
         name=payload.name.strip(),
-        sync_interval_minutes=payload.sync_interval_minutes,
-        next_sync_at=next_sync(payload.sync_interval_minutes),
+        sync_interval_minutes=interval,
+        next_sync_at=next_sync(interval),
     )
     db.add(connection)
     db.commit()

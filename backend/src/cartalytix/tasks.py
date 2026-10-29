@@ -1,12 +1,16 @@
 from uuid import UUID
 
 from celery import Celery
+from celery.schedules import crontab
+from celery.signals import worker_process_init
 from sqlalchemy import create_engine
 
 from cartalytix.settings import Settings
-from cartalytix.sync import publish_pending, run_sync, schedule_due
+from cartalytix.sync import prune_sync_runs, publish_pending, run_sync, schedule_due
 
 settings = Settings()
+# One pooled engine per worker process instead of a new one for every task.
+engine = create_engine(settings.database_url, pool_pre_ping=True)
 celery_app = Celery("cartalytix", broker=settings.redis_url)
 celery_app.conf.update(
     task_serializer="json",
@@ -19,8 +23,20 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
     task_soft_time_limit=1740,
     task_time_limit=1800,
-    beat_schedule={"dispatch-due": {"task": "cartalytix.dispatch_due", "schedule": 60.0}},
+    beat_schedule={
+        "dispatch-due": {"task": "cartalytix.dispatch_due", "schedule": 60.0},
+        "prune-sync-runs": {
+            "task": "cartalytix.prune_sync_runs",
+            "schedule": crontab(hour="3", minute="30"),
+        },
+    },
 )
+
+
+@worker_process_init.connect
+def _reset_pool(**_: object) -> None:
+    # Forked workers must not share the parent's pooled connections.
+    engine.dispose(close=False)
 
 
 def _send_run(identifier: str) -> None:
@@ -29,19 +45,16 @@ def _send_run(identifier: str) -> None:
 
 @celery_app.task(name="cartalytix.dispatch_due")
 def dispatch_due() -> dict[str, str | int]:
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
-    try:
-        scheduled = schedule_due(engine)
-        publish_pending(engine, _send_run)
-        return {"scheduled": scheduled, "status": "dispatched"}
-    finally:
-        engine.dispose()
+    scheduled = schedule_due(engine)
+    publish_pending(engine, _send_run)
+    return {"scheduled": scheduled, "status": "dispatched"}
+
+
+@celery_app.task(name="cartalytix.prune_sync_runs")
+def prune_runs() -> dict[str, int]:
+    return {"deleted": prune_sync_runs(engine, settings)}
 
 
 @celery_app.task(name="cartalytix.sync_run")
 def sync_run(run_id: str) -> None:
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
-    try:
-        run_sync(engine, UUID(run_id), settings)
-    finally:
-        engine.dispose()
+    run_sync(engine, UUID(run_id), settings)

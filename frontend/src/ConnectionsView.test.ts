@@ -33,7 +33,7 @@ function render(items: object[] = [], providers: object[] = defaultProviders) {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("Lidl connections", () => {
-  it("creates a named account with manual scheduling and leaves other stores unavailable", async () => {
+  it("creates a named account with the default scheduling and leaves other stores unavailable", async () => {
     const { wrapper, fetcher, client } = render();
     await flushPromises();
     const add = wrapper.findAll("button").find((button) => button.text() === "Add account");
@@ -42,7 +42,7 @@ describe("Lidl connections", () => {
     await wrapper.get('input[name="connection-name"]').setValue("My Lidl");
     await wrapper.get("form").trigger("submit");
     await flushPromises();
-    expect(fetcher).toHaveBeenCalledWith("/api/v1/providers/lidl/connections", expect.objectContaining({ method: "POST", body: JSON.stringify({ name: "My Lidl", sync_interval_minutes: null }) }));
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/providers/lidl/connections", expect.objectContaining({ method: "POST", body: JSON.stringify({ name: "My Lidl" }) }));
     const albert = wrapper.findAll(".upcoming-store").find((row) => row.text().includes("Albert"));
     expect(albert?.text()).toContain("Coming soon");
     expect(albert?.find("button").exists()).toBe(false);
@@ -208,10 +208,10 @@ describe("Lidl connections", () => {
     await flushPromises();
     await wrapper.get(".account-toggle").trigger("click");
     expect(fetcher.mock.calls.some(([path]) => String(path).includes("/runs"))).toBe(false);
-    fetcher.mockResolvedValueOnce(Response.json({ ...account, sync_interval_minutes: 1440 }));
+    fetcher.mockResolvedValueOnce(Response.json({ ...account, sync_interval_minutes: 360 }));
     await wrapper.get('input[role="switch"]').setValue(true);
     await flushPromises();
-    expect(fetcher).toHaveBeenCalledWith("/api/v1/providers/lidl/connections/account-1", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ sync_interval_minutes: 1440 }) }));
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/providers/lidl/connections/account-1", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ sync_interval_minutes: 360 }) }));
     fetcher.mockResolvedValueOnce(Response.json({ ...account, sync_interval_minutes: 60 }));
     await wrapper.get("select").setValue(60);
     await flushPromises();

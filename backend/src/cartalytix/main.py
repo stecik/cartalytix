@@ -11,7 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from redis import Redis
 from redis.exceptions import RedisError
-from sqlalchemy import Engine, create_engine, delete, func, select, text
+from sqlalchemy import Engine, create_engine, delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response as StarletteResponse
@@ -21,7 +21,7 @@ from cartalytix.admin_routes import bootstrap_admin
 from cartalytix.admin_routes import router as admin_router
 from cartalytix.bolt_routes import router as bolt_router
 from cartalytix.category_routes import router as category_router
-from cartalytix.connection_routes import connection_outputs
+from cartalytix.connection_routes import connection_outputs, next_sync
 from cartalytix.connection_routes import router as connection_router
 from cartalytix.dependencies import COOKIE_NAME, ActiveUser, Db, Owner, SessionUser
 from cartalytix.diagnostics import HTTP_ERROR_CODES, capture_error
@@ -389,6 +389,8 @@ def create_app(
             user.dashboard_period = payload.dashboard_period
         if payload.dashboard_category_slices is not None:
             user.dashboard_category_slices = payload.dashboard_category_slices
+        if "default_sync_interval_minutes" in payload.model_fields_set:
+            user.default_sync_interval_minutes = payload.default_sync_interval_minutes
         db.commit()
         return user
 
@@ -441,6 +443,19 @@ def create_app(
             )
         )
         return ConnectionsOutput(items=connection_outputs(db, rows))
+
+    @app.post("/api/v1/connections/apply-default-sync", status_code=204)
+    def apply_default_sync(user: Owner, db: Db) -> None:
+        interval = user.default_sync_interval_minutes
+        db.execute(
+            update(ProviderConnection)
+            .where(
+                ProviderConnection.owner_id == user.id,
+                ProviderConnection.provider != MANUAL_PROVIDER,
+            )
+            .values(sync_interval_minutes=interval, next_sync_at=next_sync(interval))
+        )
+        db.commit()
 
     return app
 

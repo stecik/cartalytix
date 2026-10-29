@@ -48,6 +48,7 @@ class UserOutput(BaseModel):
     theme: Theme
     dashboard_period: StatsPeriod
     dashboard_category_slices: int
+    default_sync_interval_minutes: int | None
     is_admin: bool
     must_change_password: bool
 
@@ -100,6 +101,8 @@ class UserSettingsInput(BaseModel):
     dashboard_period: StatsPeriod | None = None
     # Eight distinguishable category colors plus one segment for the rest.
     dashboard_category_slices: int | None = Field(default=None, ge=3, le=9)
+    # An explicit null selects manual synchronization only.
+    default_sync_interval_minutes: int | None = Field(default=None, ge=60, le=10080)
 
     @field_validator("theme")
     @classmethod

@@ -105,6 +105,40 @@ const categorySlices = computed({
     if (slices) settings.mutate({ dashboard_category_slices: slices });
   },
 });
+// "manual" stands for null, which AppSelect cannot carry as a value.
+const SYNC_INTERVALS = [60, 360, 1440] as const;
+const defaultSync = computed({
+  get: (): string => {
+    const value = session.data.value?.default_sync_interval_minutes;
+    return value === null ? "manual" : String(value ?? 360);
+  },
+  set: (value: string) => {
+    if (value === "manual") settings.mutate({ default_sync_interval_minutes: null });
+    const interval = SYNC_INTERVALS.find((option) => String(option) === value);
+    if (interval) settings.mutate({ default_sync_interval_minutes: interval });
+  },
+});
+const syncOptions = computed(() => {
+  const current = session.data.value?.default_sync_interval_minutes;
+  const custom = current && !SYNC_INTERVALS.some((option) => option === current)
+    ? [{ value: String(current), label: t("everyMinutes", { count: current }) }]
+    : [];
+  return [
+    { value: "60", label: t("everyHour") },
+    { value: "360", label: t("everySixHours") },
+    { value: "1440", label: t("everyDay") },
+    ...custom,
+    { value: "manual", label: t("manualOnly") },
+  ];
+});
+const applyingSync = ref(false);
+const applySync = useMutation({
+  mutationFn: () => request<void>("/connections/apply-default-sync", { method: "POST" }),
+  onSuccess: async () => {
+    applyingSync.value = false;
+    await queryClient.invalidateQueries({ queryKey: ["connections"] });
+  },
+});
 const categorySliceOptions = CATEGORY_SLICES.map((value) => ({ value: String(value), label: String(value) }));
 const dashboardPeriods = computed(() =>
   PRESET_PERIODS.map((value) => ({ value, label: t(`period_${value}`) })),
@@ -161,6 +195,17 @@ const views = computed(() => [
         </div>
         <div class="settings-control">
           <AppSelect v-model="categorySlices" class="settings-select" :options="categorySliceOptions" :label="t('dashboardCategorySlices')" />
+        </div>
+      </div>
+      <div v-if="session.data.value && !isAdmin" class="settings-row">
+        <div class="settings-copy">
+          <h3>{{ t("defaultSync") }}</h3>
+          <p>{{ t("defaultSyncHint") }}</p>
+          <p v-if="applySync.isSuccess.value" class="settings-sync-applied" role="status">{{ t("applyDefaultSyncDone") }}</p>
+        </div>
+        <div class="settings-control settings-sync-control">
+          <AppSelect v-model="defaultSync" class="settings-select" :options="syncOptions" :label="t('defaultSync')" />
+          <button type="button" class="button secondary settings-install" data-action="apply-default-sync" :disabled="settings.isPending.value" @click="applySync.reset(); applyingSync = true">{{ t("applyDefaultSync") }}</button>
         </div>
       </div>
       <div class="settings-row">
@@ -247,6 +292,14 @@ const views = computed(() => [
     </section>
     <DiagnosticLogsDialog v-if="downloadingLogs && session.data.value && !isAdmin" @close="downloadingLogs = false" />
     <CredentialsDialog v-if="editingCredentials && session.data.value" :email="session.data.value.email" @close="editingCredentials = false" @saved="onCredentialsSaved" />
+    <AppDialog v-if="applyingSync" :title="t('applyDefaultSync')" :busy="applySync.isPending.value" @close="applyingSync = false">
+      <p>{{ t("applyDefaultSyncHelp") }}</p>
+      <p v-if="applySync.isError.value" class="form-alert" role="alert">{{ t("applyDefaultSyncFailed") }}</p>
+      <div class="dialog-actions">
+        <button class="button secondary" data-action="cancel" type="button" :disabled="applySync.isPending.value" @click="applyingSync = false">{{ t("cancel") }}</button>
+        <button class="button primary" data-action="confirm-apply-default-sync" type="button" :disabled="applySync.isPending.value" @click="applySync.mutate()">{{ t("applyDefaultSync") }}</button>
+      </div>
+    </AppDialog>
     <AppDialog v-if="revoking" :title="t('mcpRevokeTitle')" :busy="revoke.isPending.value" @close="revoking = null">
       <p>{{ t("mcpRevokeHelp", { client: revoking.client_name }) }}</p>
       <p v-if="revoke.isError.value" class="form-alert" role="alert">{{ t("mcpRevokeFailed") }}</p>
@@ -279,6 +332,9 @@ const views = computed(() => [
 .settings-control .settings-receipt-toggle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; margin: 0; padding: 3px; border-radius: 8px; }
 .settings-control .settings-receipt-toggle :deep(label) { display: flex; align-items: center; justify-content: center; min-height: 36px; padding: 8px 10px; border-radius: 5px; white-space: normal; text-align: center; }
 .settings-select { display: block; width: 100%; }
+.settings-sync-control { display: grid; gap: 10px; }
+.settings-sync-control .settings-install { justify-self: stretch; }
+.settings-copy p.settings-sync-applied { margin-top: 6px; color: var(--status-connected); }
 .settings-select :deep(.app-select-trigger) { min-height: 44px; border-radius: 8px; }
 .settings-install { justify-self: end; min-height: 44px; padding: 10px 16px; border-radius: 8px; font-size: 13px; }
 .settings-install svg { width: 18px; height: 18px; }

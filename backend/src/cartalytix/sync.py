@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from billiard.exceptions import SoftTimeLimitExceeded
-from sqlalchemy import Engine, delete, or_, select, text, true, update
+from sqlalchemy import Engine, and_, delete, func, or_, select, text, true, tuple_, update
 from sqlalchemy.orm import Session
 
 from cartalytix.credentials import CredentialError, TokenCipher
@@ -336,6 +336,44 @@ def publish_pending(
                 continue
 
 
+def prune_sync_runs(engine: Engine, config: Settings, batch_size: int = 5000) -> int:
+    """Delete old runs that imported nothing; each connection keeps its latest run."""
+    now = datetime.now(UTC)
+    latest = (
+        select(SyncRun.connection_id, func.max(SyncRun.created_at))
+        .group_by(SyncRun.connection_id)
+        .correlate(None)
+    )
+    stale = (
+        select(SyncRun.id)
+        .where(
+            SyncRun.receipts_imported == 0,
+            or_(
+                and_(
+                    SyncRun.status == "completed",
+                    SyncRun.created_at < now - timedelta(days=config.sync_run_empty_retention_days),
+                ),
+                and_(
+                    SyncRun.status == "failed",
+                    SyncRun.created_at
+                    < now - timedelta(days=config.sync_run_failed_retention_days),
+                ),
+            ),
+            tuple_(SyncRun.connection_id, SyncRun.created_at).not_in(latest),
+        )
+        .limit(batch_size)
+    )
+    deleted = 0
+    while True:
+        with Session(engine) as db, db.begin():
+            identifiers = list(db.scalars(stale))
+            if identifiers:
+                db.execute(delete(SyncRun).where(SyncRun.id.in_(identifiers)))
+        deleted += len(identifiers)
+        if len(identifiers) < batch_size:
+            return deleted
+
+
 def _aware(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
@@ -487,6 +525,7 @@ def _save_receipt(
     raw_id: UUID,
     normalized: dict[str, Any],
     merchant: str = "Lidl",
+    run_id: UUID | None = None,
 ) -> None:
     date = datetime.fromisoformat(str(normalized.get("date")))
     if date.tzinfo is None:
@@ -594,6 +633,16 @@ def _save_receipt(
         )
         db.flush()
         db.add_all(discounts)
+        if run_id is not None:
+            # Counted in the receipt transaction instead of a separate commit per receipt.
+            db.execute(
+                update(SyncRun)
+                .where(SyncRun.id == run_id)
+                .values(
+                    receipts_imported=SyncRun.receipts_imported + 1,
+                    heartbeat_at=datetime.now(UTC),
+                )
+            )
 
 
 def run_sync(
@@ -683,9 +732,11 @@ def run_sync(
                 normalized = spec.normalize(summary, detail, identifier)
                 if normalized is None:
                     with Session(engine) as db, db.begin():
-                        run = db.get(SyncRun, run_id)
-                        if run is not None:
-                            run.receipts_skipped += 1
+                        db.execute(
+                            update(SyncRun)
+                            .where(SyncRun.id == run_id)
+                            .values(receipts_skipped=SyncRun.receipts_skipped + 1)
+                        )
                     continue
                 if normalized.get("issues"):
                     quality_failed = True
@@ -713,13 +764,9 @@ def run_sync(
                     raw_id,
                     normalized,
                     normalized.get("merchant") or spec.merchant,
+                    run_id,
                 )
                 current_raw_id = None
-                with Session(engine) as db, db.begin():
-                    run = db.get(SyncRun, run_id)
-                    if run is not None:
-                        run.receipts_imported += 1
-                        run.heartbeat_at = datetime.now(UTC)
             if quality_failed:
                 raise SyncError("quality_error")
             with Session(engine) as db, db.begin():

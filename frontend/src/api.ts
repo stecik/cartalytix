@@ -8,6 +8,7 @@ export interface User {
   theme: ThemePreference;
   dashboard_period: PresetPeriod;
   dashboard_category_slices: number;
+  default_sync_interval_minutes: number | null;
   is_admin: boolean;
   must_change_password: boolean;
 }

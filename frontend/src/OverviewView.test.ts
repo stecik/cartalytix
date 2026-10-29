@@ -48,7 +48,7 @@ const stats: Stats = {
   weekly_hours: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0)),
 };
 const overview = { receipt_count: 11, connection_count: 1, totals: [], latest_receipts: [] };
-const user: User = { id: "u", email: "u@example.com", locale: "en", receipt_view: "rendered", theme: "system", dashboard_period: "12m", dashboard_category_slices: 9, is_admin: false, must_change_password: false };
+const user: User = { id: "u", email: "u@example.com", locale: "en", receipt_view: "rendered", theme: "system", dashboard_period: "12m", dashboard_category_slices: 9, default_sync_interval_minutes: 360, is_admin: false, must_change_password: false };
 
 afterEach(() => { vi.unstubAllGlobals(); });
 

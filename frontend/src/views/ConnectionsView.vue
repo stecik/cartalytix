@@ -64,7 +64,7 @@ const addTitles: Record<string, string> = { lidl: "addLidlAccount", mixit: "addM
 function openAdd(provider: string): void { name.value = ""; createConnection.reset(); adding.value = provider; }
 const createConnection = useMutation({
   mutationFn: (provider: string) => request<Connection>(`/providers/${provider}/connections`, {
-    method: "POST", body: JSON.stringify({ name: name.value.trim(), sync_interval_minutes: null }),
+    method: "POST", body: JSON.stringify({ name: name.value.trim() }),
   }),
   onSuccess: async (connection) => {
     adding.value = null;
