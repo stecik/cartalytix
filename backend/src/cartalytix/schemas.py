@@ -316,6 +316,63 @@ class ReceiptOutput(BaseModel):
     currency: str
     is_excluded: bool
     included_amount: str
+    is_manual: bool = False
+
+
+class ManualReceiptItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=500)
+    quantity: Decimal = Field(default=Decimal(1), gt=0, max_digits=18, decimal_places=6)
+    unit: str | None = Field(default=None, max_length=32)
+    total_amount: Decimal = Field(max_digits=18, decimal_places=2)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        name = value.strip()
+        if not name:
+            raise ValueError("Name must not be blank")
+        return name
+
+
+class ManualReceiptInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    merchant: str = Field(min_length=1, max_length=256)
+    # Shop of a known provider (logo, same listing as synced receipts); None for other shops.
+    provider: ProviderCode | None = None
+    # A time without an offset is local Czech time.
+    purchased_at: datetime
+    currency: str = Field(default="CZK", pattern=r"^[A-Z]{3}$")
+    # Defaults to the sum of the items.
+    total_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=2)
+    items: list[ManualReceiptItemInput] = Field(min_length=1, max_length=500)
+
+    @field_validator("merchant")
+    @classmethod
+    def strip_merchant(cls, value: str) -> str:
+        merchant = value.strip()
+        if not merchant:
+            raise ValueError("Merchant must not be blank")
+        return merchant
+
+
+class ManualReceiptsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    receipts: list[ManualReceiptInput] = Field(min_length=1, max_length=100)
+
+
+class ManualReceiptsOutput(BaseModel):
+    items: list[ReceiptOutput]
+
+
+class ShopOutput(BaseModel):
+    merchant: str
+    provider: str | None
+    receipt_count: int
+
+
+class ShopsOutput(BaseModel):
+    items: list[ShopOutput]
 
 
 class ExclusionFilter(StrEnum):
@@ -561,6 +618,7 @@ class McpScope(StrEnum):
     CATEGORIES_WRITE = "cartalytix:categories:write"
     CALCULATOR = "cartalytix:calculator"
     EXCLUSIONS_WRITE = "cartalytix:exclusions:write"
+    RECEIPTS_WRITE = "cartalytix:receipts:write"
 
 
 class McpConsentInput(BaseModel):

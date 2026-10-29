@@ -11,7 +11,7 @@ import type { User } from "./api";
 
 const user: User = { id: "user-1", email: "owner@example.com", locale: "en", receipt_view: "rendered", theme: "system", dashboard_period: "12m", dashboard_category_slices: 9, is_admin: false, must_change_password: false };
 const receipt = { id: "receipt-1", connection_id: "account-1", provider: "lidl", external_id: "R-42",
-  is_excluded: false, included_amount: "20.00",
+  is_excluded: false, included_amount: "20.00", is_manual: false,
   purchased_at: "2026-10-17T10:00:00Z", merchant: "Lidl Praha", total_amount: "20.00", currency: "CZK",
   rounding_amount: "0.20", quality_issues: [], source_format: "htmlPrintedReceipt",
   items: [{ id: "item-1", position: 1, name: "Apples", quantity: "0.5230", unit: "kg", unit_price: "60.0000", total_amount: "26.00", original_amount: "31.38", deposit_amount: null, printed_net_amount: null, is_weight: true, source_code: null, warranty: null }],

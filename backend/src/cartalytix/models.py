@@ -220,6 +220,8 @@ class Receipt(Base):
     external_id: Mapped[str] = mapped_column(String(256))
     purchased_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     merchant: Mapped[str] = mapped_column(String(256))
+    # Provider whose shop a manually added receipt belongs to; synced receipts keep NULL.
+    shop_provider: Mapped[str | None] = mapped_column(String(32))
     currency: Mapped[str] = mapped_column(String(3))
     total_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     is_excluded: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))

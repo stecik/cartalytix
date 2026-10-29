@@ -7,7 +7,7 @@ import ReceiptLedger from "./components/ReceiptLedger.vue";
 import { createAppI18n } from "./i18n";
 
 const receipt = { id: "receipt-1", connection_id: "account-1", provider: "lidl", external_id: "external-1",
-  is_excluded: false, included_amount: "20.00",
+  is_excluded: false, included_amount: "20.00", is_manual: false,
   purchased_at: "2026-10-17T10:00:00Z", merchant: "Lidl Praha", total_amount: "20.00", currency: "CZK",
   rounding_amount: "0.20", quality_issues: [], source_format: "legacy",
   items: [{ id: "item-1", position: 1, name: "<b>Apples</b>", quantity: "0.5230", unit: "kg", unit_price: "60.0000", total_amount: "26.00", original_amount: "31.38", deposit_amount: "0.00", printed_net_amount: "26.00", is_weight: true, source_code: "12345", warranty: null }],

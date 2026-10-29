@@ -32,6 +32,10 @@ RECEIPT_ORDER = {
     ReceiptSort.TOTAL_AMOUNT_ASC: (Receipt.total_amount.asc(), Receipt.id.asc()),
 }
 
+# Manually added receipts share one hidden connection per owner and show their shop's provider.
+MANUAL_PROVIDER = "manual"
+MANUAL_SOURCE = "manual"
+
 router = APIRouter(prefix="/api/v1", tags=["receipts"])
 
 
@@ -39,7 +43,7 @@ def receipt_output(receipt: Receipt, provider: str, included_amount: Decimal) ->
     return ReceiptOutput(
         id=receipt.id,
         connection_id=receipt.connection_id,
-        provider=provider,
+        provider=receipt.shop_provider or provider,
         external_id=receipt.external_id,
         purchased_at=receipt.purchased_at,
         merchant=receipt.merchant,
@@ -47,6 +51,7 @@ def receipt_output(receipt: Receipt, provider: str, included_amount: Decimal) ->
         currency=receipt.currency,
         is_excluded=receipt.is_excluded,
         included_amount=format(included_amount, ".2f"),
+        is_manual=receipt.source_format == MANUAL_SOURCE,
     )
 
 
@@ -247,6 +252,7 @@ def overview(user: Owner, db: Db) -> OverviewOutput:
             .select_from(ProviderConnection)
             .where(
                 owner_filter,
+                ProviderConnection.provider != MANUAL_PROVIDER,
             )
         )
         or 0

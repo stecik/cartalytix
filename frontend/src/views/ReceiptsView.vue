@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { keepPreviousData, useQuery } from "@tanstack/vue-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { accountOptions } from "../names";
 import AppDateInput from "../components/AppDateInput.vue";
 import AppSelect from "../components/AppSelect.vue";
 import ExclusionFilter from "../components/ExclusionFilter.vue";
+import ManualReceiptDialog from "../components/ManualReceiptDialog.vue";
 import { request } from "../api";
 import type { Connection, ExclusionMode, ReceiptPage } from "../api";
 import QueryState from "../components/QueryState.vue";
@@ -21,6 +22,8 @@ const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const limit = 30;
+const client = useQueryClient();
+const adding = ref(false);
 
 function queryValue(key: QueryKey): string {
   const value = route.query[key];
@@ -118,6 +121,11 @@ function resetFilters(): void {
   updateQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])));
 }
 
+async function receiptsAdded(): Promise<void> {
+  adding.value = false;
+  await client.invalidateQueries();
+}
+
 function changePage(value: number): void {
   updateQuery({ offset: value > 0 ? String(value) : "" });
 }
@@ -129,7 +137,9 @@ function changePage(value: number): void {
       <div class="eyebrow">{{ t("workspace") }}</div>
       <h1>{{ t("receipts") }}</h1>
       <p>{{ t("receiptIntro") }}</p>
+      <button type="button" class="button primary add-receipt" @click="adding = true">{{ t("addReceipt") }}</button>
     </header>
+    <ManualReceiptDialog v-if="adding" @close="adding = false" @saved="receiptsAdded" />
     <ExclusionFilter :model-value="exclusion" @update:model-value="updateQuery({ exclusion: $event === 'included' ? '' : $event })" />
     <div class="receipt-filters" role="search">
       <ReceiptSearch v-model="search" class="filter-search" :exclusion="exclusion" @select="applySearch" />
@@ -208,6 +218,7 @@ function changePage(value: number): void {
 .receipt-filters select:focus { border-color: var(--border-input-focus); box-shadow: 0 0 0 3px var(--ring-input-focus); outline: 0; }
 .receipt-filters .account-select { min-width: 210px; }
 .reset-filters { height: 40px; }
+.add-receipt { margin-top: 16px; }
 @media (max-width: 780px) {
   .receipt-filters { display: grid; grid-template-columns: 1fr 1fr; }
   .receipt-filters .filter-search,

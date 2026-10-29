@@ -32,6 +32,7 @@ from cartalytix.i18n import translate
 from cartalytix.item_routes import router as item_router
 from cartalytix.kaufland_routes import router as kaufland_router
 from cartalytix.lidl_routes import router as lidl_router
+from cartalytix.manual_receipt_routes import router as manual_receipt_router
 from cartalytix.mcp_server import create_mcp
 from cartalytix.mixit_routes import router as mixit_router
 from cartalytix.models import ProviderConnection, User, UserSession
@@ -39,6 +40,7 @@ from cartalytix.oauth import router as oauth_router
 from cartalytix.providers.foodora.login_sessions import LoginSessions as FoodoraLoginSessions
 from cartalytix.providers.kaufland.client import KauflandLogin
 from cartalytix.providers.lidl.login_sessions import LoginSessions
+from cartalytix.receipt_routes import MANUAL_PROVIDER
 from cartalytix.receipt_routes import router as receipt_router
 from cartalytix.schemas import (
     ConnectionsOutput,
@@ -191,6 +193,7 @@ def create_app(
     app.include_router(shoptet_router)
     app.include_router(stats_router)
     app.include_router(search_router)
+    app.include_router(manual_receipt_router)
     app.include_router(receipt_router)
     app.include_router(item_router)
     app.include_router(category_router)
@@ -431,6 +434,7 @@ def create_app(
                 select(ProviderConnection)
                 .where(
                     ProviderConnection.owner_id == user.id,
+                    ProviderConnection.provider != MANUAL_PROVIDER,
                 )
                 .order_by(ProviderConnection.name, ProviderConnection.id)
                 .limit(100)

@@ -56,6 +56,7 @@ SCOPE = McpScope.READ.value
 CATEGORIES_WRITE_SCOPE = McpScope.CATEGORIES_WRITE.value
 CALCULATOR_SCOPE = McpScope.CALCULATOR.value
 EXCLUSIONS_WRITE_SCOPE = McpScope.EXCLUSIONS_WRITE.value
+RECEIPTS_WRITE_SCOPE = McpScope.RECEIPTS_WRITE.value
 # Advertised only by the authorization server; refresh tokens are issued either way.
 OFFLINE_SCOPE = "offline_access"
 CLIENT_SCOPES = [
@@ -64,6 +65,7 @@ CLIENT_SCOPES = [
     CATEGORIES_WRITE_SCOPE,
     CALCULATOR_SCOPE,
     EXCLUSIONS_WRITE_SCOPE,
+    RECEIPTS_WRITE_SCOPE,
 ]
 REQUEST_TTL = timedelta(minutes=10)
 CODE_TTL = timedelta(minutes=5)

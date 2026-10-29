@@ -55,12 +55,14 @@ from cartalytix.category_schemas import (
 from cartalytix.credentials import TokenCipher
 from cartalytix.item_routes import item_detail, item_totals, items
 from cartalytix.item_routes import set_product_exclusion as product_exclusion_record
+from cartalytix.manual_receipt_routes import create_manual_receipts, delete_manual_receipt, shops
 from cartalytix.models import User
 from cartalytix.oauth import (
     CALCULATOR_SCOPE,
     CATEGORIES_WRITE_SCOPE,
     CLIENT_SCOPES,
     EXCLUSIONS_WRITE_SCOPE,
+    RECEIPTS_WRITE_SCOPE,
     SCOPE,
     DatabaseOAuthProvider,
     McpUrls,
@@ -78,11 +80,15 @@ from cartalytix.schemas import (
     ItemsOutput,
     ItemTotalsInput,
     ItemTotalsOutput,
+    ManualReceiptInput,
+    ManualReceiptsInput,
+    ManualReceiptsOutput,
     OverviewOutput,
     ProductExclusionInput,
     ReceiptDetailOutput,
     ReceiptSort,
     ReceiptsOutput,
+    ShopsOutput,
     StatsOutput,
     StatsPeriod,
 )
@@ -102,6 +108,8 @@ TOOL_SCOPES = {
     "set_receipt_exclusion": EXCLUSIONS_WRITE_SCOPE,
     "set_product_exclusion": EXCLUSIONS_WRITE_SCOPE,
     "set_receipt_item_exclusion": EXCLUSIONS_WRITE_SCOPE,
+    "add_manual_receipts": RECEIPTS_WRITE_SCOPE,
+    "delete_manual_receipt": RECEIPTS_WRITE_SCOPE,
 }
 READ_ONLY = ToolAnnotations(
     read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False
@@ -113,6 +121,9 @@ WRITE_SECURITY = {
 CALCULATOR_SECURITY = {"securitySchemes": [{"type": "oauth2", "scopes": [SCOPE, CALCULATOR_SCOPE]}]}
 EXCLUSIONS_SECURITY = {
     "securitySchemes": [{"type": "oauth2", "scopes": [SCOPE, EXCLUSIONS_WRITE_SCOPE]}]
+}
+RECEIPTS_SECURITY = {
+    "securitySchemes": [{"type": "oauth2", "scopes": [SCOPE, RECEIPTS_WRITE_SCOPE]}]
 }
 # Exclusions only change what counts in spending and are reversible with excluded=false.
 EXCLUSION_WRITE = ToolAnnotations(
@@ -133,7 +144,10 @@ INSTRUCTIONS = (
     "Exclusion writes require cartalytix:exclusions:write and are reversible with "
     "excluded=false: set_receipt_exclusion leaves out a whole receipt, set_product_exclusion "
     "leaves out a product (exact name and currency) on every current and future receipt, and "
-    "set_receipt_item_exclusion leaves out one line (item id from get_receipt) on one receipt."
+    "set_receipt_item_exclusion leaves out one line (item id from get_receipt) on one receipt. "
+    "Receipt writes require cartalytix:receipts:write: add_manual_receipts records purchases the "
+    "user reports (take merchant and provider from list_shops so they join that shop's receipts) "
+    "and delete_manual_receipt permanently removes only manually added receipts."
 )
 
 Limit = Annotated[int, Field(ge=1, le=PAGE_LIMIT, description="Page size")]
@@ -388,6 +402,58 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
             except HTTPException as exc:
                 raise ToolError(str(exc.detail)) from exc
 
+    @tool("Shops of your receipts: exact merchant name and provider, most receipts first.")
+    def list_shops() -> ShopsOutput:
+        with Session(engine) as db:
+            return shops(_owner(db), db)
+
+    @server.tool(
+        description=(
+            "Add up to 100 receipts the user reports by hand, each with at least one item. Use "
+            "merchant and provider from list_shops for a known shop, otherwise a new merchant "
+            "name with provider null. Times without an offset are Czech local time; "
+            "total_amount defaults to the item sum. Needs cartalytix:receipts:write."
+        ),
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        ),
+        meta=RECEIPTS_SECURITY,
+    )
+    def add_manual_receipts(
+        receipts: Annotated[list[ManualReceiptInput], Field(min_length=1, max_length=100)],
+    ) -> ManualReceiptsOutput:
+        with Session(engine) as db:
+            return create_manual_receipts(
+                _owner(db, scope=RECEIPTS_WRITE_SCOPE),
+                db,
+                ManualReceiptsInput(receipts=receipts),
+            )
+
+    @server.tool(
+        name="delete_manual_receipt",
+        description=(
+            "Permanently delete one manually added receipt (is_manual=true) with its items. "
+            "Synced receipts cannot be deleted. Needs cartalytix:receipts:write."
+        ),
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=True,
+            idempotent_hint=True,
+            open_world_hint=False,
+        ),
+        meta=RECEIPTS_SECURITY,
+    )
+    def delete_manual_receipt_tool(receipt_id: UUID) -> dict[str, bool]:
+        with Session(engine) as db:
+            try:
+                delete_manual_receipt(receipt_id, _owner(db, scope=RECEIPTS_WRITE_SCOPE), db)
+                return {"deleted": True}
+            except HTTPException as exc:
+                raise ToolError(str(exc.detail)) from exc
+
     def exclusion_tool[**P, R](description: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
         return server.tool(
             description=description, annotations=EXCLUSION_WRITE, meta=EXCLUSIONS_SECURITY
@@ -600,7 +666,13 @@ def create_mcp(engine: Engine, settings: Settings) -> McpConnector:
     for route in create_protected_resource_routes(
         resource_url=AnyHttpUrl(urls.resource),
         authorization_servers=[AnyHttpUrl(urls.issuer)],
-        scopes_supported=[SCOPE, CATEGORIES_WRITE_SCOPE, CALCULATOR_SCOPE, EXCLUSIONS_WRITE_SCOPE],
+        scopes_supported=[
+            SCOPE,
+            CATEGORIES_WRITE_SCOPE,
+            CALCULATOR_SCOPE,
+            EXCLUSIONS_WRITE_SCOPE,
+            RECEIPTS_WRITE_SCOPE,
+        ],
     ):
         # RFC 9728 path insertion for /mcp, plus the root location ChatGPT also reads.
         routes += [

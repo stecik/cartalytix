@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { useQuery } from "@tanstack/vue-query";
+import { computed, ref } from "vue";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { sourceName } from "../names";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { ApiError, request } from "../api";
 import type { ReceiptDetail, ReceiptDiscount, User } from "../api";
+import AppDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
+import ReceiptSource from "../components/ReceiptSource.vue";
 import QueryState from "../components/QueryState.vue";
 import SegmentedToggle from "../components/SegmentedToggle.vue";
 import ExclusionAction from "../components/ExclusionAction.vue";
@@ -21,6 +23,18 @@ const receiptId = computed(() => String(route.params.id ?? ""));
 const receipt = useQuery({
   queryKey: computed(() => ["receipts", "detail", receiptId.value]),
   queryFn: ({ signal }) => request<ReceiptDetail>(`/receipts/${encodeURIComponent(receiptId.value)}`, { signal }),
+});
+const router = useRouter();
+const client = useQueryClient();
+const deleting = ref(false);
+const remove = useMutation({
+  mutationFn: () => request<void>(`/receipts/${encodeURIComponent(receiptId.value)}`, { method: "DELETE" }),
+  onSuccess: async () => {
+    deleting.value = false;
+    client.removeQueries({ queryKey: ["receipts", "detail", receiptId.value] });
+    await router.push("/receipts");
+    await client.invalidateQueries();
+  },
 });
 const session = useQuery(sessionOptions);
 const settings = useUserSettings();
@@ -82,7 +96,7 @@ function date(value: string): string {
     <header class="page-heading">
       <div class="eyebrow">{{ t("receiptDetails") }}</div>
       <h1>{{ receipt.data.value?.merchant ?? t("receiptDetails") }}</h1>
-      <p v-if="receipt.data.value"><time :datetime="receipt.data.value.purchased_at">{{ date(receipt.data.value.purchased_at) }}</time><span class="receipt-provider">{{ receipt.data.value.provider }}</span></p>
+      <p v-if="receipt.data.value"><time :datetime="receipt.data.value.purchased_at">{{ date(receipt.data.value.purchased_at) }}</time><span class="receipt-provider"><ReceiptSource :provider="receipt.data.value.provider" :manual="receipt.data.value.is_manual" /></span></p>
     </header>
     <p v-if="notFound" role="alert" class="form-alert">{{ t("receiptNotFound") }}</p>
     <QueryState v-else :pending="receipt.isPending.value" :failed="receipt.isError.value" @retry="receipt.refetch()">
@@ -92,7 +106,13 @@ function date(value: string): string {
           <div class="included-total"><span>{{ t("includedAmount") }}</span><strong>{{ money(receipt.data.value.included_amount ?? receipt.data.value.total_amount) }}</strong></div>
           <ExclusionAction scope="receipt" :path="`/receipts/${encodeURIComponent(receiptId)}/exclusion`" :excluded="receipt.data.value.is_excluded" />
           <ExclusionStatus v-if="receipt.data.value.is_excluded" reason="receipt" />
+          <button v-if="receipt.data.value.is_manual" type="button" class="button secondary" @click="deleting = true">{{ t("deleteReceipt") }}</button>
         </div>
+        <AppDialog v-if="deleting" :title="t('deleteReceipt')" :busy="remove.isPending.value" @close="deleting = false">
+          <p>{{ t("deleteReceiptHelp") }}</p>
+          <p v-if="remove.isError.value" role="alert" class="form-alert">{{ t("deleteReceiptFailed") }}</p>
+          <div class="dialog-actions"><button class="button secondary" type="button" data-action="cancel" :disabled="remove.isPending.value" @click="deleting = false">{{ t("cancel") }}</button><button class="button danger" type="button" :disabled="remove.isPending.value" @click="remove.mutate()">{{ t("deleteReceipt") }}</button></div>
+        </AppDialog>
         <SegmentedToggle v-model="receiptView" class="receipt-view-toggle" :options="views" :label="t('receiptDisplay')" />
         <div v-if="rendered" class="receipt-paper-wrap">
           <article class="receipt-paper" :aria-label="t('receiptViewRendered')">
@@ -120,8 +140,8 @@ function date(value: string): string {
             </div>
             <div class="receipt-paper-total"><span>{{ t("receiptTotal") }}</span><strong>{{ money(receipt.data.value.total_amount) }}</strong></div>
             <footer class="receipt-paper-footer">
-              <span>{{ receipt.data.value.provider }}</span>
-              <span>{{ t("receiptNumber") }} {{ receipt.data.value.external_id }}</span>
+              <span><ReceiptSource :provider="receipt.data.value.provider" :manual="receipt.data.value.is_manual" /></span>
+              <span v-if="!receipt.data.value.is_manual">{{ t("receiptNumber") }} {{ receipt.data.value.external_id }}</span>
             </footer>
           </article>
         </div>

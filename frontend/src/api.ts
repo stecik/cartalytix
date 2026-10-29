@@ -38,6 +38,29 @@ export interface Receipt {
   currency: string;
   is_excluded: boolean;
   included_amount: string;
+  is_manual: boolean;
+}
+
+export interface Shop {
+  merchant: string;
+  provider: string | null;
+  receipt_count: number;
+}
+
+export interface ManualReceiptItemInput {
+  name: string;
+  quantity?: string;
+  unit?: string | null;
+  total_amount: string;
+}
+
+export interface ManualReceiptInput {
+  merchant: string;
+  provider?: string | null;
+  purchased_at: string;
+  currency?: string;
+  total_amount?: string | null;
+  items: ManualReceiptItemInput[];
 }
 
 export type ExclusionReason = "receipt" | "item" | "product" | null;
@@ -324,7 +347,8 @@ export type McpScope =
   | "cartalytix:read"
   | "cartalytix:categories:write"
   | "cartalytix:calculator"
-  | "cartalytix:exclusions:write";
+  | "cartalytix:exclusions:write"
+  | "cartalytix:receipts:write";
 
 export interface McpGrant {
   id: string;

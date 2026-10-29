@@ -5,6 +5,7 @@ import type { Receipt } from "../api";
 import AppIcon from "./AppIcon.vue";
 import ExclusionAction from "./ExclusionAction.vue";
 import ExclusionStatus from "./ExclusionStatus.vue";
+import ReceiptSource from "./ReceiptSource.vue";
 import { providerLogos } from "../providerLogos";
 
 const props = defineProps<{ receipts: Receipt[]; sort?: string; filtered?: boolean; manageExclusions?: boolean }>();
@@ -84,7 +85,7 @@ function formatDate(date: string): string {
             <div class="receipt-store">
               <img v-if="providerLogos[receipt.provider]" :src="providerLogos[receipt.provider]" class="receipt-logo" width="28" height="28" alt="" />
               <div>
-                <RouterLink :to="{ name: 'receipt-detail', params: { id: receipt.id } }"><strong>{{ receipt.merchant }}</strong></RouterLink><span class="row-detail">{{ receipt.provider }}</span>
+                <RouterLink :to="{ name: 'receipt-detail', params: { id: receipt.id } }"><strong>{{ receipt.merchant }}</strong></RouterLink><span class="row-detail"><ReceiptSource :provider="receipt.provider" :manual="receipt.is_manual" /></span>
                 <ExclusionStatus v-if="receipt.is_excluded" reason="receipt" />
               </div>
             </div>

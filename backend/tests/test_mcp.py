@@ -78,12 +78,17 @@ TOOLS = {
     "set_receipt_exclusion",
     "set_product_exclusion",
     "set_receipt_item_exclusion",
+    "list_shops",
+    "add_manual_receipts",
+    "delete_manual_receipt",
 }
 EXCLUSION_WRITES = {"set_receipt_exclusion", "set_product_exclusion", "set_receipt_item_exclusion"}
 CATEGORY_WRITES = {"create_category", "update_category", "delete_category", "assign_category_items"}
 CATEGORY_WRITE_SCOPE = "cartalytix:categories:write"
 CALCULATOR_SCOPE = "cartalytix:calculator"
 EXCLUSIONS_SCOPE = "cartalytix:exclusions:write"
+RECEIPTS_SCOPE = "cartalytix:receipts:write"
+RECEIPT_WRITES = {"add_manual_receipts", "delete_manual_receipt"}
 INITIALIZE = {
     "jsonrpc": "2.0",
     "id": 1,
@@ -265,6 +270,7 @@ def test_discovery_metadata(web: TestClient) -> None:
             CATEGORY_WRITE_SCOPE,
             CALCULATOR_SCOPE,
             EXCLUSIONS_SCOPE,
+            RECEIPTS_SCOPE,
         ]
     for path in [
         "/.well-known/oauth-authorization-server/api/v1/oauth",
@@ -283,6 +289,7 @@ def test_discovery_metadata(web: TestClient) -> None:
             CATEGORY_WRITE_SCOPE,
             CALCULATOR_SCOPE,
             EXCLUSIONS_SCOPE,
+            RECEIPTS_SCOPE,
         }
     missing = rpc(web, None)
     assert missing.status_code == 401
@@ -651,14 +658,21 @@ async def test_mcp_tools_over_oauth(mcp_app: FastAPI, engine: Engine, mode: str)
             assert tool.annotations is not None
             writable = tool.name in CATEGORY_WRITES
             excludes = tool.name in EXCLUSION_WRITES
-            assert tool.annotations.read_only_hint is not (writable or excludes)
+            records = tool.name in RECEIPT_WRITES
+            assert tool.annotations.read_only_hint is not (writable or excludes or records)
             assert tool.annotations.destructive_hint is (
-                tool.name in {"delete_category", "assign_category_items"}
+                tool.name in {"delete_category", "assign_category_items", "delete_manual_receipt"}
             )
             assert "user_id" not in str(tool.input_schema)
             optional = {"calculate_items_spending": [CALCULATOR_SCOPE]}.get(
                 tool.name,
-                [CATEGORY_WRITE_SCOPE] if writable else [EXCLUSIONS_SCOPE] if excludes else [],
+                [CATEGORY_WRITE_SCOPE]
+                if writable
+                else [EXCLUSIONS_SCOPE]
+                if excludes
+                else [RECEIPTS_SCOPE]
+                if records
+                else [],
             )
             assert (tool.meta or {}).get("securitySchemes") == [
                 {"type": "oauth2", "scopes": [SCOPE, *optional]}
@@ -1027,6 +1041,38 @@ def test_exclusion_writes_need_their_scope_and_are_reversible(
     assert secret.get("isError") is True
     with Session(engine) as db:
         assert db.scalar(select(Receipt.is_excluded).where(Receipt.id == foreign)) is False
+
+
+def test_manual_receipt_writes_need_their_scope(web: TestClient, engine: Engine) -> None:
+    token = tokens_for(web, OWNER).get("access_token", "")
+    receipt = {
+        "merchant": "Globus",
+        "provider": "globus",
+        "purchased_at": "2026-10-29T10:15:00",
+        "items": [{"name": "Káva", "quantity": "5", "total_amount": "1249.50"}],
+    }
+    denied = call_rpc(web, token, "add_manual_receipts", {"receipts": [receipt]})
+    assert denied.status_code == 403
+    assert f'scope="{SCOPE} {RECEIPTS_SCOPE}"' in denied.headers.get("www-authenticate", "")
+    shops = call_rpc(web, token, "list_shops", {}).json().get("result", {})
+    assert shops.get("structuredContent", {}).get("items", [])[0].get("merchant") == "Lidl"
+    grant = web.get("/api/v1/mcp/grants").json().get("items", [])[0]
+    enabled = web.patch(
+        f"/api/v1/mcp/grants/{grant.get('id')}",
+        json={"scopes": [SCOPE, RECEIPTS_SCOPE]},
+        headers=ORIGIN,
+    )
+    assert enabled.status_code == 200
+    added = call_rpc(web, token, "add_manual_receipts", {"receipts": [receipt]}).json()
+    created = added.get("result", {}).get("structuredContent", {}).get("items", [])[0]
+    assert created.get("is_manual") is True
+    assert created.get("provider") == "globus"
+    with Session(engine) as db:
+        synced = db.scalar(select(Receipt.id).where(Receipt.total_amount == Decimal("100.25")))
+    refused = call_rpc(web, token, "delete_manual_receipt", {"receipt_id": str(synced)}).json()
+    assert "receipt_not_manual" in str(refused.get("result", {}).get("content"))
+    deleted = call_rpc(web, token, "delete_manual_receipt", {"receipt_id": created.get("id")})
+    assert deleted.json().get("result", {}).get("structuredContent") == {"deleted": True}
 
 
 def test_owner_edits_grant_permissions_live(web: TestClient, engine: Engine) -> None:
