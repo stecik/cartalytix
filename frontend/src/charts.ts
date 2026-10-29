@@ -22,7 +22,7 @@ use([
 
 interface ChartTheme {
   chartColors: Record<
-    "green" | "greenHover" | "faded" | "sage" | "muted" | "line" | "paper" |
+    "accent" | "accentHover" | "faded" | "focus" | "textMuted" | "border" | "page" |
     "heatLow" | "area" | "pointer" | "uncategorized", string
   >;
   /** Fixed categorical order; anything past it folds into a neutral "other". */
@@ -41,31 +41,31 @@ export function getChartTheme(): ChartTheme {
     return value;
   }
   const chartColors = {
-    green: color("--green"),
-    greenHover: color("--green-hover"),
+    accent: color("--accent"),
+    accentHover: color("--accent-hover"),
     faded: color("--chart-muted"),
-    sage: color("--focus"),
-    muted: color("--muted"),
-    line: color("--line"),
-    paper: color("--paper"),
-    heatLow: color("--surface-search-hover"),
-    area: color("--shadow-green-06"),
-    pointer: color("--shadow-green-05"),
+    focus: color("--focus"),
+    textMuted: color("--text-muted"),
+    border: color("--border"),
+    page: color("--bg-page"),
+    heatLow: color("--bg-subtle"),
+    area: color("--chart-area"),
+    pointer: color("--chart-pointer"),
     uncategorized: color("--chart-uncategorized"),
   };
   return {
     chartColors,
     categoryColors: [1, 2, 3, 4, 5, 6, 7, 8].map((slot) => color(`--chart-category-${slot}`)),
     tooltipStyle: {
-      backgroundColor: color("--surface-input"),
-      borderColor: chartColors.line,
+      backgroundColor: color("--bg-raised"),
+      borderColor: chartColors.border,
       borderWidth: 1,
       padding: [10, 14],
       textStyle: { color: color("--text"), fontFamily: "DM Sans Variable, sans-serif", fontSize: 12 },
-      extraCssText: `box-shadow: 0 8px 24px ${color("--shadow-green-12")}; border-radius: 6px;`,
+      extraCssText: `box-shadow: 0 8px 24px ${color("--shadow-accent")}; border-radius: 6px;`,
     },
     axisLabelStyle: {
-      color: chartColors.muted,
+      color: chartColors.textMuted,
       fontFamily: "DM Sans Variable, sans-serif",
       fontSize: 11,
     },

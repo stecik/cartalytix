@@ -5,6 +5,7 @@ import { useI18n } from "vue-i18n";
 import { request } from "../api";
 import type { CategoryPage } from "../api";
 import AppIcon from "./AppIcon.vue";
+import AppButton from "./AppButton.vue";
 
 const props = defineProps<{ categoryId?: string | null; display: string; label: string; disabled?: boolean }>();
 const emit = defineEmits<{ choose: [categoryId: string | null] }>();
@@ -112,7 +113,7 @@ onBeforeUnmount(() => {
       <div v-if="open" ref="panel" class="category-picker-panel" :style="position" @keydown="onPanelKey" @focusout="onFocusOut">
         <input ref="input" v-model="search" role="combobox" type="search" maxlength="100" aria-autocomplete="list" :aria-expanded="open" :aria-controls="id + '-list'" :aria-activedescendant="!loading && !categories.isError.value && options.length ? id + '-option-' + active : undefined" :aria-label="t('searchCategories')" :placeholder="t('searchCategories')" @keydown="onKey" />
         <p v-if="loading" class="field-note" role="status">{{ t("loading") }}</p>
-        <div v-else-if="categories.isError.value" role="alert"><p>{{ t("categoryLoadFailed") }}</p><button type="button" class="text-button" @click="categories.refetch()">{{ t("retry") }}</button></div>
+        <div v-else-if="categories.isError.value" role="alert"><p>{{ t("categoryLoadFailed") }}</p><AppButton type="button" variant="text" @click="categories.refetch()">{{ t("retry") }}</AppButton></div>
         <ul :id="id + '-list'" role="listbox" :aria-label="label" :aria-busy="loading">
           <template v-if="!loading && !categories.isError.value">
             <li v-for="(option, index) in options" :id="id + '-option-' + index" :key="option.id ?? 'remove'" role="option" :aria-selected="categoryId !== undefined && option.id === categoryId" :class="{ active: active === index }" @pointermove="active = index" @mousedown.prevent @click="choose(index)">{{ option.name }}</li>
@@ -120,9 +121,9 @@ onBeforeUnmount(() => {
         </ul>
         <p v-if="!loading && !categories.isError.value && !categories.data.value?.items.length" class="field-note">{{ t("noMatchingCategories") }}</p>
         <div v-if="offset > 0 || (categories.data.value?.total ?? 0) > 10" class="category-picker-pages">
-          <button type="button" class="text-button" :disabled="offset === 0 || loading" @click="offset = Math.max(0, offset - 10)">{{ t("previous") }}</button>
+          <AppButton type="button" variant="text" :disabled="offset === 0 || loading" @click="offset = Math.max(0, offset - 10)">{{ t("previous") }}</AppButton>
           <span>{{ t("categoryPage", { page: offset / 10 + 1 }) }}</span>
-          <button type="button" class="text-button" :disabled="offset + 10 >= (categories.data.value?.total ?? 0) || loading" @click="offset += 10">{{ t("next") }}</button>
+          <AppButton type="button" variant="text" :disabled="offset + 10 >= (categories.data.value?.total ?? 0) || loading" @click="offset += 10">{{ t("next") }}</AppButton>
         </div>
       </div>
     </Teleport>
@@ -131,17 +132,17 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .category-picker { display: inline-block; max-width: 100%; }
-.category-picker-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; max-width: 220px; min-height: 34px; padding: 0 11px; border: 1px solid var(--border-select-compact); border-radius: 999px; background: var(--surface-input); color: var(--green); font-size: 12px; text-align: left; }
+.category-picker-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; max-width: 220px; min-height: 34px; padding: 0 11px; border: 1px solid var(--border-overlay); border-radius: 999px; background: var(--bg-raised); color: var(--accent); font-size: 12px; text-align: left; }
 .category-picker-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.category-picker-trigger svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--muted); }
-.category-picker-trigger:hover { border-color: var(--border-select-hover); }
-.category-picker-trigger:focus-visible, .category-picker-trigger[aria-expanded="true"] { outline: 0; border-color: var(--border-input-focus); box-shadow: 0 0 0 2px var(--ring-input-focus); }
-.category-picker-panel { position: fixed; z-index: 50; overflow: auto; padding: 8px; border: 1px solid var(--border-select-list); border-radius: 10px; background: var(--surface-input); box-shadow: 0 12px 32px var(--shadow-select); }
+.category-picker-trigger svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--text-muted); }
+.category-picker-trigger:hover { border-color: var(--control-hover); }
+.category-picker-trigger:focus-visible, .category-picker-trigger[aria-expanded="true"] { outline: 0; border-color: var(--focus-strong); box-shadow: 0 0 0 2px var(--focus-ring); }
+.category-picker-panel { position: fixed; z-index: 50; overflow: auto; padding: 8px; border: 1px solid var(--border-overlay); border-radius: 10px; background: var(--bg-raised); box-shadow: 0 12px 32px var(--shadow-overlay); }
 .category-picker-panel input { width: 100%; min-height: 38px; font-size: 13px; }
 .category-picker-panel ul { list-style: none; padding: 0; margin: 6px 0; }
-.category-picker-panel li { padding: 9px 10px; border-radius: 6px; font-size: 13px; color: var(--green); overflow-wrap: anywhere; cursor: pointer; }
-.category-picker-panel li.active { background: var(--surface-toggle); }
+.category-picker-panel li { padding: 9px 10px; border-radius: 6px; font-size: 13px; color: var(--accent); overflow-wrap: anywhere; cursor: pointer; }
+.category-picker-panel li.active { background: var(--bg-subtle); }
 .category-picker-panel li[aria-selected="true"] { font-weight: 600; }
 .category-picker-panel .field-note { padding: 0 8px; font-size: 12px; }
-.category-picker-pages { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 4px 2px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+.category-picker-pages { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 4px 2px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
 </style>

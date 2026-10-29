@@ -42,7 +42,7 @@ const option = computed(() => {
     },
     xAxis: {
       type: "time",
-      axisLine: { lineStyle: { color: chartColors.line } },
+      axisLine: { lineStyle: { color: chartColors.border } },
       axisTick: { show: false },
       axisLabel: { ...axisLabelStyle, hideOverlap: true },
       splitLine: { show: false },
@@ -51,7 +51,7 @@ const option = computed(() => {
       type: "value",
       scale: true,
       splitNumber: 4,
-      splitLine: { lineStyle: { color: chartColors.line, type: "dashed" } },
+      splitLine: { lineStyle: { color: chartColors.border, type: "dashed" } },
       axisLabel: {
         ...axisLabelStyle,
         formatter: (value: number) => formatMoney(value, props.currency, locale.value),
@@ -63,8 +63,8 @@ const option = computed(() => {
         step: "end",
         symbol: "circle",
         symbolSize: 6,
-        lineStyle: { width: 2, color: chartColors.green },
-        itemStyle: { color: chartColors.green, borderColor: chartColors.paper, borderWidth: 2 },
+        lineStyle: { width: 2, color: chartColors.accent },
+        itemStyle: { color: chartColors.accent, borderColor: chartColors.page, borderWidth: 2 },
         areaStyle: { color: chartColors.area },
         data: stepPoints(points),
       },

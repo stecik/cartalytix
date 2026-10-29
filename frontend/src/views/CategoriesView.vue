@@ -8,7 +8,10 @@ import type { Category, CategoryAssignmentResponse, CategoryAssignmentResult, Ca
 import AppDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
 import CategoryPicker from "../components/CategoryPicker.vue";
+import IconButton from "../components/IconButton.vue";
 import QueryState from "../components/QueryState.vue";
+import AppButton from "../components/AppButton.vue";
+import PageHeader from "../components/PageHeader.vue";
 
 interface UndoAssignment { items: CategoryItemSnapshot[]; expected_category_id: string | null }
 const { t } = useI18n();
@@ -171,18 +174,14 @@ async function undoAssignment(): Promise<void> {
 
 <template>
   <div class="view-content categories-workspace">
-    <header class="page-heading">
-      <div class="eyebrow">{{ t("workspace") }}</div>
-      <h1>{{ t("categories") }}</h1>
-      <p>{{ t("categoriesIntro") }}</p>
-    </header>
+    <PageHeader :eyebrow="t('workspace')" :title="t('categories')" :intro="t('categoriesIntro')" />
     <div class="category-layout">
       <aside class="category-manager" :aria-label="t('manageCategories')">
         <div class="section-heading">
           <h2>{{ t("manageCategories") }}</h2>
-          <button class="text-button" data-action="create-category" :disabled="busy" @click="editCategory(null)"><AppIcon name="plus" />{{ t("createCategory") }}</button>
+          <AppButton variant="text" data-action="create-category" :disabled="busy" @click="editCategory(null)"><AppIcon name="plus" />{{ t("createCategory") }}</AppButton>
         </div>
-        <button type="button" class="button secondary category-browser-toggle" data-action="browse-categories" aria-controls="category-browser" :aria-expanded="categoryBrowserOpen" @click="categoryBrowserOpen = !categoryBrowserOpen"><span>{{ t("browseCategories") }}</span><span class="category-browser-current">{{ activeCategoryLabel }}</span><AppIcon name="chevron" /></button>
+        <AppButton type="button" class="category-browser-toggle" data-action="browse-categories" aria-controls="category-browser" :aria-expanded="categoryBrowserOpen" @click="categoryBrowserOpen = !categoryBrowserOpen"><span>{{ t("browseCategories") }}</span><span class="category-browser-current">{{ activeCategoryLabel }}</span><AppIcon name="chevron" /></AppButton>
         <div id="category-browser" class="category-browser" :class="{ expanded: categoryBrowserOpen }">
         <label class="category-search"><span>{{ t("searchCategories") }}</span><input v-model="categorySearch" data-search="categories" type="search" maxlength="100" :placeholder="t('searchCategories')" :disabled="busy" /></label>
         <nav class="category-navigation" :aria-label="t('categoryFilter')">
@@ -194,15 +193,15 @@ async function undoAssignment(): Promise<void> {
             <li v-for="category in categories.data.value.items" :key="category.id">
               <button class="category-label" type="button" :data-filter="category.id" :aria-current="filter === category.id ? 'true' : undefined" :disabled="busy" @click="chooseFilter(category.id, category.name)"><span>{{ category.name }}</span><span class="category-count">{{ t("categoryProducts", category.item_count) }}</span></button>
               <div class="category-actions">
-                <button type="button" class="text-button" data-action="rename-category" :disabled="busy" :aria-label="t('renameCategoryNamed', { name: category.name })" @click="editCategory(category)">{{ t("renameCategory") }}</button>
-                <button type="button" class="text-button" data-action="delete-category" :disabled="busy" :aria-label="t('deleteCategoryNamed', { name: category.name })" @click="deleteCategory(category)"><AppIcon name="trash" /></button>
+                <AppButton type="button" variant="text" data-action="rename-category" :disabled="busy" :aria-label="t('renameCategoryNamed', { name: category.name })" @click="editCategory(category)">{{ t("renameCategory") }}</AppButton>
+                <IconButton tone="danger" data-action="delete-category" :disabled="busy" :label="t('deleteCategoryNamed', { name: category.name })" @click="deleteCategory(category)"><AppIcon name="trash" /></IconButton>
               </div>
             </li>
           </ul>
           <p v-else class="field-note">{{ t(categoryQuery ? "noMatchingCategories" : "noCategories") }}</p>
           <div v-if="categoryOffset > 0 || (categories.data.value?.total ?? 0) > 10" class="pagination category-pagination">
             <span>{{ t("categoryPage", { page: categoryOffset / 10 + 1 }) }}</span>
-            <div><button class="text-button" :disabled="categoryOffset === 0 || categories.isFetching.value || busy" @click="categoryOffset = Math.max(0, categoryOffset - 10)">{{ t("previous") }}</button><button class="text-button" data-action="next-categories" :disabled="categoryOffset + 10 >= (categories.data.value?.total ?? 0) || categories.isFetching.value || busy" @click="categoryOffset += 10">{{ t("next") }}</button></div>
+            <div><AppButton variant="text" :disabled="categoryOffset === 0 || categories.isFetching.value || busy" @click="categoryOffset = Math.max(0, categoryOffset - 10)">{{ t("previous") }}</AppButton><AppButton variant="text" data-action="next-categories" :disabled="categoryOffset + 10 >= (categories.data.value?.total ?? 0) || categories.isFetching.value || busy" @click="categoryOffset += 10">{{ t("next") }}</AppButton></div>
           </div>
         </QueryState>
         </div>
@@ -214,12 +213,12 @@ async function undoAssignment(): Promise<void> {
         <div v-if="selectedItems.length" class="category-batch" role="region" :aria-label="t('targetCategory')">
           <span role="status">{{ t("selectedProducts", selectedItems.length) }}</span>
           <CategoryPicker :label="t('targetCategory')" :display="t('chooseCategory')" :disabled="productsBusy" @choose="assign(selectedItems, $event)" />
-          <button type="button" class="text-button" :disabled="busy" @click="selected = []">{{ t("clearSelection") }}</button>
+          <AppButton type="button" variant="text" :disabled="busy" @click="selected = []">{{ t("clearSelection") }}</AppButton>
         </div>
         <div v-if="status || undo || error" class="category-feedback">
           <p v-if="error" class="form-alert" role="alert">{{ error }}</p>
           <p v-if="status" role="status" class="field-note">{{ status }}</p>
-          <button v-if="undo" type="button" class="text-button" data-action="undo-assignment" :disabled="busy" @click="undoAssignment">{{ t("undoCategoryChange") }}</button>
+          <AppButton v-if="undo" type="button" variant="text" data-action="undo-assignment" :disabled="busy" @click="undoAssignment">{{ t("undoCategoryChange") }}</AppButton>
         </div>
         <QueryState :pending="items.isPending.value" :failed="items.isError.value" @retry="items.refetch()">
           <div v-if="items.data.value?.items.length" class="table-wrap">
@@ -238,7 +237,7 @@ async function undoAssignment(): Promise<void> {
 <div class="category-inline">
                   <span v-if="selectedItems.length">{{ item.category_name ?? t("uncategorized") }}</span>
                   <CategoryPicker v-else :category-id="item.category_id" :display="item.category_name ?? t('uncategorized')" :label="t('changeProductCategory', { name: item.name, account: item.connection_name, currency: item.currency })" :disabled="productsBusy" @choose="assign([item], $event)" />
-                  <button v-if="item.category_id && !selectedItems.length" type="button" class="text-button category-remove" data-action="remove-item-category" :aria-label="t('removeProductCategory', { name: item.name, account: item.connection_name, currency: item.currency })" :disabled="productsBusy" @click="assign([item], null)">×</button>
+                  <IconButton v-if="item.category_id && !selectedItems.length" class="category-remove" data-action="remove-item-category" :label="t('removeProductCategory', { name: item.name, account: item.connection_name, currency: item.currency })" :disabled="productsBusy" @click="assign([item], null)">×</IconButton>
                 </div>
 </td>
                 <td class="category-wide">{{ item.receipt_count }}</td><td class="category-amount category-wide">{{ item.currency }} {{ item.total_amount }}</td>
@@ -249,7 +248,7 @@ async function undoAssignment(): Promise<void> {
           <div v-else class="empty-state"><h3>{{ t("noMatchingItems") }}</h3></div>
           <div v-if="cursors.length > 1 || items.data.value?.next_cursor" class="pagination">
             <span>{{ t("categoryPage", { page: cursors.length }) }}</span>
-            <div><button class="button secondary" :disabled="cursors.length === 1 || productsBusy" @click="cursors = cursors.slice(0, -1)">{{ t("previous") }}</button><button class="button secondary" data-action="next-page" :disabled="!items.data.value?.next_cursor || productsBusy" @click="nextPage">{{ t("next") }}</button></div>
+            <div><AppButton :disabled="cursors.length === 1 || productsBusy" @click="cursors = cursors.slice(0, -1)">{{ t("previous") }}</AppButton><AppButton data-action="next-page" :disabled="!items.data.value?.next_cursor || productsBusy" @click="nextPage">{{ t("next") }}</AppButton></div>
           </div>
         </QueryState>
       </section>
@@ -259,13 +258,13 @@ async function undoAssignment(): Promise<void> {
         <label for="category-name">{{ t("categoryName") }}</label>
         <input id="category-name" v-model="editing.name" type="text" maxlength="100" required autofocus :disabled="busy" />
         <p v-if="save.isError.value" class="form-alert" role="alert">{{ t("categorySaveFailed") }}</p>
-        <div class="dialog-actions"><button class="button secondary" type="button" data-action="cancel" :disabled="busy" @click="editing = null">{{ t("cancel") }}</button><button class="button primary" type="submit" :disabled="!editing.name.trim() || busy">{{ t("save") }}</button></div>
+        <div class="dialog-actions"><AppButton type="button" data-action="cancel" :disabled="busy" @click="editing = null">{{ t("cancel") }}</AppButton><AppButton variant="primary" type="submit" :disabled="!editing.name.trim() || busy">{{ t("save") }}</AppButton></div>
       </form>
     </AppDialog>
     <AppDialog v-if="deleting" :title="t('deleteCategory')" :busy="busy" @close="deleting = null">
       <p>{{ t("deleteCategoryHelp", { name: deleting.name }) }}</p>
       <p v-if="remove.isError.value" class="form-alert" role="alert">{{ t("categoryUpdateFailed") }}</p>
-      <div class="dialog-actions"><button class="button secondary" type="button" data-action="cancel" :disabled="busy" @click="deleting = null">{{ t("cancel") }}</button><button class="button danger" type="button" :disabled="busy" @click="confirmDelete">{{ t("deleteCategory") }}</button></div>
+      <div class="dialog-actions"><AppButton type="button" data-action="cancel" :disabled="busy" @click="deleting = null">{{ t("cancel") }}</AppButton><AppButton variant="danger" type="button" :disabled="busy" @click="confirmDelete">{{ t("deleteCategory") }}</AppButton></div>
     </AppDialog>
   </div>
 </template>
@@ -273,49 +272,46 @@ async function undoAssignment(): Promise<void> {
 <style scoped>
 .categories-workspace { max-width: 1440px; }
 .category-layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 32px; align-items: start; }
-.category-manager { padding-right: 24px; border-right: 1px solid var(--line); }
+.category-manager { padding-right: 24px; border-right: 1px solid var(--border); }
 .category-manager .section-heading { align-items: start; flex-direction: column; gap: 10px; margin-bottom: 18px; }
 .category-manager .section-heading h2 { margin: 0; }
-.category-manager .text-button svg { width: 15px; height: 15px; }
 .category-browser-toggle { display: none; }
-.category-search { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
-.category-search input { height: 40px; width: 100%; }
-.category-navigation { display: grid; margin-top: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.category-search { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--text-muted); }
+.category-search input { width: 100%; }
+.category-navigation { display: grid; margin-top: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
 .category-navigation button, .category-label { border: 0; border-radius: 6px; background: transparent; color: var(--text); text-align: left; padding: 10px; font-size: 13px; }
-.category-navigation button:hover, .category-label:hover { background: var(--surface-toggle); }
-.category-navigation [aria-current], .category-label[aria-current] { background: var(--surface-toggle); color: var(--green); font-weight: 600; }
+.category-navigation button:hover, .category-label:hover { background: var(--bg-subtle); }
+.category-navigation [aria-current], .category-label[aria-current] { background: var(--bg-subtle); color: var(--accent); font-weight: 600; }
 .category-list { list-style: none; padding: 0; margin: 8px 0; }
 .category-list li { display: flex; align-items: center; gap: 6px; }
 .category-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .category-label > span { display: block; }
-.category-count { margin-top: 3px; color: var(--muted); font-size: 11px; font-weight: 400; }
+.category-count { margin-top: 3px; color: var(--text-muted); font-size: 11px; font-weight: 400; }
 .category-actions { display: flex; align-items: center; gap: 10px; }
-.category-actions .text-button { font-size: 11px; padding: 8px 0; }
 .category-pagination { flex-wrap: wrap; gap: 12px; font-size: 11px; }
 .category-pagination > div { display: flex; gap: 14px; }
 .category-products { min-width: 0; }
 .category-products h2 { margin-top: 0; }
 .product-search { margin: 20px 0 10px; }
 .category-assignment-help { font-size: 12px; line-height: 1.6; }
-.category-batch { position: sticky; top: 12px; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 14px 16px; margin: 20px 0; border: 1px solid var(--border-select-compact); border-radius: 10px; background: var(--surface-input); box-shadow: 0 4px 16px var(--shadow-select); }
+.category-batch { position: sticky; top: 12px; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 14px 16px; margin: 20px 0; border: 1px solid var(--border-overlay); border-radius: 10px; background: var(--bg-raised); box-shadow: 0 4px 16px var(--shadow-overlay); }
 .category-batch > span { margin-right: auto; font-size: 13px; }
 .category-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 14px 0; }
 .category-feedback p { margin: 0; }
 .category-feedback .form-alert { width: 100%; }
 .category-checkbox { width: 38px; }
-.category-checkbox input { width: 17px; height: 17px; accent-color: var(--green); }
+.category-checkbox input { width: 17px; height: 17px; accent-color: var(--accent); }
 .category-product-name { white-space: normal; min-width: 120px; overflow-wrap: anywhere; }
 .category-product-context { display: none; }
 .category-inline { display: flex; align-items: center; gap: 6px; }
-.category-remove { font-size: 20px; min-width: 30px; min-height: 34px; }
 .category-amount { white-space: nowrap; font-variant-numeric: tabular-nums; }
 @media (max-width: 900px) {
   .category-layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }
-  .category-manager { padding: 0 0 22px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .category-manager { padding: 0 0 22px; border-right: 0; border-bottom: 1px solid var(--border); }
   .category-manager .section-heading { flex-direction: row; justify-content: space-between; }
   .category-browser-toggle { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; }
   .category-browser-toggle > span:first-child { flex-shrink: 0; }
-  .category-browser-current { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--muted); }
+  .category-browser-current { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--text-muted); }
   .category-browser-toggle svg { width: 14px; height: 14px; flex-shrink: 0; }
   .category-browser-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
   .category-browser:not(.expanded) { display: none; }
@@ -332,7 +328,7 @@ async function undoAssignment(): Promise<void> {
   .category-products th, .category-products td { padding: 14px 6px; }
   .category-products .category-checkbox { width: 30px; padding-left: 0; }
   .category-product-name { min-width: 0; }
-  .category-product-context { display: block; margin-top: 5px; font-size: 10px; color: var(--muted); }
+  .category-product-context { display: block; margin-top: 5px; font-size: 10px; color: var(--text-muted); }
   .category-cell { width: 44%; }
   .category-inline { min-width: 0; }
   .category-inline > span { white-space: normal; overflow-wrap: anywhere; }

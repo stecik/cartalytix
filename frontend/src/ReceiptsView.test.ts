@@ -70,7 +70,7 @@ describe("receipt filters", () => {
     const fetcher = stubApi();
     const { router, wrapper, client } = await mountAt("/receipts?exclusion=excluded&offset=30");
     expect(receiptUrls(fetcher).at(-1)?.searchParams.get("exclusion")).toBe("excluded");
-    await wrapper.get('.exclusion-filter input[value="all"]').setValue(true);
+    await wrapper.get('.exclusion-filter [data-tab="all"]').trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.query).toEqual({ exclusion: "all" });
     expect(receiptUrls(fetcher).at(-1)?.searchParams.get("exclusion")).toBe("all");
@@ -91,7 +91,7 @@ describe("receipt filters", () => {
     expect(params?.get("sort")).toBe("total_amount_asc");
     expect(params?.get("offset")).toBe("30");
     expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe("milk");
-    const account = wrapper.get(".account-select button");
+    const account = wrapper.get('button[aria-label="Account"]');
     expect(account.text()).toContain("My Lidl");
     expect(account.find("img").exists()).toBe(true);
     wrapper.unmount(); client.clear();

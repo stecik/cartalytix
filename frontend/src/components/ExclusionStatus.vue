@@ -12,5 +12,5 @@ const labels = { receipt: "excludedByReceipt", item: "excludedByItem", product: 
 </template>
 
 <style scoped>
-.exclusion-status { display: block; color: var(--muted); font-size: 11px; line-height: 1.6; font-weight: 400; }
+.exclusion-status { display: block; color: var(--text-muted); font-size: 11px; line-height: 1.6; font-weight: 400; }
 </style>

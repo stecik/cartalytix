@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
+import AppButton from "./AppButton.vue";
 defineProps<{ pending: boolean; failed: boolean }>();
 defineEmits<{ retry: [] }>();
 const { t } = useI18n();
@@ -11,9 +12,9 @@ const { t } = useI18n();
   </div>
   <div v-else-if="failed" class="query-state error-state" role="alert">
     <p>{{ t("requestFailed") }}</p>
-    <button class="button secondary" @click="$emit('retry')">
+    <AppButton @click="$emit('retry')">
       {{ t("retry") }}
-    </button>
+    </AppButton>
   </div>
   <slot v-else />
 </template>

@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ApiError, request } from "../api";
 import type { Connection } from "../api";
+import AppButton from "./AppButton.vue";
 
 const props = defineProps<{ connectionId: string }>();
 const emit = defineEmits<{ connected: [connection: Connection]; cancel: [] }>();
@@ -76,8 +77,8 @@ onBeforeUnmount(() => {
     </template>
     <p v-if="errorKey" class="form-alert" role="alert">{{ t(errorKey) }}</p>
     <div class="connection-actions">
-      <button type="submit" class="button primary" :disabled="busy">{{ t(busy ? "lidlSigningIn" : flowId ? "lidlVerifyCode" : "boltSendCode") }}</button>
-      <button type="button" class="button secondary" :disabled="busy" @click="emit('cancel')">{{ t("cancel") }}</button>
+      <AppButton type="submit" variant="primary" :disabled="busy">{{ t(busy ? "lidlSigningIn" : flowId ? "lidlVerifyCode" : "boltSendCode") }}</AppButton>
+      <AppButton type="button" :disabled="busy" @click="emit('cancel')">{{ t("cancel") }}</AppButton>
     </div>
   </form>
 </template>

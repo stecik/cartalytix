@@ -5,6 +5,7 @@ import { ApiError } from "../api";
 import AppDialog from "./AppDialog.vue";
 import AppSelect from "./AppSelect.vue";
 import AppSwitch from "./AppSwitch.vue";
+import AppButton from "./AppButton.vue";
 
 const emit = defineEmits<{ close: [] }>();
 const { t } = useI18n();
@@ -65,8 +66,8 @@ async function download(): Promise<void> {
       <p v-if="failed" role="alert" class="form-alert">{{ t("diagnosticsFailed") }}</p>
       <p v-if="busy" role="status" class="field-note">{{ t("diagnosticsPreparing") }}</p>
       <div class="dialog-actions">
-        <button class="button secondary" data-action="cancel" type="button" :disabled="busy" @click="emit('close')">{{ t("cancel") }}</button>
-        <button class="button primary" type="submit" :disabled="busy || (!imports && !technical)">{{ t(busy ? "diagnosticsPreparing" : "diagnosticsDownload") }}</button>
+        <AppButton data-action="cancel" type="button" :disabled="busy" @click="emit('close')">{{ t("cancel") }}</AppButton>
+        <AppButton variant="primary" type="submit" :disabled="busy || (!imports && !technical)">{{ t(busy ? "diagnosticsPreparing" : "diagnosticsDownload") }}</AppButton>
       </div>
     </form>
   </AppDialog>

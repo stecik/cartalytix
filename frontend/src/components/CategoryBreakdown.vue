@@ -123,7 +123,7 @@ function donut(measure: "purchases" | "amount") {
         labelLine: { show: false },
         cursor: "pointer",
         // The surface-colored border is the 2px gap between neighboring segments.
-        itemStyle: { borderColor: chartColors.paper, borderWidth: 2, borderRadius: 4 },
+        itemStyle: { borderColor: chartColors.page, borderWidth: 2, borderRadius: 4 },
         emphasis: { scale: true, scaleSize: 4 },
         data: ranked.value.slices.map((slice) => ({
           name: slice.label,
@@ -192,7 +192,7 @@ function openSlice(event: { dataIndex: number }): void {
 .category-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .large .category-charts { grid-template-columns: 1fr; gap: 32px; position: sticky; top: 24px; }
 .category-chart { margin: 0; min-width: 0; }
-.category-chart figcaption { margin-bottom: 8px; font-size: 12px; color: var(--muted); text-align: center; }
+.category-chart figcaption { margin-bottom: 8px; font-size: 12px; color: var(--text-muted); text-align: center; }
 .donut { position: relative; }
 .donut-chart { height: 230px; }
 .large .donut-chart { height: 340px; }
@@ -200,7 +200,7 @@ function openSlice(event: { dataIndex: number }): void {
 .donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; text-align: center; }
 .donut-center strong { font-family: "Manrope Variable", sans-serif; font-size: 18px; font-weight: 600; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
 .large .donut-center strong { font-size: 24px; }
-.donut-center span { margin-top: 2px; font-size: 11px; color: var(--muted); }
+.donut-center span { margin-top: 2px; font-size: 11px; color: var(--text-muted); }
 .category-table { width: 100%; }
 .category-table th[scope="row"] { font-weight: 500; color: var(--text); white-space: normal; }
 .category-table td,
@@ -210,9 +210,9 @@ function openSlice(event: { dataIndex: number }): void {
 .category-table td:last-child,
 .category-table th:last-child { padding-right: 0; }
 .category-table thead th { font-size: 11px; }
-.category-table small { margin-left: 4px; font-size: 11px; color: var(--muted); }
+.category-table small { margin-left: 4px; font-size: 11px; color: var(--text-muted); }
 .category-link { color: inherit; }
-.category-link:hover { color: var(--green); text-decoration: underline; }
+.category-link:hover { color: var(--accent); text-decoration: underline; }
 .amount { text-align: right; font-variant-numeric: tabular-nums; }
 .strong { font-weight: 600; }
 .swatch { display: inline-block; width: 10px; height: 10px; margin-right: 10px; border-radius: 3px; vertical-align: -1px; }

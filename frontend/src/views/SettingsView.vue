@@ -8,6 +8,7 @@ import { sessionOptions } from "../auth";
 import { useUserSettings } from "../settings";
 import { pwaInstallKey } from "../pwaInstall";
 import { PRESET_PERIODS } from "../stats";
+import { SYNC_INTERVALS, syncIntervalOptions } from "../syncIntervals";
 import { isThemePreference, themePreference } from "../theme";
 import AppDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
@@ -15,7 +16,10 @@ import AppSelect from "../components/AppSelect.vue";
 import DiagnosticLogsDialog from "../components/DiagnosticLogsDialog.vue";
 import CredentialsDialog from "../components/CredentialsDialog.vue";
 import McpScopeSwitches from "../components/McpScopeSwitches.vue";
+import PageHeader from "../components/PageHeader.vue";
+import AppCard from "../components/AppCard.vue";
 import SegmentedToggle from "../components/SegmentedToggle.vue";
+import AppButton from "../components/AppButton.vue";
 
 const { t, locale } = useI18n();
 const queryClient = useQueryClient();
@@ -106,7 +110,6 @@ const categorySlices = computed({
   },
 });
 // "manual" stands for null, which AppSelect cannot carry as a value.
-const SYNC_INTERVALS = [60, 360, 1440] as const;
 const defaultSync = computed({
   get: (): string => {
     const value = session.data.value?.default_sync_interval_minutes;
@@ -118,19 +121,10 @@ const defaultSync = computed({
     if (interval) settings.mutate({ default_sync_interval_minutes: interval });
   },
 });
-const syncOptions = computed(() => {
-  const current = session.data.value?.default_sync_interval_minutes;
-  const custom = current && !SYNC_INTERVALS.some((option) => option === current)
-    ? [{ value: String(current), label: t("everyMinutes", { count: current }) }]
-    : [];
-  return [
-    { value: "60", label: t("everyHour") },
-    { value: "360", label: t("everySixHours") },
-    { value: "1440", label: t("everyDay") },
-    ...custom,
-    { value: "manual", label: t("manualOnly") },
-  ];
-});
+const syncOptions = computed(() => [
+  ...syncIntervalOptions(t, session.data.value?.default_sync_interval_minutes),
+  { value: "manual", label: t("manualOnly") },
+]);
 const applyingSync = ref(false);
 const applySync = useMutation({
   mutationFn: () => request<void>("/connections/apply-default-sync", { method: "POST" }),
@@ -151,16 +145,13 @@ const views = computed(() => [
 
 <template>
   <div class="view-content settings-workspace">
-    <header class="settings-heading">
-      <h1>{{ t("settings") }}</h1>
-      <p>{{ t("settingsIntro") }}</p>
-    </header>
+    <PageHeader :title="t('settings')" :intro="t('settingsIntro')" />
     <p v-if="settings.isError.value" role="alert" class="form-alert settings-error">{{ t("settingsSaveFailed") }}</p>
-    <section class="settings-section" aria-labelledby="account-preferences-heading">
-      <header class="settings-section-heading">
+    <AppCard class="settings-section" aria-labelledby="account-preferences-heading">
+      <template #header>
         <h2 id="account-preferences-heading">{{ t("accountPreferences") }}</h2>
         <span class="settings-save-note" :class="{ saved: settings.isSuccess.value }" aria-live="polite">{{ t(settings.isPending.value ? "saving" : settings.isSuccess.value ? "settingsSaved" : "settingsAutoSave") }}</span>
-      </header>
+      </template>
       <div class="settings-row">
         <div class="settings-copy">
           <h3>{{ t("appearance") }}</h3>
@@ -176,7 +167,7 @@ const views = computed(() => [
           <p id="receipt-display-hint">{{ t(receiptView === "rendered" ? "receiptViewRenderedHint" : "receiptViewDetailedHint") }}</p>
         </div>
         <div class="settings-control">
-          <SegmentedToggle v-model="receiptView" class="settings-receipt-toggle" :options="views" :label="t('receiptDisplay')" aria-describedby="receipt-display-hint" />
+          <SegmentedToggle v-model="receiptView" block :options="views" :label="t('receiptDisplay')" aria-describedby="receipt-display-hint" />
         </div>
       </div>
       <div v-if="!isAdmin" class="settings-row">
@@ -205,7 +196,7 @@ const views = computed(() => [
         </div>
         <div class="settings-control settings-sync-control">
           <AppSelect v-model="defaultSync" class="settings-select" :options="syncOptions" :label="t('defaultSync')" />
-          <button type="button" class="button secondary settings-install" data-action="apply-default-sync" :disabled="settings.isPending.value" @click="applySync.reset(); applyingSync = true">{{ t("applyDefaultSync") }}</button>
+          <AppButton type="button" class="settings-install" data-action="apply-default-sync" :disabled="settings.isPending.value" @click="applySync.reset(); applyingSync = true">{{ t("applyDefaultSync") }}</AppButton>
         </div>
       </div>
       <div class="settings-row">
@@ -217,20 +208,20 @@ const views = computed(() => [
           <AppSelect v-model="language" class="settings-select" :options="languages" :label="t('language')" />
         </div>
       </div>
-    </section>
-    <section class="settings-section" aria-labelledby="application-settings-heading">
-      <header class="settings-section-heading">
+    </AppCard>
+    <AppCard class="settings-section" aria-labelledby="application-settings-heading">
+      <template #header>
         <h2 id="application-settings-heading">{{ t("application") }}</h2>
         <span class="settings-save-note">{{ t("thisDevice") }}</span>
-      </header>
+      </template>
       <div class="settings-row">
         <div class="settings-copy">
           <h3>{{ t("homeScreenAccess") }}</h3>
           <p>{{ t("installDescription") }}</p>
         </div>
-        <button type="button" class="button secondary settings-install" @click="installApp">
+        <AppButton type="button" class="settings-install" @click="installApp">
           <AppIcon name="download" />{{ t("install") }}
-        </button>
+        </AppButton>
       </div>
       <div v-if="showInstallHelp" class="settings-install-help">
         <p role="status">{{ t("installHelp") }}</p>
@@ -240,27 +231,27 @@ const views = computed(() => [
           <h3>{{ t("diagnosticsDownload") }}</h3>
           <p>{{ t("diagnosticsHint") }}</p>
         </div>
-        <button type="button" class="button secondary settings-install" data-action="download-logs" @click="downloadingLogs = true"><AppIcon name="download" />{{ t("diagnosticsDownload") }}</button>
+        <AppButton type="button" class="settings-install" data-action="download-logs" @click="downloadingLogs = true"><AppIcon name="download" />{{ t("diagnosticsDownload") }}</AppButton>
       </div>
-    </section>
-    <section v-if="session.data.value" class="settings-section" aria-labelledby="account-security-heading">
-      <header class="settings-section-heading">
+    </AppCard>
+    <AppCard v-if="session.data.value" class="settings-section" aria-labelledby="account-security-heading">
+      <template #header>
         <h2 id="account-security-heading">{{ t("accountSecurity") }}</h2>
         <span class="settings-save-note" :class="{ saved: credentialsSaved }" aria-live="polite">{{ credentialsSaved ? t("signInDetailsSaved") : "" }}</span>
-      </header>
+      </template>
       <div class="settings-row">
         <div class="settings-copy">
           <h3>{{ t("signInDetails") }}</h3>
           <p>{{ t("signInDetailsHint", { email: session.data.value.email }) }}</p>
         </div>
-        <button type="button" class="button secondary settings-install" data-action="change-credentials" @click="credentialsSaved = false; editingCredentials = true">{{ t("changeSignInDetails") }}</button>
+        <AppButton type="button" class="settings-install" data-action="change-credentials" @click="credentialsSaved = false; editingCredentials = true">{{ t("changeSignInDetails") }}</AppButton>
       </div>
-    </section>
-    <section v-if="!isAdmin && Array.isArray(grants.data.value?.items)" class="settings-section" aria-labelledby="mcp-heading">
-      <header class="settings-section-heading">
+    </AppCard>
+    <AppCard v-if="!isAdmin && Array.isArray(grants.data.value?.items)" class="settings-section" aria-labelledby="mcp-heading">
+      <template #header>
         <h2 id="mcp-heading">{{ t("mcpApps") }}</h2>
         <span class="settings-save-note">{{ t("mcpReadOnly") }}</span>
-      </header>
+      </template>
       <div class="settings-row">
         <div class="settings-copy">
           <h3>{{ t("mcpConnectorUrl") }}</h3>
@@ -276,7 +267,7 @@ const views = computed(() => [
             <template v-if="grant.last_used_at"> · {{ t("mcpLastUsed", { date: connectedOn(grant.last_used_at) }) }}</template>
           </p>
         </div>
-        <button type="button" class="button secondary settings-install" @click="revoking = grant">{{ t("mcpRevoke") }}</button>
+        <AppButton type="button" class="settings-install" @click="revoking = grant">{{ t("mcpRevoke") }}</AppButton>
         <McpScopeSwitches
           class="settings-grant-scopes"
           :model-value="grant.scopes"
@@ -289,23 +280,23 @@ const views = computed(() => [
       <div v-if="grants.data.value?.items.length === 0" class="settings-row">
         <p class="settings-copy">{{ t("mcpNoApps") }}</p>
       </div>
-    </section>
+    </AppCard>
     <DiagnosticLogsDialog v-if="downloadingLogs && session.data.value && !isAdmin" @close="downloadingLogs = false" />
     <CredentialsDialog v-if="editingCredentials && session.data.value" :email="session.data.value.email" @close="editingCredentials = false" @saved="onCredentialsSaved" />
     <AppDialog v-if="applyingSync" :title="t('applyDefaultSync')" :busy="applySync.isPending.value" @close="applyingSync = false">
       <p>{{ t("applyDefaultSyncHelp") }}</p>
       <p v-if="applySync.isError.value" class="form-alert" role="alert">{{ t("applyDefaultSyncFailed") }}</p>
       <div class="dialog-actions">
-        <button class="button secondary" data-action="cancel" type="button" :disabled="applySync.isPending.value" @click="applyingSync = false">{{ t("cancel") }}</button>
-        <button class="button primary" data-action="confirm-apply-default-sync" type="button" :disabled="applySync.isPending.value" @click="applySync.mutate()">{{ t("applyDefaultSync") }}</button>
+        <AppButton data-action="cancel" type="button" :disabled="applySync.isPending.value" @click="applyingSync = false">{{ t("cancel") }}</AppButton>
+        <AppButton variant="primary" data-action="confirm-apply-default-sync" type="button" :disabled="applySync.isPending.value" @click="applySync.mutate()">{{ t("applyDefaultSync") }}</AppButton>
       </div>
     </AppDialog>
     <AppDialog v-if="revoking" :title="t('mcpRevokeTitle')" :busy="revoke.isPending.value" @close="revoking = null">
       <p>{{ t("mcpRevokeHelp", { client: revoking.client_name }) }}</p>
       <p v-if="revoke.isError.value" class="form-alert" role="alert">{{ t("mcpRevokeFailed") }}</p>
       <div class="dialog-actions">
-        <button class="button secondary" data-action="cancel" type="button" :disabled="revoke.isPending.value" @click="revoking = null">{{ t("cancel") }}</button>
-        <button class="button danger" type="button" :disabled="revoke.isPending.value" @click="revoking && revoke.mutate(revoking.id)">{{ t("mcpRevoke") }}</button>
+        <AppButton data-action="cancel" type="button" :disabled="revoke.isPending.value" @click="revoking = null">{{ t("cancel") }}</AppButton>
+        <AppButton variant="danger" type="button" :disabled="revoke.isPending.value" @click="revoking && revoke.mutate(revoking.id)">{{ t("mcpRevoke") }}</AppButton>
       </div>
     </AppDialog>
   </div>
@@ -313,38 +304,28 @@ const views = computed(() => [
 
 <style scoped>
 .settings-workspace { max-width: 1040px; }
-.settings-heading { margin-bottom: 34px; }
-.settings-heading h1 { font-size: 29px; line-height: 1.25; font-weight: 600; letter-spacing: -1px; margin-bottom: 9px; }
-.settings-heading p { color: var(--muted); font-size: 13px; line-height: 1.7; }
 .settings-error { margin-bottom: 20px; }
-.settings-section { border: 1px solid var(--border-store); border-radius: 12px; background: var(--surface-store); }
-.settings-section + .settings-section { margin-top: 28px; }
-.settings-section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; padding: 18px 24px; border-bottom: 1px solid var(--border-store-header); border-radius: 11px 11px 0 0; background: var(--surface-store-header); }
-.settings-section-heading h2 { font-size: 16px; font-weight: 650; letter-spacing: -.3px; }
-.settings-save-note { color: var(--muted); font-size: 11px; line-height: 1.6; }
-.settings-save-note.saved { color: var(--status-connected); }
+.settings-save-note { color: var(--text-muted); font-size: 11px; line-height: 1.6; }
+.settings-save-note.saved { color: var(--success); }
 .settings-row { display: grid; grid-template-columns: minmax(0, 1fr) 320px; align-items: center; gap: 28px; margin-inline: 24px; padding-block: 24px; }
-.settings-row + .settings-row { border-top: 1px solid var(--line); }
+.settings-row + .settings-row { border-top: 1px solid var(--border); }
 .settings-copy { min-width: 0; }
 .settings-copy h3 { margin-bottom: 6px; font-size: 14px; font-weight: 600; }
-.settings-copy p { max-width: 52ch; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.settings-copy p { max-width: 52ch; color: var(--text-muted); font-size: 12px; line-height: 1.7; }
 .settings-control { min-width: 0; }
-.settings-control .settings-receipt-toggle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; margin: 0; padding: 3px; border-radius: 8px; }
-.settings-control .settings-receipt-toggle :deep(label) { display: flex; align-items: center; justify-content: center; min-height: 36px; padding: 8px 10px; border-radius: 5px; white-space: normal; text-align: center; }
 .settings-select { display: block; width: 100%; }
 .settings-sync-control { display: grid; gap: 10px; }
 .settings-sync-control .settings-install { justify-self: stretch; }
-.settings-copy p.settings-sync-applied { margin-top: 6px; color: var(--status-connected); }
-.settings-select :deep(.app-select-trigger) { min-height: 44px; border-radius: 8px; }
-.settings-install { justify-self: end; min-height: 44px; padding: 10px 16px; border-radius: 8px; font-size: 13px; }
+.settings-copy p.settings-sync-applied { margin-top: 6px; color: var(--success); }
+.settings-install { justify-self: end; }
 .settings-install svg { width: 18px; height: 18px; }
-.settings-install-help { margin: 0 24px 24px; padding: 14px 16px; border-left: 2px solid var(--border-account-panel); border-radius: 0 6px 6px 0; background: var(--surface-account-panel); }
-.settings-install-help p { color: var(--muted); font-size: 12px; line-height: 1.8; }
+.settings-install-help { margin: 0 24px 24px; padding: 14px 16px; border-left: 2px solid var(--control); border-radius: 0 6px 6px 0; background: var(--bg-inset); }
+.settings-install-help p { color: var(--text-muted); font-size: 12px; line-height: 1.8; }
 .settings-connector-url { min-width: 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
-.settings-row > p.settings-copy { color: var(--muted); font-size: 12px; }
+.settings-row > p.settings-copy { color: var(--text-muted); font-size: 12px; }
 .settings-grant-scopes,
 .settings-grant-error { grid-column: 1 / -1; }
 .settings-grant-scopes { margin-top: -8px; }
 @media (max-width: 780px) { .settings-row { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 16px; }.settings-install { justify-self: start; } }
-@media (max-width: 600px) { .settings-section-heading { padding: 16px; }.settings-row { margin-inline: 16px; padding-block: 20px; }.settings-install-help { margin: 0 16px 20px; }.settings-section + .settings-section { margin-top: 22px; } }
+@media (max-width: 600px) { .settings-row { margin-inline: 16px; padding-block: 20px; }.settings-install-help { margin: 0 16px 20px; } }
 </style>

@@ -9,7 +9,9 @@ import AppDateInput from "./AppDateInput.vue";
 import AppDialog from "./AppDialog.vue";
 import AppIcon from "./AppIcon.vue";
 import AppSelect from "./AppSelect.vue";
+import IconButton from "./IconButton.vue";
 import SegmentedToggle from "./SegmentedToggle.vue";
+import AppButton from "./AppButton.vue";
 
 const NEW_SHOP = "new";
 const emit = defineEmits<{ close: []; saved: [receipts: Receipt[]] }>();
@@ -127,10 +129,10 @@ function submit(): void {
             <input v-model="item.name" type="text" maxlength="500" required :aria-label="t('manualReceiptItemName')" :placeholder="t('manualReceiptItemName')" :disabled="save.isPending.value">
             <input v-model="item.quantity" type="text" inputmode="decimal" pattern="\d+([.,]\d+)?" :aria-label="t('quantity')" :placeholder="t('quantity')" :disabled="save.isPending.value">
             <input v-model="item.total" type="text" inputmode="decimal" pattern="-?\d+([.,]\d{1,2})?" required :aria-label="t('manualReceiptItemTotal')" :placeholder="t('manualReceiptItemTotal')" :disabled="save.isPending.value">
-            <button type="button" class="text-button" :aria-label="t('manualReceiptRemoveItem')" :disabled="items.length === 1 || save.isPending.value" @click="items.splice(index, 1)"><AppIcon name="trash" /></button>
+            <IconButton tone="danger" :label="t('manualReceiptRemoveItem')" :disabled="items.length === 1 || save.isPending.value" @click="items.splice(index, 1)"><AppIcon name="trash" /></IconButton>
           </div>
           <div class="manual-items-footer">
-            <button type="button" class="button secondary" :disabled="save.isPending.value" @click="items.push({ name: '', quantity: '1', total: '' })">{{ t("manualReceiptAddItem") }}</button>
+            <AppButton type="button" :disabled="save.isPending.value" @click="items.push({ name: '', quantity: '1', total: '' })">{{ t("manualReceiptAddItem") }}</AppButton>
             <span>{{ t("receiptTotal") }} <strong>{{ total.toFixed(2) }} {{ currency }}</strong></span>
           </div>
         </fieldset>
@@ -145,8 +147,8 @@ function submit(): void {
       <p v-if="problem" role="alert" class="form-alert">{{ t(problem) }}</p>
       <p v-else-if="save.isError.value" role="alert" class="form-alert">{{ t("manualReceiptFailed") }}</p>
       <div class="dialog-actions">
-        <button class="button secondary" data-action="cancel" type="button" :disabled="save.isPending.value" @click="emit('close')">{{ t("cancel") }}</button>
-        <button class="button primary" type="submit" :disabled="save.isPending.value">{{ t(save.isPending.value ? "saving" : "addReceipt") }}</button>
+        <AppButton data-action="cancel" type="button" :disabled="save.isPending.value" @click="emit('close')">{{ t("cancel") }}</AppButton>
+        <AppButton variant="primary" type="submit" :disabled="save.isPending.value">{{ t(save.isPending.value ? "saving" : "addReceipt") }}</AppButton>
       </div>
     </form>
   </AppDialog>
@@ -159,7 +161,7 @@ function submit(): void {
 .manual-items legend { font-size: 12px; font-weight: 550; margin-bottom: 10px; }
 .manual-item { display: grid; grid-template-columns: 1fr 72px 110px 36px; gap: 8px; align-items: center; margin-bottom: 8px; }
 .manual-items-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; font-size: 13px; }
-textarea { width: 100%; border: 1px solid var(--border-input); border-radius: 4px; background: var(--surface-input); padding: 10px 13px; font-family: monospace; font-size: 12px; resize: vertical; }
+textarea { width: 100%; padding: 10px 13px; font-family: monospace; font-size: 12px; resize: vertical; }
 input[type=file] { height: auto; padding: 10px 0; border: 0; background: transparent; }
 @media (max-width: 520px) {
   .manual-when { grid-template-columns: 1fr 1fr; }

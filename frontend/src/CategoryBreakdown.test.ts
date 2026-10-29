@@ -12,10 +12,10 @@ interface PieOption {
 
 const chartStub = { name: "ChartProbe", props: ["option"], emits: ["click"], template: "<div />" };
 const COLORS: Record<string, string> = {
-  green: "rgb(1, 1, 1)", "green-hover": "rgb(2, 2, 2)", "chart-muted": "rgb(3, 3, 3)", focus: "rgb(4, 4, 4)",
-  muted: "rgb(5, 5, 5)", line: "rgb(6, 6, 6)", paper: "rgb(7, 7, 7)", "surface-search-hover": "rgb(8, 8, 8)",
-  "surface-input": "rgb(9, 9, 9)", text: "rgb(10, 10, 10)", "shadow-green-05": "rgba(1, 1, 1, 0.05)",
-  "shadow-green-06": "rgba(1, 1, 1, 0.06)", "shadow-green-12": "rgba(1, 1, 1, 0.12)",
+  accent: "rgb(1, 1, 1)", "accent-hover": "rgb(2, 2, 2)", "chart-muted": "rgb(3, 3, 3)", focus: "rgb(4, 4, 4)",
+  "text-muted": "rgb(5, 5, 5)", border: "rgb(6, 6, 6)", "bg-page": "rgb(7, 7, 7)", "bg-subtle": "rgb(8, 8, 8)",
+  "bg-raised": "rgb(9, 9, 9)", text: "rgb(10, 10, 10)", "chart-pointer": "rgba(1, 1, 1, 0.05)",
+  "chart-area": "rgba(1, 1, 1, 0.06)", "shadow-accent": "rgba(1, 1, 1, 0.12)",
   "chart-uncategorized": "rgb(15, 0, 0)",
   ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((slot) => [`chart-category-${slot}`, `rgb(${10 + slot}, 0, 0)`])),
 };

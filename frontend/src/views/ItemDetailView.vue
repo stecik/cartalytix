@@ -11,6 +11,8 @@ import QueryState from "../components/QueryState.vue";
 import ExclusionAction from "../components/ExclusionAction.vue";
 import ExclusionStatus from "../components/ExclusionStatus.vue";
 import { formatMoney, numberLocale } from "../stats";
+import AppButton from "../components/AppButton.vue";
+import PageHeader from "../components/PageHeader.vue";
 
 const PriceHistoryChart = defineAsyncComponent(
   () => import("../components/PriceHistoryChart.vue"),
@@ -83,11 +85,7 @@ function formatDate(date: string): string {
       @retry="detail.refetch()"
     >
       <template v-if="detail.data.value">
-        <header class="page-heading">
-          <div class="eyebrow">{{ t("items") }}</div>
-          <h1>{{ sourceName(detail.data.value.name, t) }}</h1>
-          <p>{{ formatQuantity(detail.data.value.quantity, detail.data.value.unit) }} · {{ t("receiptCount", detail.data.value.receipt_count) }}</p>
-        </header>
+        <PageHeader :eyebrow="t('items')" :title="sourceName(detail.data.value.name, t)" :intro="`${formatQuantity(detail.data.value.quantity, detail.data.value.unit)} · ${t('receiptCount', detail.data.value.receipt_count)}`" />
         <div class="product-exclusion">
           <ExclusionAction scope="product" path="/items/exclusion" :identity="{ name, currency }" :excluded="detail.data.value.is_excluded" />
           <p>{{ t("productExclusionHint") }}</p>
@@ -154,8 +152,8 @@ function formatDate(date: string): string {
           <div v-if="purchases.length > PAGE_SIZE" class="pagination">
             <span>{{ t("pageRange", { start: offset + 1, end: Math.min(offset + PAGE_SIZE, purchases.length), total: purchases.length }) }}</span>
             <div>
-              <button type="button" class="button secondary" :disabled="offset === 0" @click="offset = Math.max(0, offset - PAGE_SIZE)">{{ t("previous") }}</button>
-              <button type="button" class="button secondary" :disabled="offset + PAGE_SIZE >= purchases.length" @click="offset += PAGE_SIZE">{{ t("next") }}</button>
+              <AppButton type="button" :disabled="offset === 0" @click="offset = Math.max(0, offset - PAGE_SIZE)">{{ t("previous") }}</AppButton>
+              <AppButton type="button" :disabled="offset + PAGE_SIZE >= purchases.length" @click="offset += PAGE_SIZE">{{ t("next") }}</AppButton>
             </div>
           </div>
         </section>
@@ -169,20 +167,20 @@ function formatDate(date: string): string {
   margin-bottom: 18px;
 }
 .product-exclusion { margin-bottom: 22px; }
-.product-exclusion p { margin: 8px 0; max-width: 720px; color: var(--muted); font-size: 12px; line-height: 1.7; }
-.included-total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; font-size: 12px; color: var(--muted); padding-bottom: 24px; }
-.included-total strong { font-size: 22px; color: var(--green); font-variant-numeric: tabular-nums; }
-.excluded-row td { color: var(--muted); }
+.product-exclusion p { margin: 8px 0; max-width: 720px; color: var(--text-muted); font-size: 12px; line-height: 1.7; }
+.included-total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; font-size: 12px; color: var(--text-muted); padding-bottom: 24px; }
+.included-total strong { font-size: 22px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.excluded-row td { color: var(--text-muted); }
 .item-kpis {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   margin: 0 0 8px;
   padding: 24px 0 30px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--border);
 }
 .item-kpis > div {
   padding: 2px 24px;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--border);
 }
 .item-kpis > div:first-child {
   padding-left: 0;
@@ -192,7 +190,7 @@ function formatDate(date: string): string {
 }
 .item-kpis dt {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-muted);
   margin-bottom: 12px;
 }
 .item-kpis dd {
@@ -204,18 +202,18 @@ function formatDate(date: string): string {
   font-variant-numeric: tabular-nums;
 }
 .item-kpis dd.low {
-  color: var(--text-positive);
+  color: var(--success);
 }
 .item-kpis dd.high {
-  color: var(--text-negative);
+  color: var(--danger);
 }
 .detail-panel {
   padding-top: 24px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--border);
   margin-bottom: 32px;
 }
 .receipt-link {
-  color: var(--green);
+  color: var(--accent);
   font-weight: 550;
 }
 .receipt-link:hover {
@@ -223,7 +221,7 @@ function formatDate(date: string): string {
 }
 .strong {
   font-weight: 600;
-  color: var(--green);
+  color: var(--accent);
 }
 @media (max-width: 780px) {
   .item-kpis {

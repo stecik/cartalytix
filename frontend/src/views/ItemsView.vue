@@ -7,6 +7,8 @@ import { accountOptions } from "../names";
 import AppDateInput from "../components/AppDateInput.vue";
 import AppSelect from "../components/AppSelect.vue";
 import ExclusionFilter from "../components/ExclusionFilter.vue";
+import FilterBar from "../components/FilterBar.vue";
+import FilterField from "../components/FilterField.vue";
 import RangeInput from "../components/RangeInput.vue";
 import { request } from "../api";
 import type { Connection, ExclusionMode, ExclusionReason, ExclusionScope, ItemDetail, ItemExclusion, ItemExclusionPage, ItemPage, ReceiptDetail } from "../api";
@@ -16,6 +18,8 @@ import ExclusionStatus from "../components/ExclusionStatus.vue";
 import type { ItemSortField } from "../components/ItemLedger.vue";
 import QueryState from "../components/QueryState.vue";
 import ReceiptSearch from "../components/ReceiptSearch.vue";
+import AppButton from "../components/AppButton.vue";
+import PageHeader from "../components/PageHeader.vue";
 
 type QueryKey = "q" | "from" | "to" | "connection" | "min" | "max" | "sort" | "offset" | "exclusion" | "exclusion_scope";
 
@@ -170,11 +174,7 @@ function restored(row: ItemExclusion, result: ReceiptDetail | ItemDetail | undef
 
 <template>
   <div class="view-content">
-    <header class="page-heading">
-      <div class="eyebrow">{{ t("workspace") }}</div>
-      <h1>{{ t("items") }}</h1>
-      <p>{{ t("itemsIntro") }}</p>
-    </header>
+    <PageHeader :eyebrow="t('workspace')" :title="t('items')" :intro="t('itemsIntro')" />
     <div class="item-display-controls">
       <ExclusionFilter :model-value="exclusion" @update:model-value="changeExclusion" />
       <AppSelect v-if="exclusion === 'excluded'" class="exclusion-scope" :model-value="exclusionScope" :options="scopeOptions" :label="t('exclusionScope')" @update:model-value="updateQuery({ exclusion_scope: $event === 'all' ? '' : $event })" />
@@ -186,33 +186,28 @@ function restored(row: ItemExclusion, result: ReceiptDetail | ItemDetail | undef
         <ExclusionStatus v-for="reason in restoredState.reasons" :key="reason" :reason="reason" />
       </template>
     </p>
-    <div class="item-filters" role="search">
-      <ReceiptSearch
-        v-model="search"
-        class="filter-search"
-        kind="item"
-        :exclusion="exclusion"
-        :scope="exclusion === 'excluded' ? exclusionScope : undefined"
-        :placeholder="t('searchItems')"
-        @select="applySearch"
-      />
-      <label>
-        <span>{{ t("dateFrom") }}</span>
+    <FilterBar :filtered="filtered" @reset="resetFilters">
+      <template #search>
+        <ReceiptSearch
+          v-model="search"
+          kind="item"
+          :exclusion="exclusion"
+          :scope="exclusion === 'excluded' ? exclusionScope : undefined"
+          :placeholder="t('searchItems')"
+          @select="applySearch"
+        />
+      </template>
+      <FilterField :label="t('dateFrom')">
         <AppDateInput :model-value="queryValue('from')" :max="queryValue('to')" @update:model-value="updateQuery({ from: $event })" />
-      </label>
-      <label>
-        <span>{{ t("dateTo") }}</span>
+      </FilterField>
+      <FilterField :label="t('dateTo')">
         <AppDateInput :model-value="queryValue('to')" :min="queryValue('from')" @update:model-value="updateQuery({ to: $event })" />
-      </label>
-      <label v-if="connections.data.value?.items.length">
-        <span>{{ t("account") }}</span>
-        <AppSelect class="account-select" :model-value="queryValue('connection')" :options="accountOptions(connections.data.value.items, t('allAccounts'))" :label="t('account')" @update:model-value="updateQuery({ connection: $event })" />
-      </label>
-      <RangeInput class="filter-amount" :label="t('priceRange')" :min="queryValue('min')" :max="queryValue('max')" :min-label="t('priceMin')" :max-label="t('priceMax')" @update:min="updateQuery({ min: $event })" @update:max="updateQuery({ max: $event })" />
-      <button v-if="filtered" type="button" class="button secondary reset-filters" @click="resetFilters">
-        {{ t("resetFilters") }}
-      </button>
-    </div>
+      </FilterField>
+      <FilterField v-if="connections.data.value?.items.length" :label="t('account')">
+        <AppSelect :model-value="queryValue('connection')" :options="accountOptions(connections.data.value.items, t('allAccounts'))" :label="t('account')" @update:model-value="updateQuery({ connection: $event })" />
+      </FilterField>
+      <RangeInput :label="t('priceRange')" :min="queryValue('min')" :max="queryValue('max')" :min-label="t('priceMin')" :max-label="t('priceMax')" @update:min="updateQuery({ min: $event })" @update:max="updateQuery({ max: $event })" />
+    </FilterBar>
     <QueryState
       :pending="activeQuery.isPending.value"
       :failed="activeQuery.isError.value"
@@ -240,12 +235,12 @@ function restored(row: ItemExclusion, result: ReceiptDetail | ItemDetail | undef
             })
           }}</span>
           <div>
-            <button class="button secondary" :disabled="offset === 0" @click="changePage(Math.max(0, offset - limit))">
+            <AppButton :disabled="offset === 0" @click="changePage(Math.max(0, offset - limit))">
               {{ t("previous") }}
-            </button>
-            <button class="button secondary" :disabled="offset + limit >= currentPage.total" @click="changePage(offset + limit)">
+            </AppButton>
+            <AppButton :disabled="offset + limit >= currentPage.total" @click="changePage(offset + limit)">
               {{ t("next") }}
-            </button>
+            </AppButton>
           </div>
         </div>
       </section>
@@ -254,30 +249,13 @@ function restored(row: ItemExclusion, result: ReceiptDetail | ItemDetail | undef
 </template>
 
 <style scoped>
-.item-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 36px; }
-.item-display-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.item-display-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .exclusion-scope { width: 176px; }
 .exclusion-scope :deep(.app-select-trigger) { background: transparent; }
-.restoration-status { margin-bottom: 20px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 5px; color: var(--green); background: var(--surface-notice); font-size: 13px; line-height: 1.7; }
+.restoration-status { margin-bottom: 20px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 5px; color: var(--accent); background: var(--bg-muted); font-size: 13px; line-height: 1.7; }
 .restoration-status > span { margin-left: 8px; }
-.exclusion-note { margin-top: 18px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.exclusion-note { margin-top: 18px; color: var(--text-muted); font-size: 12px; line-height: 1.8; }
 .exclusion-note a { margin-left: 5px; }
-.item-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
-.item-filters .filter-search { flex: 1 1 140px; min-width: 0; }
-.item-filters input,
-.item-filters select { height: 40px; border: 1px solid var(--border-input); border-radius: 4px; background: var(--surface-input); padding: 0 12px; font-size: 13px; }
-.item-filters input:focus,
-.item-filters select:focus { border-color: var(--border-input-focus); box-shadow: 0 0 0 3px var(--ring-input-focus); outline: 0; }
-.item-filters .account-select { min-width: 210px; }
-.reset-filters { height: 40px; }
 .ledger-section { transition: opacity 0.2s; }
 .ledger-section.updating { opacity: 0.6; }
-@media (max-width: 780px) {
-  .item-filters { display: grid; grid-template-columns: 1fr 1fr; }
-  .item-filters .filter-search,
-  .reset-filters { grid-column: 1 / -1; }
-  .item-filters .filter-amount { width: auto; }
-  .item-filters input,
-  .item-filters select, .item-filters .account-select { width: 100%; min-width: 0; }
-}
 </style>

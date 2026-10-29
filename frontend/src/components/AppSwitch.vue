@@ -18,11 +18,11 @@ function change(event: Event): void {
 </template>
 
 <style scoped>
-.app-switch { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--muted); flex-shrink: 0; }
-.app-switch input { appearance: none; border: 0; border-radius: 15px; width: 34px; height: 20px; background: var(--surface-switch); position: relative; padding: 0; margin: 0; cursor: pointer; transition: background .15s; }
-.app-switch input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; background: var(--white); border-radius: 50%; transition: transform .15s; }
-.app-switch input:checked { background: var(--green); }
+.app-switch { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+.app-switch input { appearance: none; border: 0; border-radius: 15px; width: 34px; height: 20px; background: var(--control); position: relative; padding: 0; margin: 0; cursor: pointer; transition: background .15s; }
+.app-switch input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; background: var(--bg-surface); border-radius: 50%; transition: transform .15s; }
+.app-switch input:checked { background: var(--accent); }
 .app-switch input:checked::after { transform: translateX(14px); }
 .app-switch input:disabled { opacity: .5; cursor: not-allowed; }
-.app-switch input:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.app-switch input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>

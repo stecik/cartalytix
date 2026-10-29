@@ -74,7 +74,7 @@ describe("appearance preference", () => {
     const meta = document.createElement("meta");
     meta.name = "theme-color";
     document.head.append(meta);
-    document.documentElement.style.setProperty("--paper", "rgb(20, 30, 25)");
+    document.documentElement.style.setProperty("--bg-page", "rgb(20, 30, 25)");
     initializeTheme();
     dispose = initializeTheme();
     expect(listeners.size).toBe(1);

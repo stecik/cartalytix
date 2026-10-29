@@ -6,6 +6,8 @@ import { useRoute, useRouter } from "vue-router";
 import { accountOptions, sourceName } from "../names";
 import AppDateInput from "../components/AppDateInput.vue";
 import AppSelect from "../components/AppSelect.vue";
+import FilterBar from "../components/FilterBar.vue";
+import FilterField from "../components/FilterField.vue";
 import { itemKey, request } from "../api";
 import type { Connection, ItemKey, ItemPage, ItemTotals } from "../api";
 import ItemLedger from "../components/ItemLedger.vue";
@@ -13,6 +15,8 @@ import type { ItemSortField } from "../components/ItemLedger.vue";
 import QueryState from "../components/QueryState.vue";
 import ReceiptSearch from "../components/ReceiptSearch.vue";
 import { formatMoney } from "../stats";
+import AppButton from "../components/AppButton.vue";
+import PageHeader from "../components/PageHeader.vue";
 
 type QueryKey = "q" | "from" | "to" | "connection" | "sort" | "offset";
 
@@ -168,41 +172,25 @@ function changePage(value: number): void {
 
 <template>
   <div class="view-content">
-    <header class="page-heading">
-      <div class="eyebrow">{{ t("workspace") }}</div>
-      <h1>{{ t("calculator") }}</h1>
-      <p>{{ t("calculatorIntro") }}</p>
-    </header>
-    <div class="item-filters" role="search">
-      <ReceiptSearch
-        v-model="search"
-        class="filter-search"
-        kind="item"
-        :placeholder="t('searchItems')"
-        @select="applySearch"
-      />
-      <label>
-        <span>{{ t("dateFrom") }}</span>
+    <PageHeader :eyebrow="t('workspace')" :title="t('calculator')" :intro="t('calculatorIntro')" />
+    <FilterBar :filtered="filtered" @reset="resetFilters">
+      <template #search><ReceiptSearch v-model="search" kind="item" :placeholder="t('searchItems')" @select="applySearch" /></template>
+      <FilterField :label="t('dateFrom')">
         <AppDateInput :model-value="queryValue('from')" :max="queryValue('to')" @update:model-value="updateQuery({ from: $event })" />
-      </label>
-      <label>
-        <span>{{ t("dateTo") }}</span>
+      </FilterField>
+      <FilterField :label="t('dateTo')">
         <AppDateInput :model-value="queryValue('to')" :min="queryValue('from')" @update:model-value="updateQuery({ to: $event })" />
-      </label>
-      <label v-if="connections.data.value?.items.length">
-        <span>{{ t("account") }}</span>
-        <AppSelect class="account-select" :model-value="queryValue('connection')" :options="accountOptions(connections.data.value.items, t('allAccounts'))" :label="t('account')" @update:model-value="updateQuery({ connection: $event })" />
-      </label>
-      <button v-if="filtered" type="button" class="button secondary reset-filters" @click="resetFilters">
-        {{ t("resetFilters") }}
-      </button>
-    </div>
+      </FilterField>
+      <FilterField v-if="connections.data.value?.items.length" :label="t('account')">
+        <AppSelect :model-value="queryValue('connection')" :options="accountOptions(connections.data.value.items, t('allAccounts'))" :label="t('account')" @update:model-value="updateQuery({ connection: $event })" />
+      </FilterField>
+    </FilterBar>
     <section class="selection-section" :class="{ updating: totals.isPlaceholderData.value }">
       <div class="section-heading">
         <h2>{{ t("calculatorSelection") }}</h2>
-        <button v-if="selection.length" type="button" class="button secondary" @click="clearSelection">
+        <AppButton v-if="selection.length" type="button" @click="clearSelection">
           {{ t("clearSelection") }}
-        </button>
+        </AppButton>
       </div>
       <div v-if="!selection.length" class="empty-state">
         <h3>{{ t("calculatorEmpty") }}</h3>
@@ -263,12 +251,12 @@ function changePage(value: number): void {
             })
           }}</span>
           <div>
-            <button class="button secondary" :disabled="offset === 0" @click="changePage(Math.max(0, offset - limit))">
+            <AppButton :disabled="offset === 0" @click="changePage(Math.max(0, offset - limit))">
               {{ t("previous") }}
-            </button>
-            <button class="button secondary" :disabled="offset + limit >= items.data.value.total" @click="changePage(offset + limit)">
+            </AppButton>
+            <AppButton :disabled="offset + limit >= items.data.value.total" @click="changePage(offset + limit)">
               {{ t("next") }}
-            </button>
+            </AppButton>
           </div>
         </div>
       </section>
@@ -277,24 +265,13 @@ function changePage(value: number): void {
 </template>
 
 <style scoped>
-.item-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 36px; }
-.item-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
-.item-filters .filter-search { flex: 1 1 140px; min-width: 0; }
-.item-filters .account-select { min-width: 210px; }
-.reset-filters { height: 40px; }
 .selection-section { margin-bottom: 48px; }
 .calculator-stats { grid-template-columns: 1.5fr 1fr; margin: 12px 0 24px; }
-.unpurchased { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; font-size: 12px; color: var(--muted); }
-.unpurchased-item { border: 1px solid var(--line); border-radius: 4px; background: none; padding: 4px 8px; color: inherit; font: inherit; }
-.unpurchased-item:hover { color: var(--green); border-color: var(--green); }
+.unpurchased { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; font-size: 12px; color: var(--text-muted); }
+.unpurchased-item { border: 1px solid var(--border); border-radius: 4px; background: none; padding: 4px 8px; color: inherit; font: inherit; }
+.unpurchased-item:hover { color: var(--accent); border-color: var(--accent); }
 .selection-section,
 .ledger-section { transition: opacity 0.2s; }
 .selection-section.updating,
 .ledger-section.updating { opacity: 0.6; }
-@media (max-width: 780px) {
-  .item-filters { display: grid; grid-template-columns: 1fr 1fr; }
-  .item-filters .filter-search,
-  .reset-filters { grid-column: 1 / -1; }
-  .item-filters .account-select { width: 100%; min-width: 0; }
-}
 </style>

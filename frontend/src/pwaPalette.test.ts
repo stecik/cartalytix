@@ -22,15 +22,15 @@ async function fixture(green: string = "12, 34, 56"): Promise<string> {
   await mkdir(join(root, "src/assets"), { recursive: true });
   await Promise.all([
     writeFile(join(root, "src/colors.css"), `:root {
-      --green-rgb: ${green};
-      --green: rgb(var(--green-rgb));
-      --paper-base: #abcdef;
-      --paper: var(--paper-base);
-      --white: rgba(255, 255, 255, 1);
+      --accent-rgb: ${green};
+      --accent: rgb(var(--accent-rgb));
+      --bg-page-base: #abcdef;
+      --bg-page: var(--bg-page-base);
+      --bg-surface: rgba(255, 255, 255, 1);
     }`),
     writeFile(join(root, "index.html"), '<html><head><meta name="theme-color" content="%PALETTE_THEME_COLOR%"></head><body></body></html>'),
-    writeFile(join(root, "src/assets/icon.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" rx="112" fill="var(--green)"/><rect x="128" y="128" width="256" height="256" fill="var(--paper)"/></svg>'),
-    writeFile(join(root, "src/assets/text-cursor.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path stroke="var(--white)" d="M0 0h24"/><path stroke="var(--green)" d="M0 1h24"/></svg>'),
+    writeFile(join(root, "src/assets/icon.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" rx="112" fill="var(--accent)"/><rect x="128" y="128" width="256" height="256" fill="var(--bg-page)"/></svg>'),
+    writeFile(join(root, "src/assets/text-cursor.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path stroke="var(--bg-surface)" d="M0 0h24"/><path stroke="var(--accent)" d="M0 1h24"/></svg>'),
   ]);
   return root;
 }
@@ -56,11 +56,11 @@ describe("PWA palette assets", () => {
     const base = await readFile(palettePath, "utf8");
     await writeFile(palettePath, `${base}
       :root[data-theme="dark"] {
-        --green-rgb: 133, 190, 158;
-        --paper-base: #111a16;
-        --white: #1d2923;
+        --accent-rgb: 133, 190, 158;
+        --bg-page-base: #111a16;
+        --bg-surface: #1d2923;
       }
-      .unrelated { --green-rgb: 1, 2, 3; }
+      .unrelated { --accent-rgb: 1, 2, 3; }
     `);
     await generate(root);
     const output = join(root, "dist");
@@ -97,7 +97,7 @@ describe("PWA palette assets", () => {
     expect(worker).toContain("icon-192.png");
     expect(worker).toContain("text-cursor.svg");
     const previousPng = await readFile(join(output, "icon-192.png"));
-    await writeFile(join(root, "src/colors.css"), ":root {\n--green: #eeddcc;\n--paper: #abcdef;\n--white: #ffffff;\n}");
+    await writeFile(join(root, "src/colors.css"), ":root {\n--accent: #eeddcc;\n--bg-page: #abcdef;\n--bg-surface: #ffffff;\n}");
     await generate(root);
     expect(await readFile(join(output, "icon-192.png"))).not.toEqual(previousPng);
     expect(await readFile(join(output, "index.html"), "utf8")).toContain('content="#eeddcc"');
@@ -131,7 +131,7 @@ describe("PWA palette assets", () => {
       const originalPng = await readFile(join(output, "icon-192.png"));
       expect(await readFile(join(output, "icon.svg"), "utf8")).toContain('fill="rgb(12, 34, 56)"');
       nextBuild = Promise.withResolvers<void>();
-      await writeFile(join(root, "src/colors.css"), ":root {\n--green: #eeddcc;\n--paper: #aa9988;\n--white: #ffeeaa;\n}");
+      await writeFile(join(root, "src/colors.css"), ":root {\n--accent: #eeddcc;\n--bg-page: #aa9988;\n--bg-surface: #ffeeaa;\n}");
       await nextBuild.promise;
       expect(await readFile(join(output, "index.html"), "utf8")).toContain('content="#eeddcc"');
       expect(await readFile(join(output, "icon.svg"), "utf8")).toContain('fill="#eeddcc"');
@@ -174,10 +174,10 @@ describe("PWA palette assets", () => {
   });
 
   it.each([
-    ["--paper: #abcdef;\n--white: #fff;", /--green/],
-    ["--green: var(--missing);\n--paper: #abcdef;\n--white: #fff;", /--missing/],
-    ["--green: var(--green);\n--paper: #abcdef;\n--white: #fff;", /circular/i],
-    ["--green: rgb(900, 0, 0);\n--paper: #abcdef;\n--white: #fff;", /--green.*invalid/i],
+    ["--bg-page: #abcdef;\n--bg-surface: #fff;", /--accent/],
+    ["--accent: var(--missing);\n--bg-page: #abcdef;\n--bg-surface: #fff;", /--missing/],
+    ["--accent: var(--accent);\n--bg-page: #abcdef;\n--bg-surface: #fff;", /circular/i],
+    ["--accent: rgb(900, 0, 0);\n--bg-page: #abcdef;\n--bg-surface: #fff;", /--accent.*invalid/i],
   ])("fails clearly for missing or invalid palette entries: %s", async (declarations, error) => {
     const root = await fixture();
     await writeFile(join(root, "src/colors.css"), `:root {\n${declarations}\n}`);

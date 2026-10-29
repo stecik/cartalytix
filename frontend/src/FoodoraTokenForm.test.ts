@@ -62,8 +62,10 @@ describe("foodora sign-in", () => {
     await fill(wrapper);
     await flushPromises();
     expect(wrapper.find('input[type="password"]').exists()).toBe(false);
-    expect(wrapper.findAll("option").map((option) => option.attributes("value"))).toEqual(["EMAIL", "SMS"]);
-    await wrapper.get("select").setValue("SMS");
+    await wrapper.get(".app-select-trigger").trigger("click");
+    const options = wrapper.findAll('[role="option"]');
+    expect(options.map((option) => option.text())).toEqual(["Email", "SMS"]);
+    await options[1]?.trigger("click");
     await wrapper.get("form").trigger("submit");
     await flushPromises();
     expect(fetcher).toHaveBeenNthCalledWith(2, `${endpoint}/flow-1/send`, expect.objectContaining({
@@ -159,7 +161,7 @@ describe("foodora sign-in", () => {
     const wrapper = render();
     await fill(wrapper);
     await flushPromises();
-    await wrapper.get('button[type="button"]').trigger("click");
+    await wrapper.get('.connection-actions button[type="button"]').trigger("click");
     expect(wrapper.emitted("cancel")).toHaveLength(1);
     expect(fetcher).toHaveBeenLastCalledWith(`${endpoint}/flow-1`, expect.objectContaining({ method: "DELETE" }));
     wrapper.unmount();

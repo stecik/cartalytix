@@ -62,14 +62,14 @@ const option = computed(() => {
       show: false,
       min: 0,
       max: Math.max(1, ...data.map((cell) => cell[2] ?? 0)),
-      inRange: { color: [chartColors.heatLow, chartColors.sage, chartColors.green] },
+      inRange: { color: [chartColors.heatLow, chartColors.focus, chartColors.accent] },
     },
     series: [
       {
         type: "heatmap",
         data,
-        itemStyle: { borderColor: chartColors.paper, borderWidth: 3, borderRadius: 4 },
-        emphasis: { itemStyle: { borderColor: chartColors.green, borderWidth: 1 } },
+        itemStyle: { borderColor: chartColors.page, borderWidth: 3, borderRadius: 4 },
+        emphasis: { itemStyle: { borderColor: chartColors.accent, borderWidth: 1 } },
       },
     ],
   };

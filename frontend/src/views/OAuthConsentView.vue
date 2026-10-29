@@ -7,6 +7,8 @@ import { ApiError, request } from "../api";
 import type { McpAuthorization, McpScope } from "../api";
 import McpScopeSwitches from "../components/McpScopeSwitches.vue";
 import QueryState from "../components/QueryState.vue";
+import AppButton from "../components/AppButton.vue";
+import AppCard from "../components/AppCard.vue";
 
 const { t } = useI18n();
 const route = useRoute();
@@ -36,7 +38,7 @@ const decide = useMutation({
 
 <template>
   <div class="view-content consent-workspace">
-    <section class="consent-panel" aria-labelledby="consent-heading">
+    <AppCard padded class="consent-panel" aria-labelledby="consent-heading">
       <p v-if="expired" role="alert" class="form-alert">{{ t("mcpRequestExpired") }}</p>
       <QueryState v-else :pending="authorization.isPending.value" :failed="authorization.isError.value" @retry="authorization.refetch()">
         <template v-if="authorization.data.value">
@@ -46,22 +48,20 @@ const decide = useMutation({
           <p class="consent-return">{{ t("mcpConsentReturn", { host: authorization.data.value.redirect_host }) }}</p>
           <p v-if="decide.isError.value" role="alert" class="form-alert">{{ t("mcpConsentFailed") }}</p>
           <div class="consent-actions">
-            <button type="button" class="button secondary" :disabled="decide.isPending.value || decide.isSuccess.value" @click="decide.mutate(false)">{{ t("mcpDeny") }}</button>
-            <button type="button" class="button primary" :disabled="decide.isPending.value || decide.isSuccess.value" @click="decide.mutate(true)">{{ t("mcpAllow") }}</button>
+            <AppButton type="button" :disabled="decide.isPending.value || decide.isSuccess.value" @click="decide.mutate(false)">{{ t("mcpDeny") }}</AppButton>
+            <AppButton type="button" variant="primary" :disabled="decide.isPending.value || decide.isSuccess.value" @click="decide.mutate(true)">{{ t("mcpAllow") }}</AppButton>
           </div>
         </template>
       </QueryState>
-    </section>
+    </AppCard>
   </div>
 </template>
 
 <style scoped>
 .consent-workspace { max-width: 620px; }
-.consent-panel { padding: 28px; border: 1px solid var(--border-store); border-radius: 12px; background: var(--surface-store); }
 .consent-panel h1 { margin-bottom: 12px; font-size: 24px; line-height: 1.3; font-weight: 600; letter-spacing: -.6px; overflow-wrap: anywhere; }
-.consent-panel p { color: var(--muted); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.consent-panel p { color: var(--text-muted); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .consent-scopes { margin: 18px 0; }
 .consent-return { margin-bottom: 8px; }
 .consent-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 24px; }
-@media (max-width: 600px) { .consent-panel { padding: 20px; } }
 </style>

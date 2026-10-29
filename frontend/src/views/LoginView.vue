@@ -6,6 +6,7 @@ import { useRoute, useRouter } from "vue-router";
 import { ApiError } from "../api";
 import { authenticate, returnPath } from "../auth";
 import AppIcon from "../components/AppIcon.vue";
+import AppButton from "../components/AppButton.vue";
 
 const { t } = useI18n();
 const client = useQueryClient();
@@ -91,14 +92,14 @@ const errorKey = computed(() => {
           <p v-if="login.isError.value" role="alert" class="form-alert">
             {{ t(errorKey) }}
           </p>
-          <button
+          <AppButton
             type="submit"
-            class="button primary login-submit"
+            variant="primary" class="login-submit"
             :disabled="login.isPending.value"
           >
             {{ t(login.isPending.value ? "signingIn" : "signIn")
             }}<AppIcon name="arrow" />
-          </button>
+          </AppButton>
         </form>
         <p class="registration-note">{{ t("closedRegistration") }}</p>
       </div>

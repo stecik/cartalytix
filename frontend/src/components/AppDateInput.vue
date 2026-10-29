@@ -52,38 +52,38 @@ function update(value: unknown): void {
   --dp-border-radius: 4px;
   --dp-cell-border-radius: 6px;
   --dp-input-padding: 0 30px 0 12px;
-  --dp-background-color: var(--surface-input);
+  --dp-background-color: var(--bg-raised);
   --dp-text-color: var(--text);
-  --dp-hover-color: var(--surface-toggle);
+  --dp-hover-color: var(--bg-subtle);
   --dp-hover-text-color: var(--text);
-  --dp-hover-icon-color: var(--green);
-  --dp-primary-color: var(--green);
-  --dp-primary-disabled-color: var(--muted);
-  --dp-primary-text-color: var(--text-primary-button);
-  --dp-secondary-color: var(--muted);
-  --dp-border-color: var(--border-input);
-  --dp-menu-border-color: var(--border-select-list);
-  --dp-border-color-hover: var(--border-select-hover);
-  --dp-border-color-focus: var(--border-input-focus);
-  --dp-disabled-color: var(--surface-toggle);
-  --dp-disabled-color-text: var(--muted);
-  --dp-icon-color: var(--muted);
+  --dp-hover-icon-color: var(--accent);
+  --dp-primary-color: var(--accent);
+  --dp-primary-disabled-color: var(--text-muted);
+  --dp-primary-text-color: var(--on-accent);
+  --dp-secondary-color: var(--text-muted);
+  --dp-border-color: var(--control);
+  --dp-menu-border-color: var(--border-overlay);
+  --dp-border-color-hover: var(--control-hover);
+  --dp-border-color-focus: var(--focus-strong);
+  --dp-disabled-color: var(--bg-subtle);
+  --dp-disabled-color-text: var(--text-muted);
+  --dp-icon-color: var(--text-muted);
   --dp-danger-color: var(--danger);
-  --dp-highlight-color: var(--ring-input-focus);
+  --dp-highlight-color: var(--focus-ring);
 }
 .app-date .dp--input {
-  height: 40px;
-  color: var(--green);
+  height: var(--control-height);
+  color: var(--accent);
 }
 /* The library toggles on both the icon and its wrapper, so an icon click reopens and closes at once; let it reach the input. */
 .app-date .dp--input-icon {
   pointer-events: none;
 }
 .app-date .dp--input-focus {
-  box-shadow: 0 0 0 3px var(--ring-input-focus);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 .dp--menu {
   border-radius: 10px;
-  box-shadow: 0 12px 32px var(--shadow-select);
+  box-shadow: 0 12px 32px var(--shadow-overlay);
 }
 </style>

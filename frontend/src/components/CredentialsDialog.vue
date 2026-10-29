@@ -5,6 +5,7 @@ import { useI18n } from "vue-i18n";
 import { ApiError } from "../api";
 import { changeCredentials, isStrongPassword } from "../auth";
 import AppDialog from "./AppDialog.vue";
+import AppButton from "./AppButton.vue";
 
 const errorKeys: Record<string, string> = {
   invalid_current_password: "invalidCurrentPassword",
@@ -66,8 +67,8 @@ function submit(): void {
       <p v-if="problem" role="alert" class="form-alert">{{ t(problem) }}</p>
       <p v-else-if="change.isError.value" role="alert" class="form-alert">{{ t(errorKey) }}</p>
       <div class="dialog-actions">
-        <button class="button secondary" data-action="cancel" type="button" :disabled="change.isPending.value" @click="emit('close')">{{ t("cancel") }}</button>
-        <button class="button primary" type="submit" :disabled="change.isPending.value">{{ t(change.isPending.value ? "saving" : "save") }}</button>
+        <AppButton data-action="cancel" type="button" :disabled="change.isPending.value" @click="emit('close')">{{ t("cancel") }}</AppButton>
+        <AppButton variant="primary" type="submit" :disabled="change.isPending.value">{{ t(change.isPending.value ? "saving" : "save") }}</AppButton>
       </div>
     </form>
   </AppDialog>

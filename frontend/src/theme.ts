@@ -18,7 +18,7 @@ function applyTheme(): void {
   const theme = preference.value === "system" ? (system?.matches ? "dark" : "light") : preference.value;
   document.documentElement.dataset.theme = theme;
   resolved.value = theme;
-  const background = getComputedStyle(document.documentElement).getPropertyValue("--paper").trim();
+  const background = getComputedStyle(document.documentElement).getPropertyValue("--bg-page").trim();
   if (background) document.querySelector('meta[name="theme-color"]')?.setAttribute("content", background);
 }
 

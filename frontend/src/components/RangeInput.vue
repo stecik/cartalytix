@@ -24,13 +24,13 @@ function value(event: Event): string {
 </template>
 
 <style scoped>
-.range-input { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
-.range-box { display: flex; align-items: center; width: 200px; height: 40px; border: 1px solid var(--border-input); border-radius: 4px; background: var(--surface-input); }
-.range-box:focus-within { border-color: var(--border-input-focus); box-shadow: 0 0 0 3px var(--ring-input-focus); }
+.range-input { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--text-muted); }
+.range-box { display: flex; align-items: center; width: 200px; height: var(--control-height); border: 1px solid var(--control); border-radius: 4px; background: var(--bg-raised); }
+.range-box:focus-within { border-color: var(--focus-strong); box-shadow: 0 0 0 3px var(--focus-ring); }
 .range-box input { width: 0; flex: 1 1 0; min-width: 0; height: 100%; border: 0; background: transparent; padding: 0 12px; font-size: 13px; color: var(--text); appearance: textfield; -moz-appearance: textfield; }
 .range-box input::-webkit-outer-spin-button,
 .range-box input::-webkit-inner-spin-button { margin: 0; appearance: none; }
 .range-box input:focus { outline: 0; }
-.range-box > span { color: var(--muted); font-size: 13px; }
+.range-box > span { color: var(--text-muted); font-size: 13px; }
 @media (max-width: 780px) { .range-box { width: 100%; } }
 </style>

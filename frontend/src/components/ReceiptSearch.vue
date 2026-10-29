@@ -162,17 +162,6 @@ function onEscape(): void {
 }
 .receipt-search input {
   width: 100%;
-  height: 40px;
-  border: 1px solid var(--border-input);
-  border-radius: 4px;
-  background: var(--surface-input);
-  padding: 0 12px;
-  font-size: 13px;
-}
-.receipt-search input:focus {
-  border-color: var(--border-input-focus);
-  box-shadow: 0 0 0 3px var(--ring-input-focus);
-  outline: 0;
 }
 .suggestions {
   position: absolute;
@@ -183,10 +172,10 @@ function onEscape(): void {
   margin: 0;
   padding: 6px;
   list-style: none;
-  background: var(--surface-input);
-  border: 1px solid var(--line);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 12px 32px var(--shadow-green-14);
+  box-shadow: 0 12px 32px var(--shadow-accent);
   max-height: 340px;
   overflow-y: auto;
   animation: arrive 0.12s ease-out;
@@ -198,11 +187,11 @@ function onEscape(): void {
   padding: 10px 12px;
   border-radius: 5px;
   font-size: 13px;
-  color: var(--green);
+  color: var(--accent);
   cursor: pointer;
 }
 .suggestions li.active {
-  background: var(--light);
+  background: var(--bg-muted);
 }
 .suggestion-text {
   flex: 1;
@@ -220,20 +209,20 @@ function onEscape(): void {
   font-size: 10px;
   letter-spacing: 0.4px;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--text-muted);
   padding: 3px 7px;
   border-radius: 999px;
-  background: var(--surface-search-hover);
+  background: var(--bg-subtle);
 }
 .suggestion-kind.merchant {
-  background: var(--surface-search-selected);
-  color: var(--text-positive);
+  background: var(--bg-selected);
+  color: var(--success);
 }
 .suggestion-count {
   min-width: 34px;
   text-align: right;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 </style>

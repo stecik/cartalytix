@@ -12,6 +12,6 @@ const { t } = useI18n();
 </template>
 
 <style scoped>
-.manual-badge { display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--surface-notice); color: var(--text-status); font-size: 11px; line-height: 1.6; white-space: nowrap; }
+.manual-badge { display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--bg-muted); color: var(--text-muted); font-size: 11px; line-height: 1.6; white-space: nowrap; }
 span + .manual-badge { margin-left: 8px; }
 </style>

@@ -7,6 +7,9 @@ import { accountOptions } from "../names";
 import AppDateInput from "../components/AppDateInput.vue";
 import AppSelect from "../components/AppSelect.vue";
 import ExclusionFilter from "../components/ExclusionFilter.vue";
+import FilterBar from "../components/FilterBar.vue";
+import FilterField from "../components/FilterField.vue";
+import PageHeader from "../components/PageHeader.vue";
 import RangeInput from "../components/RangeInput.vue";
 import ManualReceiptDialog from "../components/ManualReceiptDialog.vue";
 import { request } from "../api";
@@ -14,6 +17,7 @@ import type { Connection, ExclusionMode, ReceiptPage } from "../api";
 import QueryState from "../components/QueryState.vue";
 import ReceiptLedger from "../components/ReceiptLedger.vue";
 import ReceiptSearch from "../components/ReceiptSearch.vue";
+import AppButton from "../components/AppButton.vue";
 
 type QueryKey = "q" | "from" | "to" | "connection" | "min" | "max" | "sort" | "offset" | "exclusion";
 
@@ -129,35 +133,26 @@ function changePage(value: number): void {
 
 <template>
   <div class="view-content">
-    <header class="page-heading">
-      <div class="eyebrow">{{ t("workspace") }}</div>
-      <h1>{{ t("receipts") }}</h1>
-      <p>{{ t("receiptIntro") }}</p>
-      <button type="button" class="button primary add-receipt" @click="adding = true">{{ t("addReceipt") }}</button>
-    </header>
+    <PageHeader :eyebrow="t('workspace')" :title="t('receipts')" :intro="t('receiptIntro')">
+      <AppButton type="button" variant="primary" class="add-receipt" @click="adding = true">{{ t("addReceipt") }}</AppButton>
+    </PageHeader>
     <ManualReceiptDialog v-if="adding" @close="adding = false" @saved="receiptsAdded" />
     <div class="exclusion-controls">
       <ExclusionFilter :model-value="exclusion" @update:model-value="updateQuery({ exclusion: $event === 'included' ? '' : $event })" />
     </div>
-    <div class="receipt-filters" role="search">
-      <ReceiptSearch v-model="search" class="filter-search" :exclusion="exclusion" @select="applySearch" />
-      <label>
-        <span>{{ t("dateFrom") }}</span>
+    <FilterBar :filtered="filtered" @reset="resetFilters">
+      <template #search><ReceiptSearch v-model="search" :exclusion="exclusion" @select="applySearch" /></template>
+      <FilterField :label="t('dateFrom')">
         <AppDateInput :model-value="queryValue('from')" :max="queryValue('to')" @update:model-value="updateQuery({ from: $event })" />
-      </label>
-      <label>
-        <span>{{ t("dateTo") }}</span>
+      </FilterField>
+      <FilterField :label="t('dateTo')">
         <AppDateInput :model-value="queryValue('to')" :min="queryValue('from')" @update:model-value="updateQuery({ to: $event })" />
-      </label>
-      <label v-if="connections.data.value?.items.length">
-        <span>{{ t("account") }}</span>
-        <AppSelect class="account-select" :model-value="queryValue('connection')" :options="accountOptions(connections.data.value.items, t('allAccounts'))" :label="t('account')" @update:model-value="updateQuery({ connection: $event })" />
-      </label>
-      <RangeInput class="filter-amount" :label="t('amount')" :min="queryValue('min')" :max="queryValue('max')" :min-label="t('amountMin')" :max-label="t('amountMax')" @update:min="updateQuery({ min: $event })" @update:max="updateQuery({ max: $event })" />
-      <button v-if="filtered" type="button" class="button secondary reset-filters" @click="resetFilters">
-        {{ t("resetFilters") }}
-      </button>
-    </div>
+      </FilterField>
+      <FilterField v-if="connections.data.value?.items.length" :label="t('account')">
+        <AppSelect :model-value="queryValue('connection')" :options="accountOptions(connections.data.value.items, t('allAccounts'))" :label="t('account')" @update:model-value="updateQuery({ connection: $event })" />
+      </FilterField>
+      <RangeInput :label="t('amount')" :min="queryValue('min')" :max="queryValue('max')" :min-label="t('amountMin')" :max-label="t('amountMax')" @update:min="updateQuery({ min: $event })" @update:max="updateQuery({ max: $event })" />
+    </FilterBar>
     <QueryState
       :pending="receipts.isPending.value"
       :failed="receipts.isError.value"
@@ -177,19 +172,12 @@ function changePage(value: number): void {
             })
           }}</span>
           <div>
-            <button
-              class="button secondary"
-              :disabled="offset === 0"
-              @click="changePage(Math.max(0, offset - limit))"
-            >
+            <AppButton :disabled="offset === 0" @click="changePage(Math.max(0, offset - limit))">
               {{ t("previous") }}
-</button><button
-              class="button secondary"
-              :disabled="offset + limit >= receipts.data.value.total"
-              @click="changePage(offset + limit)"
-            >
+            </AppButton>
+            <AppButton :disabled="offset + limit >= receipts.data.value.total" @click="changePage(offset + limit)">
               {{ t("next") }}
-            </button>
+            </AppButton>
           </div>
         </div>
       </section>
@@ -198,23 +186,6 @@ function changePage(value: number): void {
 </template>
 
 <style scoped>
-.receipt-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 36px; }
-.exclusion-controls { margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-.receipt-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
-.receipt-filters .filter-search { flex: 1 1 140px; min-width: 0; }
-.receipt-filters input,
-.receipt-filters select { height: 40px; border: 1px solid var(--border-input); border-radius: 4px; background: var(--surface-input); padding: 0 12px; font-size: 13px; }
-.receipt-filters input:focus,
-.receipt-filters select:focus { border-color: var(--border-input-focus); box-shadow: 0 0 0 3px var(--ring-input-focus); outline: 0; }
-.receipt-filters .account-select { min-width: 210px; }
-.reset-filters { height: 40px; }
+.exclusion-controls { margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .add-receipt { margin-top: 16px; }
-@media (max-width: 780px) {
-  .receipt-filters { display: grid; grid-template-columns: 1fr 1fr; }
-  .receipt-filters .filter-search,
-  .reset-filters { grid-column: 1 / -1; }
-  .receipt-filters .filter-amount { width: auto; }
-  .receipt-filters input,
-  .receipt-filters select, .receipt-filters .account-select { width: 100%; min-width: 0; }
-}
 </style>

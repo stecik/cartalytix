@@ -6,13 +6,13 @@ import AppIcon from "./AppIcon.vue";
 import ExclusionAction from "./ExclusionAction.vue";
 import ExclusionStatus from "./ExclusionStatus.vue";
 import ReceiptSource from "./ReceiptSource.vue";
+import SortButton from "./SortButton.vue";
 import { providerLogos } from "../providerLogos";
 
 const props = defineProps<{ receipts: Receipt[]; sort?: string; filtered?: boolean; manageExclusions?: boolean }>();
 const emit = defineEmits<{ sort: [field: "purchased_at" | "total_amount"] }>();
 const { t, locale } = useI18n();
 const router = useRouter();
-const SORT_MARKS = { ascending: "↑", descending: "↓", none: "" } as const;
 
 function openReceipt(event: MouseEvent, id: string): void {
   if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey
@@ -65,15 +65,11 @@ function formatDate(date: string): string {
           <th scope="col">{{ t("store") }}</th>
           <th v-if="sort === undefined" scope="col">{{ t("date") }}</th>
           <th v-else scope="col" :aria-sort="ariaSort('purchased_at')">
-            <button type="button" class="sort-button" @click="emit('sort', 'purchased_at')">
-              {{ t("date") }}<span aria-hidden="true">{{ SORT_MARKS[ariaSort("purchased_at")] }}</span>
-            </button>
+            <SortButton :direction="ariaSort('purchased_at')" @click="emit('sort', 'purchased_at')">{{ t("date") }}</SortButton>
           </th>
           <th v-if="sort === undefined" scope="col" class="amount">{{ t("amount") }}</th>
           <th v-else scope="col" class="amount" :aria-sort="ariaSort('total_amount')">
-            <button type="button" class="sort-button" @click="emit('sort', 'total_amount')">
-              {{ t("amount") }}<span aria-hidden="true">{{ SORT_MARKS[ariaSort("total_amount")] }}</span>
-            </button>
+            <SortButton :direction="ariaSort('total_amount')" @click="emit('sort', 'total_amount')">{{ t("amount") }}</SortButton>
           </th>
           <th v-if="manageExclusions" scope="col" class="amount">{{ t("includedAmount") }}</th>
           <th v-if="manageExclusions" scope="col"><span class="sr-only">{{ t("actions") }}</span></th>
@@ -106,14 +102,11 @@ function formatDate(date: string): string {
 
 <style scoped>
 .receipt-row { cursor: pointer; }
-.excluded-row td { color: var(--muted); }
+.excluded-row td { color: var(--text-muted); }
 .actions-cell { width: 1%; }
 .receipt-store { display: flex; align-items: center; gap: 12px; }
 .receipt-logo { width: 28px; height: 28px; object-fit: contain; flex-shrink: 0; }
-.sort-button { border: 0; padding: 0; background: none; color: inherit; font-size: inherit; display: inline-flex; gap: 4px; }
-.sort-button:hover { color: var(--green); }
-.sort-button span { min-width: 1ch; }
-.receipt-row:hover { background: var(--surface-row-hover); }
+.receipt-row:hover { background: var(--bg-row-hover); }
 .receipt-row a { display: inline-block; text-underline-offset: 4px; }
 .receipt-row a:hover { text-decoration: underline; }
 </style>

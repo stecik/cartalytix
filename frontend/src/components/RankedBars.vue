@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RouteLocationRaw } from "vue-router";
+import AppButton from "./AppButton.vue";
 
 export interface RankedRow {
   key: string;
@@ -46,12 +47,12 @@ watch(() => props.rows, () => { offset.value = 0; });
   <div v-if="rows.length > limit" class="pagination">
     <span>{{ t("pageRange", { start: offset + 1, end: Math.min(offset + limit, rows.length), total: rows.length }) }}</span>
     <div>
-      <button type="button" class="button secondary" :disabled="offset === 0" @click="offset = Math.max(0, offset - limit)">
+      <AppButton type="button" :disabled="offset === 0" @click="offset = Math.max(0, offset - limit)">
         {{ t("previous") }}
-      </button>
-      <button type="button" class="button secondary" :disabled="offset + limit >= rows.length" @click="offset += limit">
+      </AppButton>
+      <AppButton type="button" :disabled="offset + limit >= rows.length" @click="offset += limit">
         {{ t("next") }}
-      </button>
+      </AppButton>
     </div>
   </div>
 </template>
@@ -66,7 +67,7 @@ watch(() => props.rows, () => { offset.value = 0; });
   display: flex;
   gap: 14px;
   padding: 12px 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
 }
 .ranked-bars li:last-child {
   border-bottom: 0;
@@ -75,7 +76,7 @@ watch(() => props.rows, () => { offset.value = 0; });
   width: 20px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: var(--text-rank);
+  color: var(--text-subtle);
   padding-top: 2px;
 }
 .ranked-body {
@@ -97,34 +98,34 @@ watch(() => props.rows, () => { offset.value = 0; });
   color: inherit;
 }
 .ranked-link:hover {
-  color: var(--green);
+  color: var(--accent);
   text-decoration: underline;
 }
 .ranked-value {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--green);
+  color: var(--accent);
   white-space: nowrap;
 }
 .ranked-track {
   height: 4px;
   margin: 8px 0 6px;
-  background: var(--light);
+  background: var(--bg-muted);
   border-radius: 2px;
   overflow: hidden;
 }
 .ranked-fill {
   display: block;
   height: 100%;
-  background: var(--green);
+  background: var(--accent);
   border-radius: 2px;
   transition: width 0.5s ease-out;
 }
 .ranked-bars li:hover .ranked-fill {
-  background: var(--green-hover);
+  background: var(--accent-hover);
 }
 .ranked-detail {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 </style>

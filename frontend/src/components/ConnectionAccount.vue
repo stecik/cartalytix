@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { accountName, providerName, SHOPTET_SHOPS } from "../names";
@@ -17,13 +17,22 @@ import FoodoraTokenForm from "./FoodoraTokenForm.vue";
 import AppIcon from "./AppIcon.vue";
 import AppDialog from "./AppDialog.vue";
 import AppSwitch from "./AppSwitch.vue";
+import AppSelect from "./AppSelect.vue";
+import AppTabs from "./AppTabs.vue";
+import IconButton from "./IconButton.vue";
+import { syncIntervalOptions } from "../syncIntervals";
+import AppButton from "./AppButton.vue";
 
 const props = withDefaults(defineProps<{ connection: Connection; initialLinking?: boolean }>(), { initialLinking: false });
 const { t, locale } = useI18n();
 const client = useQueryClient();
 const expanded = ref(props.initialLinking);
 const tab = ref<"sync" | "history" | "manage">("sync");
-const tabs = ["sync", "history", "manage"] as const;
+const tabOptions = computed(() => [
+  { value: "sync" as const, label: t("synchronization") },
+  { value: "history" as const, label: t("history") },
+  { value: "manage" as const, label: t("manageConnection") },
+]);
 const linking = ref(props.initialLinking);
 const name = ref(props.connection.name);
 const session = useQuery(sessionOptions);
@@ -98,13 +107,6 @@ function ask(action: "clear-data" | "remove"): void {
   manage.reset(); pauseSync.value = true; confirm.value = action; notice.value = "";
 }
 function connect(): void { linking.value = true; notice.value = ""; }
-async function tabKey(event: KeyboardEvent): Promise<void> {
-  const position = tabs.indexOf(tab.value);
-  const target = event.key === "ArrowRight" ? tabs[(position + 1) % tabs.length] : event.key === "ArrowLeft" ? tabs[(position + tabs.length - 1) % tabs.length] : event.key === "Home" ? tabs[0] : event.key === "End" ? tabs[2] : undefined;
-  if (!target) return;
-  event.preventDefault(); tab.value = target;
-  await nextTick(); document.getElementById(`tab-${target}-${props.connection.id}`)?.focus();
-}
 function date(value: string | null): string {
   if (!value) return t("neverSynced");
   const parsed = new Date(value);
@@ -143,12 +145,10 @@ const actionError = computed(() => {
         <span class="account-fresh"><span class="sr-only">{{ t('lastSuccessfulSync') }}: </span>{{ date(connection.last_synced_at) }}</span>
         <AppIcon name="chevron" :class="{ rotated: expanded }" />
       </button>
-      <button class="remove-account" data-action="remove" :disabled="managementDisabled" :aria-label="t('removeNamedConnection', { name: displayName })" :title="t('removeConnection')" @click="ask('remove')"><AppIcon name="trash" /></button>
+      <IconButton class="remove-account" tone="danger" data-action="remove" :disabled="managementDisabled" :label="t('removeNamedConnection', { name: displayName })" :title="t('removeConnection')" @click="ask('remove')"><AppIcon name="trash" /></IconButton>
     </div>
     <div v-show="expanded" :id="`account-${connection.id}`" class="account-panel">
-      <div class="account-tabs" role="tablist" :aria-label="t('connectionSettings')" @keydown="tabKey">
-        <button v-for="item in tabs" :id="`tab-${item}-${connection.id}`" :key="item" type="button" role="tab" :data-tab="item" :aria-selected="tab === item" :aria-controls="`panel-${item}-${connection.id}`" :tabindex="tab === item ? 0 : -1" @click="tab = item">{{ t(item === 'sync' ? 'synchronization' : item === 'history' ? 'history' : 'manageConnection') }}</button>
-      </div>
+      <AppTabs v-model="tab" class="account-tabs" :options="tabOptions" :label="t('connectionSettings')" :panel-id="`panel-${connection.id}`" />
       <p v-if="actionError && !confirm" role="alert" class="form-alert">{{ t(actionError) }}</p>
       <p v-if="notice" class="account-notice" role="status">{{ t(notice) }}</p>
       <MixitLoginForm v-if="linking && connection.provider === 'mixit'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
@@ -159,24 +159,21 @@ const actionError = computed(() => {
       <FoodoraTokenForm v-else-if="linking && connection.provider === 'foodora'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <LidlLoginForm v-else-if="linking && connection.provider === 'kaufland'" provider="kaufland" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <LidlLoginForm v-else-if="linking" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
-      <section v-show="tab === 'sync'" :id="`panel-sync-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-sync-${connection.id}`" tabindex="0">
-        <div v-if="!linkedAccount && !linking" class="reconnect-note"><p>{{ t(connection.status === 'not_connected' ? 'connectToImport' : 'reconnectToImport') }}</p><button class="button secondary" :disabled="active || busy" @click="connect">{{ t(connection.status === 'not_connected' ? 'linkAccount' : 'reconnectAccount') }}</button></div>
+      <section v-show="tab === 'sync'" :id="`panel-${connection.id}-sync`" role="tabpanel" :aria-labelledby="`panel-${connection.id}-tab-sync`" tabindex="0">
+        <div v-if="!linkedAccount && !linking" class="reconnect-note"><p>{{ t(connection.status === 'not_connected' ? 'connectToImport' : 'reconnectToImport') }}</p><AppButton size="sm" :disabled="active || busy" @click="connect">{{ t(connection.status === 'not_connected' ? 'linkAccount' : 'reconnectAccount') }}</AppButton></div>
         <div class="account-setting">
           <div><strong>{{ t('automaticSync') }}</strong><p>{{ t('automaticSyncHelp') }}</p></div>
           <AppSwitch :model-value="connection.sync_interval_minutes !== null" :disabled="!linkedAccount || active || busy || linking" :label="t('automaticSync')" @update:model-value="save.mutate({ sync_interval_minutes: $event ? interval : null })"><span>{{ t(connection.sync_interval_minutes === null ? 'off' : 'on') }}</span></AppSwitch>
         </div>
         <div v-if="connection.sync_interval_minutes !== null" class="account-setting interval-setting">
-          <label :for="`interval-${connection.id}`">{{ t('syncFrequency') }}</label>
-          <select :id="`interval-${connection.id}`" v-model="interval" :disabled="!linkedAccount || active || busy || linking" @change="save.mutate({ sync_interval_minutes: interval })">
-            <option :value="60">{{ t('everyHour') }}</option><option :value="360">{{ t('everySixHours') }}</option><option :value="1440">{{ t('everyDay') }}</option>
-            <option v-if="![60, 360, 1440].includes(interval)" :value="interval">{{ t('everyMinutes', { count: interval }) }}</option>
-          </select>
+          <span>{{ t('syncFrequency') }}</span>
+          <AppSelect :model-value="String(interval)" :options="syncIntervalOptions(t, interval)" :label="t('syncFrequency')" :disabled="!linkedAccount || active || busy || linking" @update:model-value="interval = Number($event); save.mutate({ sync_interval_minutes: interval })" />
         </div>
         <p v-if="connection.sync_interval_minutes !== null && connection.next_sync_at" class="account-next">{{ t('nextSync') }}: {{ date(connection.next_sync_at) }}</p>
-        <div class="account-setting manual-setting"><div><strong>{{ t('manualSync') }}</strong><p>{{ t('manualSyncHelp') }}</p></div><button class="button primary" :disabled="!linkedAccount || active || busy || linking" @click="sync.mutate()">{{ t(active || sync.isPending.value ? 'syncing' : 'syncNow') }}</button></div>
+        <div class="account-setting manual-setting"><div><strong>{{ t('manualSync') }}</strong><p>{{ t('manualSyncHelp') }}</p></div><AppButton size="sm" variant="primary" :disabled="!linkedAccount || active || busy || linking" @click="sync.mutate()">{{ t(active || sync.isPending.value ? 'syncing' : 'syncNow') }}</AppButton></div>
         <div v-if="connection.latest_sync" class="sync-progress" role="status" :aria-live="active ? 'polite' : 'off'"><strong>{{ t(`syncStatus_${connection.latest_sync.status}`) }}</strong><p>{{ t('syncCounts', { seen: connection.latest_sync.receipts_seen, imported: connection.latest_sync.receipts_imported, skipped: connection.latest_sync.receipts_skipped, pages: connection.latest_sync.pages_count }) }}</p><p v-if="connection.latest_sync.status === 'failed'" class="sync-error">{{ t(errorKey(connection.latest_sync.error_code)) }}</p></div>
       </section>
-      <section v-if="tab === 'history'" :id="`panel-history-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-history-${connection.id}`" tabindex="0">
+      <section v-if="tab === 'history'" :id="`panel-${connection.id}-history`" role="tabpanel" :aria-labelledby="`panel-${connection.id}-tab-history`" tabindex="0">
         <QueryState :pending="history.isPending.value" :failed="history.isError.value" @retry="history.refetch()">
           <p v-if="!history.data.value?.items.length" class="section-note">{{ t('noSyncHistory') }}</p>
           <ol v-else class="sync-history-list">
@@ -189,17 +186,17 @@ const actionError = computed(() => {
           <div v-if="(history.data.value?.total ?? 0) > HISTORY_LIMIT" class="pagination">
             <span>{{ t('pageRange', { start: historyOffset + 1, end: Math.min(historyOffset + HISTORY_LIMIT, history.data.value?.total ?? 0), total: history.data.value?.total ?? 0 }) }}</span>
             <div>
-              <button type="button" class="button secondary" :disabled="historyOffset === 0 || history.isFetching.value" @click="historyOffset = Math.max(0, historyOffset - HISTORY_LIMIT)">{{ t('previous') }}</button>
-              <button type="button" class="button secondary" :disabled="historyOffset + HISTORY_LIMIT >= (history.data.value?.total ?? 0) || history.isFetching.value" @click="historyOffset += HISTORY_LIMIT">{{ t('next') }}</button>
+              <AppButton type="button" :disabled="historyOffset === 0 || history.isFetching.value" @click="historyOffset = Math.max(0, historyOffset - HISTORY_LIMIT)">{{ t('previous') }}</AppButton>
+              <AppButton type="button" :disabled="historyOffset + HISTORY_LIMIT >= (history.data.value?.total ?? 0) || history.isFetching.value" @click="historyOffset += HISTORY_LIMIT">{{ t('next') }}</AppButton>
             </div>
           </div>
         </QueryState>
       </section>
-      <section v-if="tab === 'manage'" :id="`panel-manage-${connection.id}`" role="tabpanel" :aria-labelledby="`tab-manage-${connection.id}`" tabindex="0">
-        <form class="rename-form" @submit.prevent="save.mutate({ name: name.trim() })"><label :for="`name-${connection.id}`">{{ t('connectionName') }}</label><div><input :id="`name-${connection.id}`" v-model="name" maxlength="120" :disabled="busy" /><button type="submit" class="button secondary" :disabled="name.trim() === connection.name || busy">{{ t('save') }}</button></div></form>
-        <div class="account-setting"><div><strong>{{ t('storeAuthorization') }}</strong><p>{{ t('reconnectHelp') }}</p></div><button v-if="!linking" class="button secondary" :disabled="active || busy" @click="connect">{{ t(['not_connected', 'disconnected'].includes(connection.status) ? 'linkAccount' : 'reconnectAccount') }}</button></div>
-        <div class="account-setting"><div><strong>{{ t('disconnectAccount') }}</strong><p>{{ t('disconnectHelp') }}</p></div><button class="button secondary" data-action="disconnect" :disabled="managementDisabled || ['not_connected', 'disconnected'].includes(connection.status)" @click="manage.mutate('disconnect')">{{ t('disconnect') }}</button></div>
-        <div class="account-setting"><div><strong>{{ t('deleteConnectionData') }}</strong><p>{{ t('clearDataHelp') }}</p></div><button class="button secondary danger-text" data-action="clear-data" :disabled="managementDisabled" @click="ask('clear-data')">{{ t('deleteData') }}</button></div>
+      <section v-if="tab === 'manage'" :id="`panel-${connection.id}-manage`" role="tabpanel" :aria-labelledby="`panel-${connection.id}-tab-manage`" tabindex="0">
+        <form class="rename-form" @submit.prevent="save.mutate({ name: name.trim() })"><label :for="`name-${connection.id}`">{{ t('connectionName') }}</label><div><input :id="`name-${connection.id}`" v-model="name" maxlength="120" :disabled="busy" /><AppButton size="sm" type="submit" :disabled="name.trim() === connection.name || busy">{{ t('save') }}</AppButton></div></form>
+        <div class="account-setting"><div><strong>{{ t('storeAuthorization') }}</strong><p>{{ t('reconnectHelp') }}</p></div><AppButton v-if="!linking" size="sm" :disabled="active || busy" @click="connect">{{ t(['not_connected', 'disconnected'].includes(connection.status) ? 'linkAccount' : 'reconnectAccount') }}</AppButton></div>
+        <div class="account-setting"><div><strong>{{ t('disconnectAccount') }}</strong><p>{{ t('disconnectHelp') }}</p></div><AppButton size="sm" data-action="disconnect" :disabled="managementDisabled || ['not_connected', 'disconnected'].includes(connection.status)" @click="manage.mutate('disconnect')">{{ t('disconnect') }}</AppButton></div>
+        <div class="account-setting"><div><strong>{{ t('deleteConnectionData') }}</strong><p>{{ t('clearDataHelp') }}</p></div><AppButton size="sm" class="danger-text" data-action="clear-data" :disabled="managementDisabled" @click="ask('clear-data')">{{ t('deleteData') }}</AppButton></div>
         <p v-if="running" class="section-note">{{ t('waitForSync') }}</p>
       </section>
     </div>
@@ -208,7 +205,7 @@ const actionError = computed(() => {
       <p class="deletion-count">{{ t('receiptCount', connection.receipt_count) }} · {{ displayName }}</p>
       <template v-if="confirm === 'clear-data'"><label class="pause-checkbox"><input v-model="pauseSync" type="checkbox" :disabled="manage.isPending.value" />{{ t('pauseAutomaticSync') }}</label><p>{{ t('reimportWarning') }}</p></template>
       <p v-if="actionError" role="alert" class="form-alert">{{ t(actionError) }}</p>
-      <div class="dialog-actions"><button class="button secondary" data-action="cancel" :disabled="manage.isPending.value" @click="confirm = null">{{ t('cancel') }}</button><button class="button danger" data-action="confirm" :disabled="manage.isPending.value || running" @click="manage.mutate(confirm)">{{ t(manage.isPending.value ? 'deleting' : confirm === 'remove' ? 'removeConnection' : 'deleteData') }}</button></div>
+      <div class="dialog-actions"><AppButton data-action="cancel" :disabled="manage.isPending.value" @click="confirm = null">{{ t('cancel') }}</AppButton><AppButton variant="danger" data-action="confirm" :disabled="manage.isPending.value || running" @click="manage.mutate(confirm)">{{ t(manage.isPending.value ? 'deleting' : confirm === 'remove' ? 'removeConnection' : 'deleteData') }}</AppButton></div>
     </AppDialog>
   </article>
 </template>
@@ -216,38 +213,35 @@ const actionError = computed(() => {
 <style scoped>
 .connection-account { min-width: 0; }
 .account-row { display: grid; grid-template-columns: minmax(0, 1fr) 36px; gap: 8px; align-items: center; padding: 0 10px; border-radius: 7px; transition: background .15s; }
-.is-expanded > .account-row { background: var(--surface-account-expanded); }
+.is-expanded > .account-row { background: var(--bg-inset); }
 .account-toggle { display: grid; grid-template-columns: minmax(130px, 1.25fr) minmax(105px, 1fr) minmax(100px, 1fr) 20px; gap: 16px; align-items: center; border: 0; background: transparent; padding: 22px 0; text-align: left; color: inherit; width: 100%; min-width: 0; border-radius: 4px; }
-.account-toggle:hover { background: var(--surface-account-hover); }
-.account-toggle:focus-visible { outline: 2px solid var(--focus-account); outline-offset: -3px; border-radius: 6px; }
+.account-toggle:hover { background: var(--bg-row-hover); }
+.account-toggle:focus-visible { outline: 2px solid var(--focus-strong); outline-offset: -3px; border-radius: 6px; }
 .account-identity { min-width: 0; overflow-wrap: anywhere; }
 .account-identity strong { display: block; font-size: 14px; font-weight: 600; }
-.account-identity small { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; }
+.account-identity small { display: block; color: var(--text-muted); font-size: 11px; margin-top: 5px; }
 .account-status { display: flex; align-items: center; gap: 7px; font-size: 12px; min-width: 0; }
-.account-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--status-idle); flex-shrink: 0; }
-.account-status.connected { color: var(--status-connected); }.account-status.connected i { background: var(--status-connected); }
-.account-status.attention { color: var(--status-attention); }.account-status.attention i { background: var(--status-attention); }
-.account-status.working { color: var(--status-working); }.account-status.working i { background: var(--status-working); animation: pulse 1s infinite alternate; }
-.account-fresh { color: var(--muted); font-size: 12px; line-height: 1.6; }
-.account-toggle > svg { width: 20px; height: 20px; transition: transform .16s; color: var(--muted); }.account-toggle > svg.rotated { transform: rotate(180deg); }
-.remove-account { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; color: var(--text-account-remove); background: transparent; border: 0; border-radius: 5px; }.remove-account svg { width: 18px; height: 18px; }.remove-account:hover:enabled { color: var(--danger); background: var(--surface-account-remove-hover); }
-.account-panel { margin: 0 10px 16px; padding: 0 18px 20px; border-left: 2px solid var(--border-account-panel); border-radius: 0 0 6px 0; background: var(--surface-account-panel); animation: arrive .16s ease-out; }
-.account-tabs { display: flex; gap: 26px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
-.account-tabs button { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 13px; padding: 12px 0; white-space: nowrap; }
-.account-tabs button[aria-selected=true] { border-bottom-color: var(--green); color: var(--green); font-weight: 600; }
+.account-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-subtle); flex-shrink: 0; }
+.account-status.connected { color: var(--success); }.account-status.connected i { background: var(--success); }
+.account-status.attention { color: var(--warning); }.account-status.attention i { background: var(--warning); }
+.account-status.working { color: var(--info); }.account-status.working i { background: var(--info); animation: pulse 1s infinite alternate; }
+.account-fresh { color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.account-toggle > svg { width: 20px; height: 20px; transition: transform .16s; color: var(--text-muted); }.account-toggle > svg.rotated { transform: rotate(180deg); }
+.account-panel { margin: 0 10px 16px; padding: 0 18px 20px; border-left: 2px solid var(--control); border-radius: 0 0 6px 0; background: var(--bg-inset); animation: arrive .16s ease-out; }
+.account-tabs { border-bottom: 1px solid var(--border); margin-bottom: 12px; }
 .account-setting { display: flex; gap: 18px; align-items: center; justify-content: space-between; padding: 18px 0; }
-.account-setting + .account-setting { border-top: 1px solid var(--line); }
-.account-setting > div { min-width: 0; }.account-setting strong { font-size: 13px; font-weight: 550; }.account-setting p { color: var(--muted); font-size: 12px; line-height: 1.7; margin-top: 4px; }
-.account-setting .button { flex-shrink: 0; font-size: 12px; min-height: 38px; padding: 9px 13px; }
-.interval-setting > label { font-size: 13px; }.interval-setting select { min-height: 38px; max-width: 100%; padding: 8px 28px 8px 10px; border: 1px solid var(--border-secondary-button); border-radius: 5px; background: var(--surface-interval); font-size: 12px; }
-.account-next { color: var(--muted); font-size: 12px; line-height: 1.7; margin: -2px 0 16px; }
-.manual-setting { border-top: 1px solid var(--line); }
-.reconnect-note { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px; margin: 16px 0; background: var(--surface-reconnect); border-radius: 5px; font-size: 12px; line-height: 1.7; }.reconnect-note .button { flex-shrink: 0; min-height: 36px; padding: 8px 12px; font-size: 12px; }
-.sync-progress { border-left: 2px solid var(--text-connection-icon); padding: 5px 14px; margin: 16px 0 0; font-size: 12px; }.sync-progress > strong { font-weight: 550; }.sync-progress p { margin-top: 7px; line-height: 1.8; color: var(--muted); }.sync-error, .sync-progress .sync-error { color: var(--text-error); font-size: 12px; line-height: 1.7; }
-.account-notice { color: var(--status-connected); font-size: 12px; margin: 18px 0; }
-.sync-history-list { list-style: none; margin: 0; padding: 0; }.sync-history-list li { padding: 17px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; font-size: 12px; }.history-result { display: flex; flex-direction: column; gap: 5px; }.history-result strong { font-weight: 500; }.history-result time, .history-result small { color: var(--muted); }.history-result small { font-size: 11px; }.history-counts { display: flex; align-items: start; gap: 16px; font-variant-numeric: tabular-nums; color: var(--muted); }.sync-history-list .sync-error { grid-column: 1 / -1; }
-.rename-form { margin: 18px 0 4px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }.rename-form label { margin: 0 0 10px; }.rename-form > div { display: flex; gap: 10px; }.rename-form input { min-width: 0; height: 40px; flex: 1; font-size: 13px; }.rename-form .button { flex-shrink: 0; min-height: 40px; font-size: 12px; }.danger-text { color: var(--danger); }
+.account-setting + .account-setting { border-top: 1px solid var(--border); }
+.account-setting > div { min-width: 0; }.account-setting strong { font-size: 13px; font-weight: 550; }.account-setting p { color: var(--text-muted); font-size: 12px; line-height: 1.7; margin-top: 4px; }
+.account-setting .button { flex-shrink: 0; }
+.interval-setting > span { font-size: 13px; }.interval-setting .app-select { min-width: 170px; max-width: 100%; }
+.account-next { color: var(--text-muted); font-size: 12px; line-height: 1.7; margin: -2px 0 16px; }
+.manual-setting { border-top: 1px solid var(--border); }
+.reconnect-note { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px; margin: 16px 0; background: var(--bg-muted); border-radius: 5px; font-size: 12px; line-height: 1.7; }.reconnect-note .button { flex-shrink: 0; }
+.sync-progress { border-left: 2px solid var(--icon-accent); padding: 5px 14px; margin: 16px 0 0; font-size: 12px; }.sync-progress > strong { font-weight: 550; }.sync-progress p { margin-top: 7px; line-height: 1.8; color: var(--text-muted); }.sync-error, .sync-progress .sync-error { color: var(--danger); font-size: 12px; line-height: 1.7; }
+.account-notice { color: var(--success); font-size: 12px; margin: 18px 0; }
+.sync-history-list { list-style: none; margin: 0; padding: 0; }.sync-history-list li { padding: 17px 0; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; font-size: 12px; }.history-result { display: flex; flex-direction: column; gap: 5px; }.history-result strong { font-weight: 500; }.history-result time, .history-result small { color: var(--text-muted); }.history-result small { font-size: 11px; }.history-counts { display: flex; align-items: start; gap: 16px; font-variant-numeric: tabular-nums; color: var(--text-muted); }.sync-history-list .sync-error { grid-column: 1 / -1; }
+.rename-form { margin: 18px 0 4px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }.rename-form label { margin: 0 0 10px; }.rename-form > div { display: flex; gap: 10px; }.rename-form input { min-width: 0; flex: 1; }.rename-form .button { flex-shrink: 0; }.danger-text { color: var(--danger); }
 @media (max-width: 1000px) { .account-toggle { grid-template-columns: minmax(110px, 1fr) minmax(100px, .9fr) 20px; gap: 12px; }.account-fresh { grid-column: 1 / 3; grid-row: 2; }.account-toggle > svg { grid-column: 3; grid-row: 1 / 3; }.account-toggle { padding: 18px 0; row-gap: 7px; } }
-@media (max-width: 600px) { .account-row { padding-inline: 8px; }.account-panel { margin-inline: 8px; padding-inline: 12px; }.remove-account { width: 36px; min-height: 44px; }.account-tabs { gap: 22px; }.account-setting { gap: 14px; }.account-setting > div { flex: 1; }.reconnect-note { align-items: flex-start; flex-direction: column; }.account-setting p { max-width: 260px; }.account-fresh { font-size: 11px; }.account-toggle { grid-template-columns: minmax(0, 1fr) 20px; row-gap: 7px; }.account-status { grid-column: 1; grid-row: 2; }.account-fresh { grid-column: 1; grid-row: 3; }.account-toggle > svg { grid-column: 2; grid-row: 1 / 4; }.history-counts { flex-direction: column; gap: 5px; }.account-setting:has(.danger-text) { align-items: flex-start; }.account-setting:has(.danger-text) .button { margin-top: 1px; } }
-@media (max-width: 390px) { .account-tabs { gap: 18px; }.account-tabs button { font-size: 12px; }.account-setting { flex-wrap: wrap; }.account-setting > div { flex-basis: 145px; }.rename-form > div { flex-wrap: wrap; }.rename-form input { flex-basis: 100%; }.history-counts { gap: 7px; }.account-toggle { padding-right: 4px; } }
+@media (max-width: 600px) { .account-row { padding-inline: 8px; }.account-panel { margin-inline: 8px; padding-inline: 12px; }.remove-account { width: 36px; min-height: 44px; }.account-setting { gap: 14px; }.account-setting > div { flex: 1; }.reconnect-note { align-items: flex-start; flex-direction: column; }.account-setting p { max-width: 260px; }.account-fresh { font-size: 11px; }.account-toggle { grid-template-columns: minmax(0, 1fr) 20px; row-gap: 7px; }.account-status { grid-column: 1; grid-row: 2; }.account-fresh { grid-column: 1; grid-row: 3; }.account-toggle > svg { grid-column: 2; grid-row: 1 / 4; }.history-counts { flex-direction: column; gap: 5px; }.account-setting:has(.danger-text) { align-items: flex-start; }.account-setting:has(.danger-text) .button { margin-top: 1px; } }
+@media (max-width: 390px) { .account-setting { flex-wrap: wrap; }.account-setting > div { flex-basis: 145px; }.rename-form > div { flex-wrap: wrap; }.rename-form input { flex-basis: 100%; }.history-counts { gap: 7px; }.account-toggle { padding-right: 4px; } }
 </style>

@@ -98,7 +98,7 @@ describe("items ledger", () => {
     const { router, wrapper, client } = await mountAt("/items?exclusion=excluded&offset=30");
     const excludedUrl = fetcher.mock.calls.map(([input]) => new URL(String(input), "http://test")).find((url) => url.pathname === "/api/v1/items/exclusions");
     expect(excludedUrl?.searchParams.get("scope")).toBe("all");
-    await wrapper.get('.exclusion-filter input[value="included"]').setValue(true);
+    await wrapper.get('.exclusion-filter [data-tab="included"]').trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.query).toEqual({});
     wrapper.unmount(); client.clear();

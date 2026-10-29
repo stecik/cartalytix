@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ApiError, request } from "../api";
 import type { Connection } from "../api";
+import AppSelect from "./AppSelect.vue";
+import AppButton from "./AppButton.vue";
 
 const props = defineProps<{ connectionId: string }>();
 const emit = defineEmits<{ connected: [connection: Connection]; cancel: [] }>();
@@ -23,6 +25,7 @@ const flowId = ref<string | null>(null);
 const step = ref<"credentials" | "method" | "otp">("credentials");
 const methods = ref<VerificationMethod[]>([]);
 const method = ref<VerificationMethod>("EMAIL");
+const methodOptions = computed(() => methods.value.map((value) => ({ value, label: t(`foodoraMethod${value}`) })));
 const busy = ref(false);
 const errorKey = ref("");
 const codeInput = ref<HTMLInputElement | null>(null);
@@ -133,10 +136,8 @@ onBeforeUnmount(close);
       <input :id="`foodora-password-${connectionId}`" v-model="password" type="password" autocomplete="off" maxlength="1024" required :disabled="busy" />
     </template>
     <template v-else-if="step === 'method'">
-      <label :for="`foodora-method-${connectionId}`">{{ t("foodoraVerificationMethod") }}</label>
-      <select :id="`foodora-method-${connectionId}`" v-model="method" :disabled="busy">
-        <option v-for="available in methods" :key="available" :value="available">{{ t(`foodoraMethod${available}`) }}</option>
-      </select>
+      <label>{{ t("foodoraVerificationMethod") }}</label>
+      <AppSelect v-model="method" class="method-select" :options="methodOptions" :label="t('foodoraVerificationMethod')" :disabled="busy" />
     </template>
     <template v-else>
       <p class="verification-note">{{ t("foodoraCodeInstructions") }}</p>
@@ -145,12 +146,13 @@ onBeforeUnmount(close);
     </template>
     <p v-if="errorKey" class="form-alert" role="alert">{{ t(errorKey) }}</p>
     <div class="connection-actions">
-      <button type="submit" class="button primary" :disabled="busy">{{ t(busy ? "lidlSigningIn" : step === "method" ? "foodoraSendCode" : step === "otp" ? "foodoraVerifyCode" : "foodoraConnect") }}</button>
-      <button type="button" class="button secondary" @click="cancel">{{ t("cancel") }}</button>
+      <AppButton type="submit" variant="primary" :disabled="busy">{{ t(busy ? "lidlSigningIn" : step === "method" ? "foodoraSendCode" : step === "otp" ? "foodoraVerifyCode" : "foodoraConnect") }}</AppButton>
+      <AppButton type="button" @click="cancel">{{ t("cancel") }}</AppButton>
     </div>
   </form>
 </template>
 
 <style scoped>
 .verification-note { margin-top: 18px; font-size: 13px; line-height: 1.7; }
+.method-select { display: block; width: 100%; }
 </style>

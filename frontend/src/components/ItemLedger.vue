@@ -7,6 +7,7 @@ import type { ItemSummary } from "../api";
 import { formatMoney, numberLocale } from "../stats";
 import ExclusionAction from "./ExclusionAction.vue";
 import ExclusionStatus from "./ExclusionStatus.vue";
+import SortButton from "./SortButton.vue";
 
 export type ItemSortField =
   | "name"
@@ -20,7 +21,6 @@ const props = defineProps<{ items: ItemSummary[]; sort?: string; selected?: Read
 const emit = defineEmits<{ sort: [field: ItemSortField]; toggle: [item: ItemSummary] }>();
 const { t, locale } = useI18n();
 const router = useRouter();
-const SORT_MARKS = { ascending: "↑", descending: "↓", none: "" } as const;
 const COLUMNS: Array<{ field: ItemSortField; label: string; numeric: boolean }> = [
   { field: "name", label: "product", numeric: false },
   { field: "receipt_count", label: "purchases", numeric: true },
@@ -74,9 +74,9 @@ function formatDate(date: string): string {
             :class="{ amount: column.numeric }"
             :aria-sort="sort === undefined ? undefined : ariaSort(column.field)"
           >
-            <button v-if="sort !== undefined" type="button" class="sort-button" @click="emit('sort', column.field)">
-              {{ t(column.field === 'total_amount' && (manageExclusions || selected) ? 'originalAmount' : column.label) }}<span aria-hidden="true">{{ SORT_MARKS[ariaSort(column.field)] }}</span>
-            </button>
+            <SortButton v-if="sort !== undefined" :direction="ariaSort(column.field)" @click="emit('sort', column.field)">
+              {{ t(column.field === 'total_amount' && (manageExclusions || selected) ? 'originalAmount' : column.label) }}
+            </SortButton>
             <template v-else>{{ t(column.field === 'total_amount' && (manageExclusions || selected) ? 'originalAmount' : column.label) }}</template>
           </th>
           <th v-if="manageExclusions || selected" scope="col" class="amount">{{ t("includedAmount") }}</th>
@@ -126,11 +126,11 @@ function formatDate(date: string): string {
   cursor: pointer;
   transition: background 0.12s;
 }
-.excluded-row td { color: var(--muted); }
+.excluded-row td { color: var(--text-muted); }
 .actions-cell { width: 1%; }
 .item-row:hover,
 .item-row.selected {
-  background: var(--surface-item-ledger);
+  background: var(--bg-subtle);
 }
 .select-cell {
   width: 1%;
@@ -152,7 +152,7 @@ function formatDate(date: string): string {
   width: 17px;
   height: 17px;
   margin: 0;
-  accent-color: var(--green);
+  accent-color: var(--accent);
 }
 .item-name {
   white-space: normal;
@@ -160,29 +160,14 @@ function formatDate(date: string): string {
 }
 .item-name a {
   font-weight: 550;
-  color: var(--green);
+  color: var(--accent);
 }
 .item-name a:hover {
   text-decoration: underline;
 }
 .strong {
   font-weight: 600;
-  color: var(--green);
-}
-.sort-button {
-  border: 0;
-  background: none;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  display: inline-flex;
-  gap: 4px;
-}
-th.amount .sort-button {
-  justify-content: flex-end;
-}
-.sort-button:hover {
-  color: var(--green);
+  color: var(--accent);
 }
 td.amount,
 th.amount {

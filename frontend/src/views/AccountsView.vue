@@ -7,6 +7,8 @@ import type { AdminUser, AdminUserPassword } from "../api";
 import AppDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
 import QueryState from "../components/QueryState.vue";
+import AppButton from "../components/AppButton.vue";
+import PageHeader from "../components/PageHeader.vue";
 
 type Confirmation = { action: "reset" | "delete"; user: AdminUser };
 
@@ -80,18 +82,14 @@ async function copyPassword(): Promise<void> {
 
 <template>
   <div class="view-content accounts-workspace">
-    <header class="page-heading">
-      <div class="eyebrow">{{ t("administration") }}</div>
-      <h1>{{ t("accounts") }}</h1>
-      <p>{{ t("accountsIntro") }}</p>
-    </header>
+    <PageHeader :eyebrow="t('administration')" :title="t('accounts')" :intro="t('accountsIntro')" />
     <form class="account-create" :aria-busy="create.isPending.value" @submit.prevent="create.mutate()">
       <label for="account-email">{{ t("email") }}</label>
       <div class="account-create-row">
         <input id="account-email" v-model="email" type="email" name="email" autocomplete="off" required :disabled="create.isPending.value" />
-        <button type="submit" class="button primary" :disabled="create.isPending.value">
+        <AppButton type="submit" variant="primary" :disabled="create.isPending.value">
           <AppIcon name="plus" />{{ t(create.isPending.value ? "creatingAccount" : "createAccount") }}
-        </button>
+        </AppButton>
       </div>
       <p class="field-note">{{ t("createAccountHint") }}</p>
       <p v-if="create.isError.value" role="alert" class="form-alert">{{ t(createError) }}</p>
@@ -115,11 +113,11 @@ async function copyPassword(): Promise<void> {
             <td>{{ createdOn(user.created_at) }}</td>
             <td>
               <div v-if="!user.is_admin" class="account-actions">
-                <button type="button" class="text-button" @click="confirming = { action: 'reset', user }">{{ t("resetPassword") }}</button>
-                <button type="button" class="text-button" :disabled="toggle.isPending.value" @click="toggle.mutate(user)">{{ t(user.is_disabled ? "enableAccount" : "disableAccount") }}</button>
-                <button type="button" class="text-button" @click="confirming = { action: 'delete', user }">
+                <AppButton type="button" variant="text" @click="confirming = { action: 'reset', user }">{{ t("resetPassword") }}</AppButton>
+                <AppButton type="button" variant="text" :disabled="toggle.isPending.value" @click="toggle.mutate(user)">{{ t(user.is_disabled ? "enableAccount" : "disableAccount") }}</AppButton>
+                <AppButton type="button" variant="text" @click="confirming = { action: 'delete', user }">
                   <AppIcon name="trash" />{{ t("deleteAccount") }}
-                </button>
+                </AppButton>
               </div>
             </td>
           </tr>
@@ -130,10 +128,10 @@ async function copyPassword(): Promise<void> {
       <p>{{ t(confirming.action === "delete" ? "deleteAccountHelp" : "resetPasswordHelp", { email: confirming.user.email }) }}</p>
       <p v-if="confirm.isError.value" class="form-alert" role="alert">{{ t("accountUpdateFailed") }}</p>
       <div class="dialog-actions">
-        <button class="button secondary" data-action="cancel" type="button" :disabled="confirm.isPending.value" @click="confirming = null">{{ t("cancel") }}</button>
-        <button :class="['button', confirming.action === 'delete' ? 'danger' : 'primary']" type="button" :disabled="confirm.isPending.value" @click="confirming && confirm.mutate(confirming)">
+        <AppButton data-action="cancel" type="button" :disabled="confirm.isPending.value" @click="confirming = null">{{ t("cancel") }}</AppButton>
+        <AppButton :variant="confirming.action === 'delete' ? 'danger' : 'primary'" type="button" :disabled="confirm.isPending.value" @click="confirming && confirm.mutate(confirming)">
           {{ t(confirming.action === "delete" ? "deleteAccount" : "resetPassword") }}
-        </button>
+        </AppButton>
       </div>
     </AppDialog>
     <AppDialog v-if="issued" :title="t('generatedPasswordTitle')" @close="issued = null">
@@ -141,8 +139,8 @@ async function copyPassword(): Promise<void> {
       <code class="generated-password">{{ issued.password }}</code>
       <p v-if="copied" role="status">{{ t("passwordCopied") }}</p>
       <div class="dialog-actions">
-        <button class="button secondary" type="button" @click="copyPassword">{{ t("copyPassword") }}</button>
-        <button class="button primary" data-action="cancel" type="button" @click="issued = null">{{ t("done") }}</button>
+        <AppButton type="button" @click="copyPassword">{{ t("copyPassword") }}</AppButton>
+        <AppButton variant="primary" data-action="cancel" type="button" @click="issued = null">{{ t("done") }}</AppButton>
       </div>
     </AppDialog>
   </div>
@@ -159,6 +157,6 @@ async function copyPassword(): Promise<void> {
 .account-email-cell { overflow-wrap: anywhere; white-space: normal; }
 .account-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 14px; }
 .account-actions svg { width: 14px; height: 14px; }
-.generated-password { display: block; padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; font-size: 15px; overflow-wrap: anywhere; user-select: all; }
+.generated-password { display: block; padding: 12px 14px; border: 1px solid var(--border); border-radius: 6px; font-size: 15px; overflow-wrap: anywhere; user-select: all; }
 @media (max-width: 600px) { .account-create-row { flex-direction: column; } .account-actions { justify-content: flex-start; } }
 </style>

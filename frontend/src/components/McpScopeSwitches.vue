@@ -61,9 +61,9 @@ function toggle(scope: McpScope, enabled: boolean): void {
 <style scoped>
 .scope-switches { display: grid; gap: 2px; }
 .scope-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0; }
-.scope-row + .scope-row { border-top: 1px solid var(--line); }
+.scope-row + .scope-row { border-top: 1px solid var(--border); }
 .scope-row > div { min-width: 0; }
 .scope-row strong { font-size: 13px; font-weight: 550; }
-.scope-row p { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.scope-row p { margin-top: 4px; color: var(--text-muted); font-size: 12px; line-height: 1.7; }
 .scope-all strong { font-weight: 650; }
 </style>

@@ -10,6 +10,7 @@ import AppSelect from "./components/AppSelect.vue";
 import { useUserSettings } from "./settings";
 import { pwaInstallKey } from "./pwaInstall";
 import { isThemePreference, setTheme } from "./theme";
+import AppButton from "./components/AppButton.vue";
 
 interface InstallPrompt extends Event {
   prompt: () => Promise<void>;
@@ -152,27 +153,27 @@ watch(
           session.data.value?.email
         }}</span>
         <div class="topbar-actions">
-          <button
+          <AppButton
             v-if="installPrompt"
-            class="text-button install-button"
+            variant="text" class="install-button"
             @click="install"
           >
             <AppIcon name="download" /><span>{{ t("install") }}</span>
-          </button>
+          </AppButton>
           <AppSelect class="language-select" compact :model-value="locale" :options="languages" :label="t('language')" @update:model-value="changeLanguage" />
           <RouterLink
             v-if="!isLogin && links.length"
             to="/settings"
-            class="text-button mobile-settings"
+            class="mobile-settings"
             :class="{ active: route.name === 'settings' }"
             :aria-label="t('settings')"
             :title="t('settings')"
           >
             <AppIcon name="gear" />
           </RouterLink>
-          <button
+          <AppButton
             v-if="!isLogin"
-            class="text-button logout-button"
+            variant="text" class="logout-button"
             :disabled="logout.isPending.value"
             :aria-label="t(logout.isPending.value ? 'signingOut' : 'signOut')"
             @click="logout.mutate()"
@@ -180,7 +181,7 @@ watch(
             <AppIcon name="logout" /><span>{{
               t(logout.isPending.value ? "signingOut" : "signOut")
             }}</span>
-          </button>
+          </AppButton>
         </div>
       </header>
       <div v-if="!online" class="notice" role="status">{{ t("offline") }}</div>
@@ -188,11 +189,11 @@ watch(
         {{ t("logoutFailed") }}
       </div>
       <div v-if="needRefresh" class="notice update-notice" role="status">
-        <span>{{ t("updateReady") }}</span><button class="text-button" @click="updateServiceWorker(true)">
+        <span>{{ t("updateReady") }}</span><AppButton variant="text" @click="updateServiceWorker(true)">
           {{ t("update") }}
-</button><button class="text-button" @click="needRefresh = false">
+</AppButton><AppButton variant="text" @click="needRefresh = false">
           {{ t("dismiss") }}
-        </button>
+        </AppButton>
       </div>
       <RouterView v-if="isLogin" />
       <main v-else id="main-content" class="workspace-main">

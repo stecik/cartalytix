@@ -9,6 +9,9 @@ import { sessionOptions } from "../auth";
 import AppIcon from "../components/AppIcon.vue";
 import AppDateInput from "../components/AppDateInput.vue";
 import AppSelect from "../components/AppSelect.vue";
+import FilterField from "../components/FilterField.vue";
+import PageHeader from "../components/PageHeader.vue";
+import IconButton from "../components/IconButton.vue";
 import QueryState from "../components/QueryState.vue";
 import RankedBars from "../components/RankedBars.vue";
 import type { RankedRow } from "../components/RankedBars.vue";
@@ -187,32 +190,27 @@ function selectDate(edge: "from" | "to", value: string): void {
 
 <template>
   <div class="view-content">
-    <header class="page-heading overview-heading">
-      <div>
-        <div class="eyebrow">{{ t("workspace") }}</div>
-        <h1>{{ t("overview") }}</h1>
-        <p>{{ t("overviewIntro") }}</p>
-      </div>
-      <div class="period-controls">
-        <template v-if="period === 'custom'">
-          <label class="period-date">
-            <span>{{ t("dateFrom") }}</span>
-            <AppDateInput :model-value="dateFrom" :max="dateTo" required @update:model-value="selectDate('from', $event)" />
-          </label>
-          <label class="period-date">
-            <span>{{ t("dateTo") }}</span>
-            <AppDateInput :model-value="dateTo" :min="dateFrom" required @update:model-value="selectDate('to', $event)" />
-          </label>
-        </template>
-        <AppSelect
-          class="period-select"
-          :model-value="period"
-          :options="periodOptions"
-          :label="t('period')"
-          @update:model-value="selectPeriod"
-        />
-      </div>
-    </header>
+    <PageHeader :eyebrow="t('workspace')" :title="t('overview')" :intro="t('overviewIntro')">
+      <template #aside>
+        <div class="period-controls">
+          <template v-if="period === 'custom'">
+            <FilterField :label="t('dateFrom')">
+              <AppDateInput :model-value="dateFrom" :max="dateTo" required @update:model-value="selectDate('from', $event)" />
+            </FilterField>
+            <FilterField :label="t('dateTo')">
+              <AppDateInput :model-value="dateTo" :min="dateFrom" required @update:model-value="selectDate('to', $event)" />
+            </FilterField>
+          </template>
+          <AppSelect
+            class="period-select"
+            :model-value="period"
+            :options="periodOptions"
+            :label="t('period')"
+            @update:model-value="selectPeriod"
+          />
+        </div>
+      </template>
+    </PageHeader>
 
     <QueryState
       :pending="stats.isPending.value"
@@ -226,14 +224,7 @@ function selectDate(edge: "from" | "to", value: string): void {
       >
         <div v-if="bucket" class="bucket-filter">
           <span>{{ bucketLabel }}</span>
-          <button
-            type="button"
-            :aria-label="t('showWholePeriod')"
-            :title="t('showWholePeriod')"
-            @click="bucket = null"
-          >
-            ×
-          </button>
+          <IconButton :label="t('showWholePeriod')" @click="bucket = null">×</IconButton>
         </div>
 
         <dl class="kpi-grid">
@@ -356,13 +347,6 @@ function selectDate(edge: "from" | "to", value: string): void {
 </template>
 
 <style scoped>
-.overview-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  flex-wrap: wrap;
-}
 .period-controls {
   display: flex;
   align-items: flex-end;
@@ -371,26 +355,6 @@ function selectDate(edge: "from" | "to", value: string): void {
 }
 .period-select {
   min-width: 200px;
-}
-.period-date {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.period-date input {
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--border-input);
-  border-radius: 6px;
-  background: var(--surface-input);
-  font-size: 13px;
-}
-.period-date input:focus {
-  border-color: var(--border-input-focus);
-  box-shadow: 0 0 0 2px var(--ring-input-focus);
-  outline: 0;
 }
 .dashboard {
   transition: opacity 0.2s;
@@ -404,39 +368,37 @@ function selectDate(edge: "from" | "to", value: string): void {
   gap: 6px;
   margin-bottom: 18px;
   padding: 4px 4px 4px 14px;
-  background: var(--green);
-  color: var(--paper);
+  background: var(--accent);
+  color: var(--bg-page);
   border-radius: 999px;
   font-size: 12px;
   font-weight: 500;
   text-transform: capitalize;
   animation: arrive 0.2s ease-out;
 }
-.bucket-filter button {
-  display: grid;
-  place-items: center;
+/* The chip sits on the accent color, so its dismiss button inherits the chip's contrast. */
+.bucket-filter .icon-button {
   width: 26px;
   height: 26px;
-  border: 0;
   border-radius: 50%;
-  background: var(--white-overlay-14);
+  background: var(--overlay-on-accent);
   color: inherit;
   font-size: 15px;
-  line-height: 1;
 }
-.bucket-filter button:hover {
-  background: var(--white-overlay-26);
+.bucket-filter .icon-button:hover:enabled {
+  background: var(--overlay-on-accent-hover);
+  color: inherit;
 }
 .kpi-grid {
   display: grid;
   grid-template-columns: 1.5fr repeat(4, 1fr);
   margin: 0 0 8px;
   padding: 26px 0 32px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--border);
 }
 .kpi {
   padding: 2px 24px;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--border);
   min-width: 0;
 }
 .kpi:first-child {
@@ -447,7 +409,7 @@ function selectDate(edge: "from" | "to", value: string): void {
 }
 .kpi dt {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-muted);
   margin-bottom: 14px;
 }
 .kpi dd {
@@ -465,34 +427,34 @@ function selectDate(edge: "from" | "to", value: string): void {
   letter-spacing: -1.8px;
 }
 .kpi dd.saved {
-  color: var(--text-positive);
+  color: var(--success);
 }
 .trend {
   display: block;
   margin-top: 10px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 .trend small {
   font-weight: 400;
   font-size: 11px;
 }
 .trend.spend-up {
-  color: var(--text-negative);
+  color: var(--danger);
 }
 .trend.spend-down {
-  color: var(--text-positive);
+  color: var(--success);
 }
 .kpi-note {
   display: block;
   margin-top: 6px;
   font-size: 11px;
-  color: var(--text-stat-note);
+  color: var(--text-subtle);
 }
 .panel {
   padding: 24px 0 8px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--border);
   margin-bottom: 32px;
   min-width: 0;
 }
@@ -503,11 +465,11 @@ function selectDate(edge: "from" | "to", value: string): void {
 }
 .panel-hint {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 .panel-empty {
   font-size: 13px;
-  color: var(--muted);
+  color: var(--text-muted);
   padding: 40px 0;
   text-align: center;
 }
@@ -525,7 +487,7 @@ function selectDate(edge: "from" | "to", value: string): void {
     grid-column: 1 / -1;
     padding: 0 0 22px;
     border-right: 0;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--border);
   }
   .kpi:nth-child(2) {
     padding-left: 0;
@@ -535,11 +497,6 @@ function selectDate(edge: "from" | "to", value: string): void {
   }
 }
 @media (max-width: 780px) {
-  .overview-heading {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 18px;
-  }
   .period-controls {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -548,10 +505,6 @@ function selectDate(edge: "from" | "to", value: string): void {
   .period-select {
     grid-column: 1 / -1;
     order: -1;
-  }
-  .period-date input {
-    width: 100%;
-    min-width: 0;
   }
   .kpi-grid {
     grid-template-columns: 1fr 1fr;

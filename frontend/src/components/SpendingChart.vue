@@ -67,14 +67,14 @@ const option = computed(() => {
       type: "category",
       data: props.buckets.map((bucket) => label(bucket.key)),
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: chartColors.line } },
+      axisLine: { lineStyle: { color: chartColors.border } },
       axisLabel: { ...axisLabelStyle, hideOverlap: true },
     },
     yAxis: [
       {
         type: "value",
         splitNumber: 4,
-        splitLine: { lineStyle: { color: chartColors.line, type: "dashed" } },
+        splitLine: { lineStyle: { color: chartColors.border, type: "dashed" } },
         axisLabel: {
           ...axisLabelStyle,
           formatter: (value: number) => formatMoney(value, props.currency, locale.value, true),
@@ -92,12 +92,12 @@ const option = computed(() => {
           itemStyle: {
             color:
               props.selected === null || props.selected === bucket.key
-                ? chartColors.green
+                ? chartColors.accent
                 : chartColors.faded,
             borderRadius: [4, 4, 0, 0],
           },
         })),
-        emphasis: { itemStyle: { color: chartColors.greenHover } },
+        emphasis: { itemStyle: { color: chartColors.accentHover } },
       },
       {
         name: t("purchases"),
@@ -106,8 +106,8 @@ const option = computed(() => {
         smooth: true,
         symbol: "circle",
         symbolSize: 6,
-        lineStyle: { width: 2, color: chartColors.sage },
-        itemStyle: { color: chartColors.sage, borderColor: chartColors.paper, borderWidth: 2 },
+        lineStyle: { width: 2, color: chartColors.focus },
+        itemStyle: { color: chartColors.focus, borderColor: chartColors.page, borderWidth: 2 },
         data: props.buckets.map((bucket) => bucket.receipt_count),
       },
     ],

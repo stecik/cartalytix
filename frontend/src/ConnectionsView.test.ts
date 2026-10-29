@@ -213,7 +213,8 @@ describe("Lidl connections", () => {
     await flushPromises();
     expect(fetcher).toHaveBeenCalledWith("/api/v1/providers/lidl/connections/account-1", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ sync_interval_minutes: 360 }) }));
     fetcher.mockResolvedValueOnce(Response.json({ ...account, sync_interval_minutes: 60 }));
-    await wrapper.get("select").setValue(60);
+    await wrapper.get('button[aria-label="Frequency"]').trigger("click");
+    await wrapper.findAll('[role="option"]').find((option) => option.text() === "Every hour")?.trigger("click");
     await flushPromises();
     expect(fetcher).toHaveBeenCalledWith("/api/v1/providers/lidl/connections/account-1", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ sync_interval_minutes: 60 }) }));
     fetcher.mockResolvedValueOnce(Response.json({ items: [{ id: "run", created_at: "2026-10-17T10:00:00Z", finished_at: "2026-10-17T10:01:00Z", status: "completed", receipts_imported: 42, receipts_skipped: 7 }] }));

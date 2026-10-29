@@ -45,7 +45,7 @@ export function createPwaPalette(root: string): { plugin: Plugin; manifestColors
   let manifestRevision: string | undefined;
   function refresh(): void {
     const color = paletteReader(readFileSync(palettePath, "utf8"));
-    Object.assign(manifestColors, { theme_color: color("--green"), background_color: color("--paper") });
+    Object.assign(manifestColors, { theme_color: color("--accent"), background_color: color("--bg-page") });
     const renderSvg = (path: string): string => readFileSync(path, "utf8").replace(/var\(\s*(--[\w-]+)\s*\)/g, (_, name: string) => color(name));
     const icon = renderSvg(iconPath);
     assets.set("icon.svg", { source: icon, contentType: "image/svg+xml" });

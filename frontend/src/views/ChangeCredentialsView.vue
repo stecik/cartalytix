@@ -6,6 +6,8 @@ import { useRouter } from "vue-router";
 import { ApiError } from "../api";
 import { changeCredentials, isStrongPassword, sessionOptions } from "../auth";
 import AppIcon from "../components/AppIcon.vue";
+import AppButton from "../components/AppButton.vue";
+import PageHeader from "../components/PageHeader.vue";
 
 const errorKeys: Record<string, string> = {
   weak_password: "passwordRule",
@@ -51,11 +53,7 @@ function submit(): void {
 
 <template>
   <div class="view-content credentials-workspace">
-    <header class="page-heading">
-      <div class="eyebrow">{{ t("accountSecurity") }}</div>
-      <h1>{{ t(requireEmail ? "changeCredentialsTitle" : "changePasswordTitle") }}</h1>
-      <p>{{ t(requireEmail ? "changeCredentialsIntro" : "changePasswordIntro") }}</p>
-    </header>
+    <PageHeader :eyebrow="t('accountSecurity')" :title="t(requireEmail ? 'changeCredentialsTitle' : 'changePasswordTitle')" :intro="t(requireEmail ? 'changeCredentialsIntro' : 'changePasswordIntro')" />
     <form :aria-busy="change.isPending.value" @submit.prevent="submit">
       <template v-if="requireEmail">
         <label for="new-email">{{ t("newEmail") }}</label>
@@ -68,9 +66,9 @@ function submit(): void {
       <input id="confirm-password" v-model="confirmation" type="password" name="confirm-password" autocomplete="new-password" required :disabled="change.isPending.value" />
       <p v-if="problem" role="alert" class="form-alert">{{ t(problem) }}</p>
       <p v-else-if="change.isError.value" role="alert" class="form-alert">{{ t(errorKey) }}</p>
-      <button type="submit" class="button primary login-submit" :disabled="change.isPending.value">
+      <AppButton type="submit" variant="primary" class="login-submit" :disabled="change.isPending.value">
         {{ t(change.isPending.value ? "saving" : "saveAndContinue") }}<AppIcon name="arrow" />
-      </button>
+      </AppButton>
     </form>
   </div>
 </template>

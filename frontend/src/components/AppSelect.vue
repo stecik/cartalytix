@@ -1,9 +1,9 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends string">
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from "vue";
 import AppIcon from "./AppIcon.vue";
 
-const props = defineProps<{ modelValue: string; options: ReadonlyArray<{ value: string; label: string; icon?: string }>; label: string; compact?: boolean }>();
-const emit = defineEmits<{ "update:modelValue": [value: string] }>();
+const props = defineProps<{ modelValue: T; options: ReadonlyArray<{ value: T; label: string; icon?: string }>; label: string; compact?: boolean; disabled?: boolean }>();
+const emit = defineEmits<{ "update:modelValue": [value: T] }>();
 const id = useId();
 const root = ref<HTMLElement | null>(null);
 const trigger = ref<HTMLButtonElement | null>(null);
@@ -75,6 +75,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onOutside));
       :aria-expanded="open"
       :aria-controls="`${id}-list`"
       :aria-label="label"
+      :disabled="disabled"
       @click="open ? close() : show()"
       @keydown="onTriggerKey"
     >
@@ -109,18 +110,18 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onOutside));
 
 <style scoped>
 .app-select { position: relative; display: inline-block; }
-.app-select-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 40px; padding: 0 12px 0 14px; border: 1px solid var(--border-input); border-radius: 6px; background: var(--surface-input); color: var(--green); font-size: 13px; transition: border-color 0.16s, box-shadow 0.16s, background 0.16s; }
-.app-select-trigger:hover { border-color: var(--border-select-hover); }
+.app-select-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: var(--control-height); padding: 0 12px 0 14px; border: 1px solid var(--control); border-radius: 6px; background: var(--bg-raised); color: var(--accent); font-size: 13px; transition: border-color 0.16s, box-shadow 0.16s, background 0.16s; }
+.app-select-trigger:hover:enabled { border-color: var(--control-hover); }
 .app-select-trigger:focus-visible,
-.app-select-trigger[aria-expanded="true"] { outline: 0; border-color: var(--border-input-focus); box-shadow: 0 0 0 2px var(--ring-input-focus); }
-.app-select-trigger svg { width: 14px; height: 14px; color: var(--muted); transition: transform 0.16s; }
+.app-select-trigger[aria-expanded="true"] { outline: 0; border-color: var(--focus-strong); box-shadow: 0 0 0 2px var(--focus-ring); }
+.app-select-trigger svg { width: 14px; height: 14px; color: var(--text-muted); transition: transform 0.16s; }
 .app-select-trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
-.compact .app-select-trigger { min-height: 34px; gap: 6px; padding: 0 10px 0 14px; border-color: var(--border-select-compact); border-radius: 999px; font-size: 12px; }
-.app-select-list { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: max(100%, 150px); margin: 0; padding: 4px; list-style: none; background: var(--surface-input); border: 1px solid var(--border-select-list); border-radius: 10px; box-shadow: 0 12px 32px var(--shadow-select); outline: 0; }
+.compact .app-select-trigger { min-height: 34px; gap: 6px; padding: 0 10px 0 14px; border-color: var(--border-overlay); border-radius: 999px; font-size: 12px; }
+.app-select-list { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: max(100%, 150px); margin: 0; padding: 4px; list-style: none; background: var(--bg-raised); border: 1px solid var(--border-overlay); border-radius: 10px; box-shadow: 0 12px 32px var(--shadow-overlay); outline: 0; }
 .compact .app-select-list { left: auto; right: 0; }
-.app-select-list li { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--green); cursor: pointer; white-space: nowrap; }
+.app-select-list li { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--accent); cursor: pointer; white-space: nowrap; }
 .app-select-list li::after { content: ""; width: 14px; flex-shrink: 0; text-align: center; font-size: 12px; }
-.app-select-list li.active { background: var(--surface-toggle); }
+.app-select-list li.active { background: var(--bg-subtle); }
 .app-select-value { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .app-select-icon { width: 18px; height: 18px; object-fit: contain; flex-shrink: 0; }
 .app-select-list li[aria-selected="true"] { font-weight: 600; }
