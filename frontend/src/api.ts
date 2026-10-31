@@ -101,6 +101,7 @@ export interface ReceiptItem {
   source_code: string | null;
   warranty: string | null;
   is_excluded: boolean;
+  included_quantity: string | null;
   exclusion_reason: ExclusionReason;
   included_amount: string;
 }

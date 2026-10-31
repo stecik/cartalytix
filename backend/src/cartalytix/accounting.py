@@ -23,6 +23,27 @@ def product_excluded(owner_id: UUID) -> ColumnElement[bool]:
     )
 
 
+def item_included(owner_id: UUID) -> ColumnElement[bool]:
+    """Whether a line counts at all; a product exclusion outranks the receipt, then the line."""
+    return and_(
+        Receipt.is_excluded.is_(False),
+        ReceiptItem.is_excluded.is_(False),
+        func.coalesce(ReceiptItem.included_quantity, 1) > 0,
+        ~product_excluded(owner_id),
+    )
+
+
+def included_share() -> ColumnElement[Decimal]:
+    """Counted fraction of a line; lines without a usable quantity count whole."""
+    return case(
+        (
+            and_(ReceiptItem.included_quantity.is_not(None), ReceiptItem.quantity > 0),
+            ReceiptItem.included_quantity / ReceiptItem.quantity,
+        ),
+        else_=Decimal(1),
+    )
+
+
 def accounting(
     owner_id: UUID, receipt_ids: list[UUID] | Select[UUID] | None = None
 ) -> tuple[CTE, CTE]:
@@ -73,11 +94,8 @@ def accounting(
             func.coalesce(ReceiptItem.deposit_amount, 0).label("deposit_amount"),
             linked_discount.label("linked_discount"),
             case((base_amount > 0, base_amount), else_=0).label("positive_weight"),
-            and_(
-                Receipt.is_excluded.is_(False),
-                ReceiptItem.is_excluded.is_(False),
-                ~product_excluded(owner_id),
-            ).label("is_included"),
+            item_included(owner_id).label("is_included"),
+            included_share().label("included_share"),
             owned_receipts.c.total_amount.label("receipt_total"),
             owned_receipts.c.unlinked_discount,
         )
@@ -136,21 +154,32 @@ def accounting(
     net_amount = cast(
         weighted_items.c.base_amount + weighted_items.c.deposit_amount - discount_share, MONEY
     )
+    # A partly counted line takes its share of the allocated amount; weights stay unchanged.
+    share = weighted_items.c.included_share
+    included_amount = case(
+        (
+            weighted_items.c.is_included,
+            cast(func.round((net_amount + residual_share) * share, 2), MONEY),
+        ),
+        else_=Decimal(0),
+    )
     item_amounts = select(
         weighted_items.c.id,
         weighted_items.c.receipt_id,
         weighted_items.c.position,
         net_amount.label("net_amount"),
-        case((weighted_items.c.is_included, net_amount + residual_share), else_=Decimal(0)).label(
-            "included_amount"
-        ),
+        included_amount.label("included_amount"),
         case(
-            (weighted_items.c.is_included, weighted_items.c.linked_discount + discount_share),
+            (
+                weighted_items.c.is_included,
+                cast(
+                    func.round((weighted_items.c.linked_discount + discount_share) * share, 2),
+                    MONEY,
+                ),
+            ),
             else_=Decimal(0),
         ).label("included_discount_amount"),
-        case((weighted_items.c.is_included, net_amount + residual_share), else_=Decimal(0)).label(
-            "receipt_component_amount"
-        ),
+        included_amount.label("receipt_component_amount"),
         weighted_items.c.is_included,
     ).cte("accounting_item_amounts")
     item_totals = (

@@ -84,6 +84,36 @@ def test_fixed_discount_share_and_receipt_reconciliation(engine: Engine) -> None
         assert db.scalar(select(receipt_amounts.c.is_included)) is False
 
 
+def test_included_quantity_prorates_allocated_amount_and_discounts(engine: Engine) -> None:
+    from cartalytix.accounting import accounting
+
+    with Session(engine) as db:
+        owner_id, receipt, items = basket(db, total="18.01")
+        items[0].quantity = Decimal(4)
+        items[0].included_quantity = Decimal(1)
+        db.flush()
+        item_amounts, receipt_amounts = accounting(owner_id)
+        rows = db.execute(select(item_amounts).order_by(item_amounts.c.position)).mappings().all()
+        # Weights keep the whole line: 9.01 and 3.00 of discounts, a quarter of each counts.
+        assert [row.get("included_amount") for row in rows] == [Decimal("2.25"), Decimal("9.00")]
+        assert [row.get("included_discount_amount") for row in rows] == [
+            Decimal("0.75"),
+            Decimal(1),
+        ]
+        assert db.scalar(select(receipt_amounts.c.included_amount)) == Decimal("11.25")
+        items[0].included_quantity = Decimal(0)
+        db.flush()
+        assert [
+            row.get("is_included")
+            for row in db.execute(select(item_amounts).order_by(item_amounts.c.position)).mappings()
+        ] == [False, True]
+        assert db.scalar(select(receipt_amounts.c.included_amount)) == Decimal("9.00")
+        items[0].included_quantity = Decimal(2)
+        receipt.is_excluded = True
+        db.flush()
+        assert db.scalar(select(receipt_amounts.c.included_amount)) == Decimal(0)
+
+
 def test_global_exclusion_exact_name_currency_owner_and_restore(engine: Engine) -> None:
     from cartalytix.accounting import accounting
     from cartalytix.models import ProductExclusion

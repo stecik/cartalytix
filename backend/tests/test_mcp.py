@@ -78,12 +78,18 @@ TOOLS = {
     "set_receipt_exclusion",
     "set_product_exclusion",
     "set_receipt_item_exclusion",
+    "set_receipt_item_included_quantity",
     "list_shops",
     "add_manual_receipts",
     "update_manual_receipt",
     "delete_manual_receipt",
 }
-EXCLUSION_WRITES = {"set_receipt_exclusion", "set_product_exclusion", "set_receipt_item_exclusion"}
+EXCLUSION_WRITES = {
+    "set_receipt_exclusion",
+    "set_product_exclusion",
+    "set_receipt_item_exclusion",
+    "set_receipt_item_included_quantity",
+}
 CATEGORY_WRITES = {"create_category", "update_category", "delete_category", "assign_category_items"}
 CATEGORY_WRITE_SCOPE = "cartalytix:categories:write"
 CALCULATOR_SCOPE = "cartalytix:calculator"
@@ -1028,13 +1034,23 @@ def test_exclusion_writes_need_their_scope_and_are_reversible(
     detail = result("set_receipt_item_exclusion", line).get("structuredContent", {})
     assert [row.get("is_excluded") for row in detail.get("items", [])] == [True]
     assert detail.get("is_excluded") is False
-    assert (
+    counted = (
         result("set_receipt_item_exclusion", {**line, "excluded": False})
         .get("structuredContent", {})
         .get("items", [])[0]
-        .get("is_excluded")
-        is False
     )
+    assert counted.get("is_excluded") is False
+    whole = Decimal(counted.get("included_amount", "0"))
+    part = result("set_receipt_item_included_quantity", {**line, "included_quantity": "1"})
+    partial = part.get("structuredContent", {}).get("items", [])[0]
+    assert Decimal(partial.get("included_quantity")) == 1
+    assert Decimal(partial.get("included_amount")) == (whole * Decimal("0.4")).quantize(
+        Decimal("0.01")
+    )
+    too_many = result("set_receipt_item_included_quantity", {**line, "included_quantity": "3"})
+    assert "included_quantity_out_of_range" in str(too_many.get("content"))
+    reset = result("set_receipt_item_included_quantity", line).get("structuredContent", {})
+    assert reset.get("items", [])[0].get("included_quantity") is None
     assert result("set_product_exclusion", product).get("structuredContent", {}).get("is_excluded")
     with Session(engine) as db:
         assert db.scalar(select(ProductExclusion.name)) == "Rohlík"

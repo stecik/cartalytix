@@ -1,3 +1,8 @@
+<script lang="ts">
+/** Query families whose amounts change when anything counts differently. */
+export const spendingQueries = new Set(["receipts", "overview", "overview-stats", "items", "item-detail", "item-totals", "item-exclusions", "receipt-suggestions"]);
+</script>
+
 <script setup lang="ts">
 import { computed } from "vue";
 import { useMutation, useQueryClient } from "@tanstack/vue-query";
@@ -16,7 +21,6 @@ const props = defineProps<{
 const emit = defineEmits<{ saved: [result: ReceiptDetail | ItemDetail | undefined] }>();
 const { t } = useI18n();
 const client = useQueryClient();
-const queryFamilies = new Set(["receipts", "overview", "overview-stats", "items", "item-detail", "item-totals", "item-exclusions", "receipt-suggestions"]);
 const labels = {
   receipt: ["excludeReceipt", "restoreReceipt"],
   item: ["excludeOccurrence", "restoreOccurrence"],
@@ -31,7 +35,7 @@ const mutation = useMutation({
   onSuccess: (result) => {
     emit("saved", result);
     return client.invalidateQueries({
-      predicate: (query) => queryFamilies.has(String(query.queryKey[0])),
+      predicate: (query) => spendingQueries.has(String(query.queryKey[0])),
     });
   },
 });

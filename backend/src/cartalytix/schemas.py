@@ -389,6 +389,12 @@ class ExclusionInput(BaseModel):
     excluded: bool
 
 
+class IncludedQuantityInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # NULL counts the whole line again.
+    included_quantity: Decimal | None = Field(ge=0, max_digits=18, decimal_places=6)
+
+
 class ReceiptSort(StrEnum):
     PURCHASED_AT_DESC = "purchased_at_desc"
     PURCHASED_AT_ASC = "purchased_at_asc"
@@ -419,6 +425,7 @@ class ReceiptItemOutput(BaseModel):
     source_code: str | None
     warranty: str | None
     is_excluded: bool
+    included_quantity: Decimal | None = None
     exclusion_reason: Literal["receipt", "item", "product"] | None = None
     included_amount: str = "0.00"
 

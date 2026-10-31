@@ -27,7 +27,7 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.sql.selectable import CTE
 
-from cartalytix.accounting import accounting, product_excluded
+from cartalytix.accounting import accounting, item_included, product_excluded
 from cartalytix.dependencies import Db, Owner
 from cartalytix.exclusion_schemas import (
     ExclusionOutput,
@@ -198,11 +198,7 @@ def items(
     exclusion: ExclusionFilter = ExclusionFilter.INCLUDED,
 ) -> ItemsOutput:
     filters: list[ColumnElement[bool]] = [ProviderConnection.owner_id == user.id]
-    included = and_(
-        Receipt.is_excluded.is_(False),
-        ReceiptItem.is_excluded.is_(False),
-        ~product_excluded(user.id),
-    )
+    included = item_included(user.id)
     if exclusion != ExclusionFilter.ALL:
         filters.append(included if exclusion == ExclusionFilter.INCLUDED else ~included)
     if connection_id is not None:

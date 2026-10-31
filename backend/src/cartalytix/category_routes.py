@@ -14,7 +14,7 @@ from sqlalchemy import ColumnElement, and_, delete, exists, func, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from cartalytix.accounting import accounting, product_excluded
+from cartalytix.accounting import accounting, item_included
 from cartalytix.category_schemas import (
     CategoriesOutput,
     CategoryAssignmentInput,
@@ -271,11 +271,7 @@ def category_items(
     if category_id is not None and uncategorized:
         raise HTTPException(422, "invalid_category_filter")
     # Excluded purchases are never categorized, so only included occurrences are listed.
-    included = and_(
-        Receipt.is_excluded.is_(False),
-        ReceiptItem.is_excluded.is_(False),
-        ~product_excluded(user.id),
-    )
+    included = item_included(user.id)
     filters: list[ColumnElement[bool]] = [ProviderConnection.owner_id == user.id, included]
     if category_id is not None:
         _category(db, user.id, category_id)

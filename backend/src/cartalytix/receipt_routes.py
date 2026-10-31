@@ -10,12 +10,13 @@ from sqlalchemy import ColumnElement, exists, func, or_, select
 
 from cartalytix.accounting import accounting, product_excluded
 from cartalytix.dependencies import Db, Owner
-from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem
+from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem, User
 from cartalytix.schemas import (
     CurrencyTotal,
     DiscountOutput,
     ExclusionFilter,
     ExclusionInput,
+    IncludedQuantityInput,
     OverviewOutput,
     ReceiptDetailOutput,
     ReceiptItemOutput,
@@ -198,12 +199,23 @@ def set_receipt_exclusion(
     return receipt_detail(receipt_id, user, db)
 
 
-@router.patch(
-    "/receipts/{receipt_id}/items/{item_id}/exclusion", response_model=ReceiptDetailOutput
-)
-def set_receipt_item_exclusion(
-    receipt_id: UUID, item_id: UUID, body: ExclusionInput, user: Owner, db: Db
-) -> ReceiptDetailOutput:
+def included_quantity(item: ReceiptItem, value: Decimal | None) -> Decimal | None:
+    """Validated counted quantity of a line; the whole quantity is stored as NULL."""
+    if value is None or value == item.quantity:
+        return None
+    if item.quantity <= 0 or not 0 <= value <= item.quantity:
+        raise HTTPException(422, "included_quantity_out_of_range")
+    # Pieces split only into whole pieces; weighed or fractional lines take any part.
+    if (
+        not item.is_weight
+        and item.quantity == item.quantity.to_integral_value()
+        and value != value.to_integral_value()
+    ):
+        raise HTTPException(422, "included_quantity_not_whole")
+    return value
+
+
+def _locked_item(db: Db, user: User, receipt_id: UUID, item_id: UUID) -> ReceiptItem:
     receipt = db.scalar(
         select(Receipt)
         .join(ProviderConnection)
@@ -225,7 +237,30 @@ def set_receipt_item_exclusion(
     )
     if item is None:
         raise HTTPException(404, "receipt_item_not_found")
+    return item
+
+
+@router.patch(
+    "/receipts/{receipt_id}/items/{item_id}/exclusion", response_model=ReceiptDetailOutput
+)
+def set_receipt_item_exclusion(
+    receipt_id: UUID, item_id: UUID, body: ExclusionInput, user: Owner, db: Db
+) -> ReceiptDetailOutput:
+    item = _locked_item(db, user, receipt_id, item_id)
     item.is_excluded = body.excluded
+    db.commit()
+    return receipt_detail(receipt_id, user, db)
+
+
+@router.patch(
+    "/receipts/{receipt_id}/items/{item_id}/included-quantity",
+    response_model=ReceiptDetailOutput,
+)
+def set_receipt_item_included_quantity(
+    receipt_id: UUID, item_id: UUID, body: IncludedQuantityInput, user: Owner, db: Db
+) -> ReceiptDetailOutput:
+    item = _locked_item(db, user, receipt_id, item_id)
+    item.included_quantity = included_quantity(item, body.included_quantity)
     db.commit()
     return receipt_detail(receipt_id, user, db)
 

@@ -1,5 +1,6 @@
 """Manually added receipts, kept under one hidden connection per owner."""
 
+from collections import defaultdict, deque
 from decimal import Decimal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -10,7 +11,12 @@ from sqlalchemy import delete, func, select
 from cartalytix.accounting import accounting
 from cartalytix.dependencies import Db, Owner
 from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem, User
-from cartalytix.receipt_routes import MANUAL_PROVIDER, MANUAL_SOURCE, receipt_output
+from cartalytix.receipt_routes import (
+    MANUAL_PROVIDER,
+    MANUAL_SOURCE,
+    included_quantity,
+    receipt_output,
+)
 from cartalytix.schemas import (
     ManualReceiptInput,
     ManualReceiptsInput,
@@ -58,10 +64,14 @@ def _fill(receipt: Receipt, entry: ManualReceiptInput) -> None:
 
 
 def _items(
-    receipt_id: UUID, entry: ManualReceiptInput, excluded: set[str] | None = None
+    receipt_id: UUID,
+    entry: ManualReceiptInput,
+    previous: dict[str, deque[ReceiptItem]] | None = None,
 ) -> list[ReceiptItem]:
-    return [
-        ReceiptItem(
+    rows: list[ReceiptItem] = []
+    for position, item in enumerate(entry.items):
+        row = ReceiptItem(
+            id=uuid4(),
             receipt_id=receipt_id,
             position=position,
             name=item.name,
@@ -70,10 +80,20 @@ def _items(
             unit_price=(item.total_amount / item.quantity).quantize(UNIT_PRICE),
             total_amount=item.total_amount,
             original_amount=item.total_amount,
-            is_excluded=item.name in (excluded or set()),
+            is_excluded=False,
         )
-        for position, item in enumerate(entry.items)
-    ]
+        matches = (previous or {}).get(item.name)
+        if matches:
+            # A line keeps its ID and settings; a counted part that no longer fits is dropped.
+            old = matches.popleft()
+            row.id = old.id
+            row.is_excluded = old.is_excluded
+            try:
+                row.included_quantity = included_quantity(row, old.included_quantity)
+            except HTTPException:
+                row.included_quantity = None
+        rows.append(row)
+    return rows
 
 
 def _owned_manual_receipt(db: Db, user: User, receipt_id: UUID) -> Receipt:
@@ -119,18 +139,21 @@ def create_manual_receipts(user: Owner, db: Db, body: ManualReceiptsInput) -> Ma
 @router.put("/receipts/{receipt_id}", status_code=204)
 def update_manual_receipt(receipt_id: UUID, user: Owner, db: Db, body: ManualReceiptInput) -> None:
     receipt = _owned_manual_receipt(db, user, receipt_id)
-    # Item rows are replaced; exclusions follow the product name, categories already do.
-    excluded = set(
-        db.scalars(
-            select(ReceiptItem.name).where(
-                ReceiptItem.receipt_id == receipt_id, ReceiptItem.is_excluded
-            )
-        )
-    )
+    # Item rows are replaced; settings follow the product name, categories already do.
+    previous: dict[str, deque[ReceiptItem]] = defaultdict(deque)
+    for item in db.scalars(
+        select(ReceiptItem)
+        .where(ReceiptItem.receipt_id == receipt_id)
+        .order_by(ReceiptItem.position)
+    ):
+        previous[item.name].append(item)
     db.execute(delete(Discount).where(Discount.receipt_id == receipt_id))
     db.execute(delete(ReceiptItem).where(ReceiptItem.receipt_id == receipt_id))
+    for items in previous.values():
+        for item in items:
+            db.expunge(item)
     _fill(receipt, body)
-    db.add_all(_items(receipt_id, body, excluded))
+    db.add_all(_items(receipt_id, body, previous))
     db.commit()
 
 

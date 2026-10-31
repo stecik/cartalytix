@@ -2,14 +2,14 @@
 
 import hashlib
 import json
-from collections import Counter, defaultdict
+from collections import defaultdict, deque
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from threading import Lock
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -501,6 +501,15 @@ def _decimal(value: object) -> Decimal:
     return result
 
 
+class _KeptItem(NamedTuple):
+    id: UUID
+    is_excluded: bool
+    included_quantity: Decimal | None
+
+    def plain(self) -> bool:
+        return not self.is_excluded and self.included_quantity is None
+
+
 def _item_identity(item: ReceiptItem, discounts: list[tuple[str, Decimal]]) -> tuple[object, ...]:
     return (
         item.name,
@@ -534,7 +543,8 @@ def _save_receipt(
     if not items or not normalized.get("currency"):
         raise SyncError("quality_error")
     with Session(engine) as db, db.begin():
-        excluded: Counter[tuple[object, ...]] = Counter()
+        # Unchanged lines keep their ID and user settings, matched by identity in original order.
+        kept: dict[tuple[object, ...], deque[_KeptItem]] = defaultdict(deque)
         receipt = db.scalar(
             select(Receipt)
             .where(Receipt.connection_id == connection_id, Receipt.external_id == external_id)
@@ -545,31 +555,30 @@ def _save_receipt(
             db.add(receipt)
         else:
             if receipt.currency == normalized.get("currency"):
-                excluded_items = list(
-                    db.scalars(
-                        select(ReceiptItem).where(
-                            ReceiptItem.receipt_id == receipt.id,
-                            ReceiptItem.is_excluded.is_(True),
-                        )
+                item_discounts: dict[UUID, list[tuple[str, Decimal]]] = defaultdict(list)
+                for discount in db.scalars(
+                    select(Discount).where(
+                        Discount.receipt_id == receipt.id, Discount.item_id.is_not(None)
                     )
-                )
-                if excluded_items:
-                    item_discounts: dict[UUID, list[tuple[str, Decimal]]] = defaultdict(list)
-                    for discount in db.scalars(
-                        select(Discount).where(
-                            Discount.receipt_id == receipt.id, Discount.item_id.is_not(None)
-                        )
-                    ):
-                        if discount.item_id is not None:
-                            item_discounts[discount.item_id].append(
-                                (discount.name, discount.amount)
-                            )
-                    excluded.update(
-                        _item_identity(item, item_discounts.get(item.id, []))
-                        for item in excluded_items
+                ):
+                    if discount.item_id is not None:
+                        item_discounts[discount.item_id].append((discount.name, discount.amount))
+                for item in db.scalars(
+                    select(ReceiptItem)
+                    .where(ReceiptItem.receipt_id == receipt.id)
+                    .order_by(ReceiptItem.position)
+                ):
+                    kept[_item_identity(item, item_discounts.get(item.id, []))].append(
+                        _KeptItem(item.id, item.is_excluded, item.included_quantity)
                     )
+                # Identical lines are interchangeable, so the first ones take the user settings.
+                for identity, matches in kept.items():
+                    kept[identity] = deque(sorted(matches, key=_KeptItem.plain))
             db.execute(delete(Discount).where(Discount.receipt_id == receipt.id))
             db.execute(delete(ReceiptItem).where(ReceiptItem.receipt_id == receipt.id))
+            # The replacement rows may reuse the deleted rows' IDs.
+            db.expunge_all()
+            db.add(receipt)
         receipt.raw_document_id = raw_id
         receipt.purchased_at = date.astimezone(UTC)
         receipt.merchant = merchant
@@ -601,27 +610,24 @@ def _save_receipt(
                 else None,
                 warranty=item.get("warranty"),
             )
+            row_discounts = [
+                (
+                    str(discount.get("description") or discount.get("name") or "Discount"),
+                    _decimal(discount.get("amount")),
+                )
+                for discount in item.get("discounts", [])
+            ]
+            matches = kept.get(_item_identity(row, row_discounts))
+            if matches:
+                previous = matches.popleft()
+                row.id = previous.id
+                row.is_excluded = previous.is_excluded
+                row.included_quantity = previous.included_quantity
             db.add(row)
-            row_discounts: list[tuple[str, Decimal]] = []
-            for discount in item.get("discounts", []):
-                discount_name = str(
-                    discount.get("description") or discount.get("name") or "Discount"
-                )
-                discount_amount = _decimal(discount.get("amount"))
-                row_discounts.append((discount_name, discount_amount))
-                discounts.append(
-                    Discount(
-                        receipt_id=receipt.id,
-                        item_id=row.id,
-                        name=discount_name,
-                        amount=discount_amount,
-                    )
-                )
-            identity = _item_identity(row, row_discounts)
-            remaining = excluded.get(identity, 0)
-            row.is_excluded = remaining > 0
-            if row.is_excluded:
-                excluded[identity] = remaining - 1
+            discounts.extend(
+                Discount(receipt_id=receipt.id, item_id=row.id, name=name, amount=amount)
+                for name, amount in row_discounts
+            )
         discounts.extend(
             Discount(
                 receipt_id=receipt.id,

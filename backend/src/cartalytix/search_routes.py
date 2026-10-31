@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import ColumnElement, Float, and_, case, exists, func, literal, or_, select, text
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
-from cartalytix.accounting import product_excluded
+from cartalytix.accounting import item_included, product_excluded
 from cartalytix.dependencies import Db, Owner
 from cartalytix.exclusion_schemas import ExclusionScope
 from cartalytix.models import ProviderConnection, Receipt, ReceiptItem
@@ -56,22 +56,14 @@ def _suggest(
         statement = statement.select_from(ReceiptItem).join(
             Receipt, ReceiptItem.receipt_id == Receipt.id
         )
-        included = and_(
-            Receipt.is_excluded.is_(False),
-            ReceiptItem.is_excluded.is_(False),
-            ~product_excluded(owner_id),
-        )
+        included = item_included(owner_id)
     else:
         statement = statement.select_from(Receipt)
         included = and_(
             Receipt.is_excluded.is_(False),
             or_(
                 ~exists().where(ReceiptItem.receipt_id == Receipt.id),
-                exists().where(
-                    ReceiptItem.receipt_id == Receipt.id,
-                    ReceiptItem.is_excluded.is_(False),
-                    ~product_excluded(owner_id),
-                ),
+                exists().where(ReceiptItem.receipt_id == Receipt.id, item_included(owner_id)),
             ),
         )
     if scope is not None and column.class_ is ReceiptItem and exclusion == ExclusionFilter.EXCLUDED:

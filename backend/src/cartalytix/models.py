@@ -7,6 +7,7 @@ from sqlalchemy import (
     DDL,
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -252,12 +253,19 @@ class ReceiptItem(Base):
             postgresql_using="gin",
         ).ddl_if(dialect="postgresql"),
         Index("ix_receipt_items_name_receipt", "name", "receipt_id"),
+        CheckConstraint(
+            "included_quantity IS NULL"
+            " OR (included_quantity >= 0 AND included_quantity <= quantity)",
+            name="ck_receipt_items_included_quantity",
+        ),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     receipt_id: Mapped[UUID] = mapped_column(ForeignKey("receipts.id"), index=True)
     position: Mapped[int] = mapped_column(Integer)
     name: Mapped[str] = mapped_column(Text)
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    # Part of the quantity counted in statistics; NULL counts the whole line.
+    included_quantity: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     unit: Mapped[str | None] = mapped_column(String(32))
     unit_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     total_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))

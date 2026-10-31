@@ -141,3 +141,31 @@ describe("receipt details", () => {
     wrapper.unmount(); client.clear();
   });
 });
+
+describe("partly counted items", () => {
+  it("counts part of a line and shows the prorated amount", async () => {
+    let counted: string | null = null;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      if (init?.method === "PATCH") counted = JSON.parse(String(init.body)).included_quantity;
+      return Response.json({ ...receipt, included_amount: counted ? "5.00" : "20.00",
+        items: receipt.items.map((item) => ({ ...item, quantity: "4", is_weight: false, is_excluded: false, exclusion_reason: null, included_quantity: counted, included_amount: counted ? "5.00" : "20.00" })),
+      });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const router = await routerForReceipt();
+    const client = detailedClient();
+    const wrapper = mount(ReceiptDetailView, { attachTo: document.body, global: { plugins: [router, createAppI18n("en"), [VueQueryPlugin, { queryClient: client }]] } });
+    await flushPromises();
+    await wrapper.get('[data-action="count-part"]').trigger("click");
+    const input = document.querySelector<HTMLInputElement>("#included-quantity");
+    expect(input?.step).toBe("1");
+    input!.value = "1";
+    input!.dispatchEvent(new Event("input"));
+    input!.form!.dispatchEvent(new Event("submit"));
+    await flushPromises();
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/receipts/receipt-1/items/item-1/included-quantity", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ included_quantity: "1" }) }));
+    expect(wrapper.get(".included-part").text()).toContain("Counted 1 kg of 4 kg");
+    expect(wrapper.get(".included-part").text()).toContain("5.00");
+    wrapper.unmount(); client.clear();
+  });
+});

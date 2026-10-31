@@ -75,10 +75,14 @@ from cartalytix.oauth import (
 from cartalytix.receipt_routes import overview, receipt_detail, receipts
 from cartalytix.receipt_routes import set_receipt_exclusion as receipt_exclusion_record
 from cartalytix.receipt_routes import set_receipt_item_exclusion as receipt_item_exclusion_record
+from cartalytix.receipt_routes import (
+    set_receipt_item_included_quantity as receipt_item_included_quantity_record,
+)
 from cartalytix.schemas import (
     STATS_BUCKET_PATTERN,
     ExclusionFilter,
     ExclusionInput,
+    IncludedQuantityInput,
     ItemDetailOutput,
     ItemKeyInput,
     ItemSort,
@@ -113,6 +117,7 @@ TOOL_SCOPES = {
     "set_receipt_exclusion": EXCLUSIONS_WRITE_SCOPE,
     "set_product_exclusion": EXCLUSIONS_WRITE_SCOPE,
     "set_receipt_item_exclusion": EXCLUSIONS_WRITE_SCOPE,
+    "set_receipt_item_included_quantity": EXCLUSIONS_WRITE_SCOPE,
     "add_manual_receipts": RECEIPTS_WRITE_SCOPE,
     "update_manual_receipt": RECEIPTS_WRITE_SCOPE,
     "delete_manual_receipt": RECEIPTS_WRITE_SCOPE,
@@ -150,7 +155,8 @@ INSTRUCTIONS = (
     "Exclusion writes require cartalytix:exclusions:write and are reversible with "
     "excluded=false: set_receipt_exclusion leaves out a whole receipt, set_product_exclusion "
     "leaves out a product (exact name and currency) on every current and future receipt, and "
-    "set_receipt_item_exclusion leaves out one line (item id from get_receipt) on one receipt. "
+    "set_receipt_item_exclusion leaves out one line (item id from get_receipt) on one receipt, "
+    "and set_receipt_item_included_quantity counts only part of a line's quantity. "
     "Receipt writes require cartalytix:receipts:write: add_manual_receipts records purchases the "
     "user reports (take merchant and provider from list_shops so they join that shop's receipts), "
     "update_manual_receipt replaces a manually added receipt with corrected content, and "
@@ -543,6 +549,31 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
                     receipt_id,
                     item_id,
                     ExclusionInput(excluded=excluded),
+                    _owner(db, scope=EXCLUSIONS_WRITE_SCOPE),
+                    db,
+                )
+            except HTTPException as exc:
+                raise ToolError(str(exc.detail)) from exc
+
+    @exclusion_tool(
+        "Count only part of one line (item id from get_receipt) in spending, e.g. 1 of 4 shared "
+        "burgers; its amount and discounts are prorated. included_quantity ranges from 0 to the "
+        "line quantity (whole pieces unless weighed); null counts the whole line again. The "
+        "receipt keeps its source quantity and amounts. Needs cartalytix:exclusions:write."
+    )
+    def set_receipt_item_included_quantity(
+        receipt_id: UUID,
+        item_id: UUID,
+        included_quantity: Annotated[
+            Decimal | None, Field(ge=0, max_digits=18, decimal_places=6)
+        ] = None,
+    ) -> ReceiptDetailOutput:
+        with Session(engine) as db:
+            try:
+                return receipt_item_included_quantity_record(
+                    receipt_id,
+                    item_id,
+                    IncludedQuantityInput(included_quantity=included_quantity),
                     _owner(db, scope=EXCLUSIONS_WRITE_SCOPE),
                     db,
                 )

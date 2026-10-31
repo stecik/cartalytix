@@ -14,6 +14,7 @@ import QueryState from "../components/QueryState.vue";
 import SegmentedToggle from "../components/SegmentedToggle.vue";
 import ExclusionAction from "../components/ExclusionAction.vue";
 import ExclusionStatus from "../components/ExclusionStatus.vue";
+import IncludedQuantityAction from "../components/IncludedQuantityAction.vue";
 import { sessionOptions } from "../auth";
 import { providerLogos } from "../providerLogos";
 import { useUserSettings } from "../settings";
@@ -142,6 +143,7 @@ function date(value: string): string {
                 <div class="receipt-item-actions">
                   <ExclusionStatus :reason="item.exclusion_reason" />
                   <ExclusionAction scope="item" :path="`/receipts/${encodeURIComponent(receiptId)}/items/${encodeURIComponent(item.id)}/exclusion`" :excluded="item.is_excluded" />
+                  <IncludedQuantityAction :path="`/receipts/${encodeURIComponent(receiptId)}/items/${encodeURIComponent(item.id)}/included-quantity`" :item="item" :amount="money(item.included_amount)" :format="(value) => quantity(value, item.unit)" />
                   <RouterLink v-if="item.exclusion_reason === 'product'" class="text-link" :to="{ path: '/items/detail', query: { name: item.name, currency: receipt.data.value.currency } }">{{ t("manageProductExclusion") }}</RouterLink>
                 </div>
               </li>
@@ -180,6 +182,7 @@ function date(value: string): string {
               <div class="receipt-item-actions">
                 <ExclusionStatus :reason="item.exclusion_reason" />
                 <ExclusionAction scope="item" :path="`/receipts/${encodeURIComponent(receiptId)}/items/${encodeURIComponent(item.id)}/exclusion`" :excluded="item.is_excluded" />
+                  <IncludedQuantityAction :path="`/receipts/${encodeURIComponent(receiptId)}/items/${encodeURIComponent(item.id)}/included-quantity`" :item="item" :amount="money(item.included_amount)" :format="(value) => quantity(value, item.unit)" />
                 <RouterLink v-if="item.exclusion_reason === 'product'" class="text-link" :to="{ path: '/items/detail', query: { name: item.name, currency: receipt.data.value.currency } }">{{ t("manageProductExclusion") }}</RouterLink>
               </div>
             </li>

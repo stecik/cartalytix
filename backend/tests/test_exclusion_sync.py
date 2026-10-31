@@ -1,6 +1,7 @@
 """Receipt refresh keeps local exclusions attached to matching source items."""
 
 from collections.abc import Iterator
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -146,4 +147,30 @@ def test_refresh_matches_duplicate_names_by_item_discounts(
         assert list(db.scalars(select(ReceiptItem.is_excluded).order_by(ReceiptItem.position))) == [
             True,
             False,
+        ]
+
+
+def test_refresh_keeps_item_ids_and_included_quantity(database: tuple[Engine, UUID]) -> None:
+    engine, connection_id = database
+    burgers = {**item("Burger", amount="600"), "quantity": "4", "unit_price": "150"}
+    save(engine, connection_id, [burgers, item("Cola", "2")])
+    with Session(engine) as db, db.begin():
+        shared = db.scalar(select(ReceiptItem).where(ReceiptItem.name == "Burger"))
+        assert shared is not None
+        shared.included_quantity = Decimal(1)
+        ids = {
+            name: row_id for name, row_id in db.execute(select(ReceiptItem.name, ReceiptItem.id))
+        }
+
+    save(engine, connection_id, [item("Cola", "2"), burgers])
+
+    with Session(engine) as db:
+        rows = db.execute(
+            select(ReceiptItem.name, ReceiptItem.id, ReceiptItem.included_quantity).order_by(
+                ReceiptItem.position
+            )
+        )
+        assert [tuple(row) for row in rows] == [
+            ("Cola", ids.get("Cola"), None),
+            ("Burger", ids.get("Burger"), Decimal(1)),
         ]
