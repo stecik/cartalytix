@@ -1,6 +1,6 @@
 <script lang="ts">
-/** Query families whose amounts change when anything counts differently. */
-export const spendingQueries = new Set(["receipts", "overview", "overview-stats", "items", "item-detail", "item-totals", "item-exclusions", "receipt-suggestions"]);
+/** Query families whose amounts change when anything counts differently; every such change also lands in the change history. */
+export const spendingQueries = new Set(["receipts", "overview", "overview-stats", "items", "item-detail", "item-totals", "item-exclusions", "receipt-suggestions", "changes"]);
 </script>
 
 <script setup lang="ts">

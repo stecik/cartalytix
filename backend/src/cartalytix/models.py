@@ -335,6 +335,38 @@ class ChangeBatch(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(64))
     request_hash: Mapped[str] = mapped_column(String(64))
     result: Mapped[dict[str, Any]] = mapped_column(JSON)
+    # Who made the change: the owner in the app ("user") or an MCP client acting for them.
+    source: Mapped[str] = mapped_column(String(8), default="user", server_default="user")
+    client_id: Mapped[str | None] = mapped_column(
+        ForeignKey("oauth_clients.id", ondelete="SET NULL")
+    )
+    undo_of_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("change_batches.id", ondelete="SET NULL"), index=True
+    )
+
+
+class ChangeEntry(Base):
+    """One changed value of a batch, kept with its previous value for history and undo."""
+
+    __tablename__ = "change_entries"
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    batch_id: Mapped[UUID] = mapped_column(
+        ForeignKey("change_batches.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(32))
+    receipt_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("receipts.id", ondelete="SET NULL"), index=True
+    )
+    # No foreign key: a refresh replaces line rows, re-inserting unchanged lines under their ID.
+    item_id: Mapped[UUID | None] = mapped_column(index=True)
+    name: Mapped[str] = mapped_column(Text)
+    currency: Mapped[str] = mapped_column(String(3))
+    before: Mapped[Any] = mapped_column(JSON, nullable=True)
+    after: Mapped[Any] = mapped_column(JSON, nullable=True)
+    undone_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("change_batches.id", ondelete="SET NULL")
+    )
 
 
 class ProductExclusion(Base):

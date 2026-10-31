@@ -16,6 +16,7 @@ import SettingsView from "./views/SettingsView.vue";
 import OAuthConsentView from "./views/OAuthConsentView.vue";
 import ChangeCredentialsView from "./views/ChangeCredentialsView.vue";
 import AccountsView from "./views/AccountsView.vue";
+import ChangesView from "./views/ChangesView.vue";
 
 /** Administrators only manage accounts; everyone must replace issued credentials first. */
 export function accountRedirect(user: User, name: unknown): RouteLocationRaw | null {
@@ -41,6 +42,7 @@ export function createAppRouter(client: QueryClient) {
       { path: "/items/detail", name: "item-detail", component: ItemDetailView },
       { path: "/calculator", name: "calculator", component: CalculatorView },
       { path: "/connections", name: "connections", component: ConnectionsView },
+      { path: "/changes", name: "changes", component: ChangesView },
       { path: "/settings", name: "settings", component: SettingsView },
       { path: "/accounts", name: "accounts", component: AccountsView },
       { path: "/change-credentials", name: "change-credentials", component: ChangeCredentialsView },

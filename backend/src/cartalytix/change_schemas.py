@@ -115,3 +115,50 @@ class ChangeBatchOutput(BaseModel):
     receipts: list[ReceiptImpactOutput]
     items: list[ItemImpactOutput]
     totals: list[CurrencyImpactOutput]
+
+
+class ChangeSource(StrEnum):
+    USER = "user"
+    MCP = "mcp"
+
+
+class UndoInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Only these entries of the batch; all of them when omitted.
+    entry_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=MAX_CHANGES)
+    dry_run: bool = False
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class ChangeEntryOutput(BaseModel):
+    id: UUID
+    kind: ChangeKind
+    receipt_id: UUID | None
+    item_id: UUID | None
+    name: str
+    currency: str
+    before: ChangeValue
+    after: ChangeValue
+    undone_by_id: UUID | None
+
+
+class ChangeHistoryBatchOutput(BaseModel):
+    id: UUID
+    created_at: datetime
+    source: ChangeSource
+    client_name: str | None
+    undo_of_id: UUID | None
+    entries: list[ChangeEntryOutput]
+    totals: list[CurrencyImpactOutput]
+
+
+class ChangeHistoryOutput(BaseModel):
+    items: list[ChangeHistoryBatchOutput]
+    total: int
+    limit: int
+    offset: int
+
+
+class ChangeBatchDetailOutput(ChangeHistoryBatchOutput):
+    receipts: list[ReceiptImpactOutput]
+    items: list[ItemImpactOutput]

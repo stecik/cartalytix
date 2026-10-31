@@ -23,9 +23,7 @@ def upgrade() -> None:
         sa.Column("result", sa.JSON(), nullable=False),
         sa.UniqueConstraint("owner_id", "idempotency_key"),
     )
-    op.create_index(
-        "ix_change_batches_owner_created", "change_batches", ["owner_id", "created_at"]
-    )
+    op.create_index("ix_change_batches_owner_created", "change_batches", ["owner_id", "created_at"])
 
 
 def downgrade() -> None:

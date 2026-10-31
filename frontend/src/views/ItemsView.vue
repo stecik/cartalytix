@@ -277,7 +277,7 @@ function restored(row: ItemExclusion, result: ReceiptDetail | ItemDetail | undef
         </div>
       </section>
     </QueryState>
-    <ChangePreviewDialog v-if="bulkChange" :title="bulkChange.title" :operations="bulkChange.operations" @applied="clearSelection" @close="bulkChange = null" />
+    <ChangePreviewDialog v-if="bulkChange" :title="bulkChange.title" :body="{ operations: bulkChange.operations }" @applied="clearSelection" @close="bulkChange = null" />
   </div>
 </template>
 

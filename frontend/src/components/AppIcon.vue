@@ -7,6 +7,7 @@ defineProps<{
     | "categories"
     | "calculator"
     | "connections"
+    | "changes"
     | "settings"
     | "gear"
     | "arrow"
@@ -51,6 +52,9 @@ defineProps<{
     <template v-else-if="name === 'connections'">
       <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
       <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+    </template>
+    <template v-else-if="name === 'changes'">
+      <path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" /><path d="M3 3v5h5M12 7v5l3 2" />
     </template>
     <template v-else-if="name === 'gear'">
       <circle cx="12" cy="12" r="3" />

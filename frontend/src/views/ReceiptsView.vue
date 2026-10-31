@@ -18,6 +18,7 @@ import QueryState from "../components/QueryState.vue";
 import ReceiptLedger from "../components/ReceiptLedger.vue";
 import ReceiptSearch from "../components/ReceiptSearch.vue";
 import AppButton from "../components/AppButton.vue";
+import AppIcon from "../components/AppIcon.vue";
 
 type QueryKey = "q" | "from" | "to" | "connection" | "min" | "max" | "sort" | "offset" | "exclusion";
 
@@ -134,7 +135,10 @@ function changePage(value: number): void {
 <template>
   <div class="view-content">
     <PageHeader :eyebrow="t('workspace')" :title="t('receipts')" :intro="t('receiptIntro')">
-      <AppButton type="button" variant="primary" class="add-receipt" @click="adding = true">{{ t("addReceipt") }}</AppButton>
+      <div class="receipts-actions">
+        <AppButton type="button" variant="primary" @click="adding = true">{{ t("addReceipt") }}</AppButton>
+        <RouterLink class="text-link" to="/changes">{{ t("changes") }}<AppIcon name="arrow" /></RouterLink>
+      </div>
     </PageHeader>
     <ManualReceiptDialog v-if="adding" @close="adding = false" @saved="receiptsAdded" />
     <div class="exclusion-controls">
@@ -187,5 +191,5 @@ function changePage(value: number): void {
 
 <style scoped>
 .exclusion-controls { margin-bottom: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
-.add-receipt { margin-top: 16px; }
+.receipts-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 24px; margin-top: 16px; }
 </style>

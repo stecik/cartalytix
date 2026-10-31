@@ -43,6 +43,7 @@ const userLinks = [
   { to: "/categories", name: "categories" },
   { to: "/calculator", name: "calculator" },
   { to: "/connections", name: "connections" },
+  { to: "/changes", name: "changes" },
   { to: "/settings", name: "settings" },
 ] as const;
 const adminLinks = [
@@ -54,7 +55,8 @@ const links = computed(() => {
   if (!user || user.must_change_password) return [];
   return user.is_admin ? adminLinks : userLinks;
 });
-const mobileLinks = computed(() => links.value.filter((link) => link.name !== "settings"));
+// The bottom bar has room for six; settings sit in the top bar and history is linked from receipts.
+const mobileLinks = computed(() => links.value.filter((link) => link.name !== "settings" && link.name !== "changes"));
 const settings = useUserSettings();
 watch(
   () => session.data.value?.theme,

@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import ColumnElement, exists, func, or_, select
 
 from cartalytix.accounting import accounting, product_excluded
-from cartalytix.change_routes import apply_change
+from cartalytix.change_routes import Actor, apply_change
 from cartalytix.change_schemas import (
     ChangeKind,
     ItemExclusionChange,
@@ -195,7 +195,7 @@ def set_receipt_exclusion(
 ) -> ReceiptDetailOutput:
     apply_change(
         db,
-        user,
+        Actor(user),
         ReceiptExclusionChange(
             kind=ChangeKind.RECEIPT_EXCLUSION, receipt_id=receipt_id, excluded=body.excluded
         ),
@@ -211,7 +211,7 @@ def set_receipt_item_exclusion(
 ) -> ReceiptDetailOutput:
     apply_change(
         db,
-        user,
+        Actor(user),
         ItemExclusionChange(
             kind=ChangeKind.ITEM_EXCLUSION,
             receipt_id=receipt_id,
@@ -231,7 +231,7 @@ def set_receipt_item_included_quantity(
 ) -> ReceiptDetailOutput:
     apply_change(
         db,
-        user,
+        Actor(user),
         ItemIncludedQuantityChange(
             kind=ChangeKind.ITEM_INCLUDED_QUANTITY,
             receipt_id=receipt_id,

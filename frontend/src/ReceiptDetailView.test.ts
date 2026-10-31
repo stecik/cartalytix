@@ -208,3 +208,30 @@ describe("partly counted items", () => {
     wrapper.unmount(); client.clear();
   });
 });
+
+describe("receipt change history", () => {
+  it("shows the latest changes of this receipt and loads more on request", async () => {
+    const batch = (id: string) => ({ id, created_at: "2026-10-30T12:00:00Z", source: "user", client_name: null, undo_of_id: null, totals: [],
+      entries: [{ id: `entry-${id}`, kind: "item_exclusion", receipt_id: "receipt-1", item_id: "item-1", name: "Apples", currency: "CZK", before: false, after: true, undone_by_id: null }] });
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname !== "/api/v1/changes") return Response.json(receipt);
+      const limit = Number(url.searchParams.get("limit"));
+      return Response.json({ items: Array.from({ length: Math.min(limit, 5) }, (_, index) => batch(`batch-${index}`)), total: 5, limit, offset: 0 });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const router = await routerForReceipt();
+    const client = detailedClient();
+    const wrapper = mount(ReceiptDetailView, { global: { plugins: [router, createAppI18n("en"), [VueQueryPlugin, { queryClient: client }]] } });
+    await flushPromises();
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/changes?receipt_id=receipt-1&limit=3", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(wrapper.findAll(".receipt-history .change-batch")).toHaveLength(3);
+    expect(wrapper.get(".receipt-history").text()).toContain("Excluded line Apples");
+    await wrapper.get('[data-action="more-changes"]').trigger("click");
+    await flushPromises();
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/changes?receipt_id=receipt-1&limit=13", expect.anything());
+    expect(wrapper.findAll(".receipt-history .change-batch")).toHaveLength(5);
+    expect(wrapper.find('[data-action="more-changes"]').exists()).toBe(false);
+    wrapper.unmount(); client.clear();
+  });
+});

@@ -3,15 +3,16 @@ import { computed } from "vue";
 import { useMutation, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { ApiError, request } from "../api";
-import type { ChangeBatchInput, ChangeBatchOutput, ChangeOperation } from "../api";
+import type { ChangeBatchInput, ChangeBatchOutput, UndoConflict, UndoInput } from "../api";
+import { changeValue } from "../changes";
 import { sourceName } from "../names";
 import { formatMoney, numberLocale } from "../stats";
 import AppButton from "./AppButton.vue";
 import AppDialog from "./AppDialog.vue";
 import { spendingQueries } from "./ExclusionAction.vue";
 
-/** Previews a batch of spending changes as a dry run, then applies exactly what was previewed. */
-const props = defineProps<{ title: string; operations: ChangeOperation[] }>();
+/** Previews a batch of spending changes, or an undo of one, as a dry run, then applies exactly what was previewed. */
+const props = withDefaults(defineProps<{ title: string; path?: string; body: Omit<ChangeBatchInput, "dry_run" | "idempotency_key" | "expected_state"> | Omit<UndoInput, "dry_run" | "idempotency_key"> }>(), { path: "/changes" });
 const emit = defineEmits<{ close: []; applied: [result: ChangeBatchOutput] }>();
 const { t, locale } = useI18n();
 const client = useQueryClient();
@@ -27,15 +28,21 @@ const errors: Record<string, string> = {
   duplicate_change: "changesDuplicate",
   included_quantity_out_of_range: "changesInvalidQuantity",
   included_quantity_not_whole: "changesInvalidQuantity",
+  undo_conflict: "undoConflict",
+  already_undone: "undoAlreadyDone",
+  change_batch_not_found: "undoMissing",
+  change_entry_not_found: "undoMissing",
+  undo_target_missing: "undoTargetMissing",
 };
 
-function send(body: ChangeBatchInput): Promise<ChangeBatchOutput> {
-  return request<ChangeBatchOutput>("/changes", { method: "POST", body: JSON.stringify(body) });
+function send(body: ChangeBatchInput | UndoInput): Promise<ChangeBatchOutput> {
+  return request<ChangeBatchOutput>(props.path, { method: "POST", body: JSON.stringify(body) });
 }
 
-const preview = useMutation({ mutationFn: () => send({ operations: props.operations, dry_run: true }) });
+const preview = useMutation({ mutationFn: () => send({ ...props.body, dry_run: true }) });
 const confirm = useMutation({
-  mutationFn: (state: string) => send({ operations: props.operations, dry_run: false, idempotency_key: idempotencyKey, expected_state: state }),
+  // Undo checks for later changes itself and takes no expected state.
+  mutationFn: (state: string) => send({ ...props.body, dry_run: false, idempotency_key: idempotencyKey, ...("operations" in props.body ? { expected_state: state } : {}) }),
   onSuccess: (result) => {
     emit("applied", result);
     emit("close");
@@ -44,6 +51,9 @@ const confirm = useMutation({
   onError: (error) => {
     // The data moved since the preview; show the fresh impact before anything is written.
     if (error instanceof ApiError && error.code === "changes_conflict") preview.mutate();
+    // The history behind the dialog is stale; refresh it so it shows what changed.
+    if (error instanceof ApiError && (error.code === "undo_conflict" || error.code === "already_undone"))
+      return client.invalidateQueries({ queryKey: ["changes"] });
   },
 });
 preview.mutate();
@@ -69,6 +79,16 @@ const failure = computed(() => {
   if (preview.isError.value) return message(preview.error.value, "changePreviewFailed");
   return confirm.isError.value ? message(confirm.error.value, "changesFailed") : null;
 });
+// Undo never overwrites a later change; list what blocked it.
+const conflicts = computed<UndoConflict[]>(() => {
+  const error = preview.error.value ?? confirm.error.value;
+  const list = error instanceof ApiError && error.code === "undo_conflict" ? error.params.conflicts : undefined;
+  return Array.isArray(list) ? list as UndoConflict[] : [];
+});
+
+function value(recorded: UndoConflict["current"]): string {
+  return changeValue(recorded, t, locale.value);
+}
 
 function money(amount: string, currency: string): string {
   return formatMoney(amount, currency, locale.value);
@@ -83,7 +103,7 @@ function message(value: unknown, fallback: string): string {
 }
 
 function apply(): void {
-  if (!result.value || nothing.value || preview.isPending.value || busy.value) return;
+  if (!result.value || nothing.value || conflicts.value.length || preview.isPending.value || busy.value) return;
   confirm.mutate(result.value.state);
 }
 </script>
@@ -119,10 +139,16 @@ function apply(): void {
       </template>
     </template>
     <p v-if="failure" role="alert" class="form-alert">{{ failure }}</p>
+    <ul v-if="conflicts.length" class="change-list conflict-list" tabindex="0" :aria-label="t('undoConflicts')">
+      <li v-for="conflict in conflicts" :key="conflict.entry_id">
+        <div class="change-row"><span>{{ sourceName(conflict.name, t) }}</span></div>
+        <div class="change-range">{{ t("undoConflictValues", { expected: value(conflict.expected), current: value(conflict.current) }) }}</div>
+      </li>
+    </ul>
     <div class="dialog-actions">
       <AppButton type="button" data-action="cancel" :disabled="busy" @click="emit('close')">{{ t("cancel") }}</AppButton>
-      <AppButton v-if="preview.isError.value" type="button" data-action="retry-preview" @click="preview.mutate()">{{ t("retry") }}</AppButton>
-      <AppButton v-else variant="primary" type="button" data-action="apply-changes" :disabled="!result || nothing || preview.isPending.value || busy" :aria-busy="busy" @click="apply">
+      <AppButton v-if="preview.isError.value && !conflicts.length" type="button" data-action="retry-preview" @click="preview.mutate()">{{ t("retry") }}</AppButton>
+      <AppButton v-else-if="!conflicts.length" variant="primary" type="button" data-action="apply-changes" :disabled="!result || nothing || preview.isPending.value || busy" :aria-busy="busy" @click="apply">
         {{ busy ? t("saving") : t("applyChanges") }}
       </AppButton>
     </div>

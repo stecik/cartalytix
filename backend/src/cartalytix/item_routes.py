@@ -25,7 +25,7 @@ from sqlalchemy import cast as sql_cast
 from sqlalchemy.sql.selectable import CTE
 
 from cartalytix.accounting import accounting, item_included, product_excluded
-from cartalytix.change_routes import apply_change
+from cartalytix.change_routes import Actor, apply_change
 from cartalytix.change_schemas import ChangeKind, ProductExclusionChange
 from cartalytix.dependencies import Db, Owner
 from cartalytix.exclusion_schemas import (
@@ -555,7 +555,7 @@ def item_detail(
 def set_product_exclusion(user: Owner, db: Db, body: ProductExclusionInput) -> ItemDetailOutput:
     apply_change(
         db,
-        user,
+        Actor(user),
         ProductExclusionChange(
             kind=ChangeKind.PRODUCT_EXCLUSION,
             name=body.name,

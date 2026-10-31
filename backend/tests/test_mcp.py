@@ -80,6 +80,9 @@ TOOLS = {
     "set_receipt_item_exclusion",
     "set_receipt_item_included_quantity",
     "apply_receipt_changes",
+    "list_change_history",
+    "get_change_batch",
+    "undo_changes",
     "list_shops",
     "add_manual_receipts",
     "update_manual_receipt",
@@ -91,6 +94,7 @@ EXCLUSION_WRITES = {
     "set_receipt_item_exclusion",
     "set_receipt_item_included_quantity",
     "apply_receipt_changes",
+    "undo_changes",
 }
 CATEGORY_WRITES = {"create_category", "update_category", "delete_category", "assign_category_items"}
 CATEGORY_WRITE_SCOPE = "cartalytix:categories:write"
@@ -1064,7 +1068,14 @@ def test_exclusion_writes_need_their_scope_and_are_reversible(
     assert applied.get("batch_id") is not None
     stale = result("apply_receipt_changes", {**batch, "expected_state": planned.get("state")})
     assert "changes_conflict" in str(stale.get("content"))
-    result("set_receipt_item_exclusion", {**line, "excluded": False})
+    recorded = result("list_change_history", {"receipt_id": str(own)}).get("structuredContent", {})
+    latest = recorded.get("items", [])[0]
+    assert (latest.get("id"), latest.get("source")) == (applied.get("batch_id"), "mcp")
+    assert latest.get("client_name")
+    undone = result("undo_changes", {"batch_id": latest.get("id")}).get("structuredContent", {})
+    assert undone.get("totals", [])[0].get("difference") == str(whole)
+    twice = result("undo_changes", {"batch_id": latest.get("id")})
+    assert "already_undone" in str(twice.get("content"))
     assert result("set_product_exclusion", product).get("structuredContent", {}).get("is_excluded")
     with Session(engine) as db:
         assert db.scalar(select(ProductExclusion.name)) == "Rohlík"

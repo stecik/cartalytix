@@ -4,20 +4,26 @@ import hashlib
 import json
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
-from sqlalchemy import ColumnElement, delete, literal, or_, select, tuple_
+from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import ColumnElement, and_, delete, func, literal, or_, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from cartalytix.accounting import accounting
 from cartalytix.change_schemas import (
     Change,
+    ChangeBatchDetailOutput,
     ChangeBatchInput,
     ChangeBatchOutput,
+    ChangeEntryOutput,
+    ChangeHistoryBatchOutput,
+    ChangeHistoryOutput,
     ChangeKind,
     ChangeOutput,
+    ChangeSource,
     ChangeValue,
     CurrencyImpactOutput,
     ItemExclusionChange,
@@ -26,10 +32,13 @@ from cartalytix.change_schemas import (
     ProductExclusionChange,
     ReceiptExclusionChange,
     ReceiptImpactOutput,
+    UndoInput,
 )
 from cartalytix.dependencies import Db, Owner, lock_owner
 from cartalytix.models import (
     ChangeBatch,
+    ChangeEntry,
+    OAuthClient,
     ProductExclusion,
     ProviderConnection,
     Receipt,
@@ -359,8 +368,41 @@ def _replay(
     return ChangeBatchOutput.model_validate({**stored.result, "replayed": True})
 
 
-def apply_changes(db: Session, user: User, body: ChangeBatchInput) -> ChangeBatchOutput:
+@dataclass
+class Actor:
+    """Who a batch is recorded for: the owner in the app or one of their MCP clients."""
+
+    user: User
+    source: ChangeSource = ChangeSource.USER
+    client_id: str | None = None
+
+
+def _undo_conflicts(targets: list[_Target], undoing: list[ChangeEntry]) -> None:
+    conflicts = [
+        {
+            "entry_id": str(entry.id),
+            "name": entry.name,
+            "expected": entry.after,
+            "current": target.before,
+        }
+        for entry, target in zip(undoing, targets, strict=True)
+        if target.before != entry.after
+    ]
+    if conflicts:
+        # A later change touched these values; undo never overwrites it silently.
+        raise HTTPException(409, {"code": "undo_conflict", "conflicts": conflicts})
+
+
+def apply_changes(
+    db: Session,
+    actor: Actor,
+    body: ChangeBatchInput,
+    *,
+    undo_of: ChangeBatch | None = None,
+    undoing: list[ChangeEntry] | None = None,
+) -> ChangeBatchOutput:
     """Validate, lock and apply a whole batch in one transaction, or nothing at all."""
+    user = actor.user
     digest = _request_hash(body)
     keyed = body.idempotency_key is not None and not body.dry_run
     if keyed and (replayed := _replay(db, user.id, body, digest)) is not None:
@@ -373,6 +415,8 @@ def apply_changes(db: Session, user: User, body: ChangeBatchInput) -> ChangeBatc
         targets = _resolve(db, user.id, body.operations)
         if body.expected_state is not None and body.expected_state != _state(targets):
             raise HTTPException(409, "changes_conflict")
+        if undoing is not None:
+            _undo_conflicts(targets, undoing)
         before = _amounts(db, user.id, targets)
         for target in targets:
             if target.before != target.after:
@@ -383,10 +427,33 @@ def apply_changes(db: Session, user: User, body: ChangeBatchInput) -> ChangeBatc
             db.rollback()
             return output
         batch = ChangeBatch(
-            owner_id=user.id, idempotency_key=body.idempotency_key, request_hash=digest, result={}
+            owner_id=user.id,
+            idempotency_key=body.idempotency_key,
+            request_hash=digest,
+            result={},
+            source=actor.source,
+            client_id=actor.client_id,
+            undo_of_id=undo_of.id if undo_of is not None else None,
         )
         db.add(batch)
         db.flush()
+        db.add_all(
+            ChangeEntry(
+                batch_id=batch.id,
+                position=target.index,
+                kind=target.change.kind,
+                receipt_id=target.receipt.id if target.receipt is not None else None,
+                item_id=target.item.id if target.item is not None else None,
+                name=target.name,
+                currency=target.currency,
+                before=target.before,
+                after=target.after,
+            )
+            for target in targets
+            if target.before != target.after
+        )
+        for entry in undoing or []:
+            entry.undone_by_id = batch.id
         output.batch_id = batch.id
         batch.result = output.model_dump(mode="json")
         db.commit()
@@ -402,16 +469,212 @@ def apply_changes(db: Session, user: User, body: ChangeBatchInput) -> ChangeBatc
     return output
 
 
-def apply_change(db: Session, user: User, change: Change) -> None:
+def apply_change(db: Session, actor: Actor, change: Change) -> None:
     """One change through the batch path, reporting errors with their plain code."""
     try:
-        apply_changes(db, user, ChangeBatchInput(operations=[change]))
+        apply_changes(db, actor, ChangeBatchInput(operations=[change]))
     except HTTPException as exc:
         detail = exc.detail
         code = detail.get("code") if isinstance(detail, dict) else detail
         raise HTTPException(exc.status_code, code) from exc
 
 
+def _reverse(entry: ChangeEntry) -> Change:
+    """The change that restores an entry's previous value."""
+    match entry.kind:
+        case ChangeKind.RECEIPT_EXCLUSION if entry.receipt_id is not None:
+            return ReceiptExclusionChange(
+                kind=ChangeKind.RECEIPT_EXCLUSION,
+                receipt_id=entry.receipt_id,
+                excluded=bool(entry.before),
+            )
+        case ChangeKind.ITEM_EXCLUSION if entry.receipt_id and entry.item_id:
+            return ItemExclusionChange(
+                kind=ChangeKind.ITEM_EXCLUSION,
+                receipt_id=entry.receipt_id,
+                item_id=entry.item_id,
+                excluded=bool(entry.before),
+            )
+        case ChangeKind.ITEM_INCLUDED_QUANTITY if entry.receipt_id and entry.item_id:
+            return ItemIncludedQuantityChange(
+                kind=ChangeKind.ITEM_INCLUDED_QUANTITY,
+                receipt_id=entry.receipt_id,
+                item_id=entry.item_id,
+                included_quantity=None if entry.before is None else Decimal(str(entry.before)),
+            )
+        case ChangeKind.PRODUCT_EXCLUSION:
+            return ProductExclusionChange(
+                kind=ChangeKind.PRODUCT_EXCLUSION,
+                name=entry.name,
+                currency=entry.currency,
+                excluded=bool(entry.before),
+            )
+    # The receipt was deleted since; there is nothing left to restore.
+    raise HTTPException(409, {"code": "undo_target_missing", "entry_id": str(entry.id)})
+
+
+def undo_changes(db: Session, actor: Actor, batch_id: UUID, body: UndoInput) -> ChangeBatchOutput:
+    """Restore previous values of a batch, or of some of its entries, as a new batch."""
+    try:
+        lock_owner(db, actor.user.id)
+        batch = db.scalar(
+            select(ChangeBatch).where(
+                ChangeBatch.id == batch_id, ChangeBatch.owner_id == actor.user.id
+            )
+        )
+        if batch is None:
+            raise HTTPException(404, "change_batch_not_found")
+        query = select(ChangeEntry).where(ChangeEntry.batch_id == batch.id)
+        if body.entry_ids is not None:
+            query = query.where(ChangeEntry.id.in_(body.entry_ids))
+        entries = list(db.scalars(query.order_by(ChangeEntry.position)))
+        if body.entry_ids is not None and len(entries) != len(set(body.entry_ids)):
+            raise HTTPException(404, "change_entry_not_found")
+        if not entries:
+            raise HTTPException(409, "already_undone")
+        restore = ChangeBatchInput(
+            operations=[_reverse(entry) for entry in entries],
+            dry_run=body.dry_run,
+            idempotency_key=body.idempotency_key,
+        )
+        # A retried undo whose response got lost replays its result instead of being refused.
+        if body.idempotency_key is not None and not body.dry_run:
+            replayed = _replay(db, actor.user.id, restore, _request_hash(restore))
+            if replayed is not None:
+                db.rollback()
+                return replayed
+        if any(entry.undone_by_id is not None for entry in entries):
+            raise HTTPException(409, "already_undone")
+    except BaseException:
+        db.rollback()
+        raise
+    return apply_changes(db, actor, restore, undo_of=batch, undoing=entries)
+
+
+def _history_entries(db: Session, batch_ids: list[UUID]) -> dict[UUID, list[ChangeEntry]]:
+    entries: dict[UUID, list[ChangeEntry]] = {batch_id: [] for batch_id in batch_ids}
+    for entry in db.scalars(
+        select(ChangeEntry)
+        .where(ChangeEntry.batch_id.in_(list(entries)))
+        .order_by(ChangeEntry.batch_id, ChangeEntry.position)
+    ):
+        entries[entry.batch_id].append(entry)
+    return entries
+
+
+def _history_output(
+    batch: ChangeBatch, client_name: str | None, entries: list[ChangeEntry]
+) -> ChangeHistoryBatchOutput:
+    return ChangeHistoryBatchOutput(
+        id=batch.id,
+        created_at=batch.created_at,
+        source=ChangeSource(batch.source),
+        client_name=client_name,
+        undo_of_id=batch.undo_of_id,
+        entries=[
+            ChangeEntryOutput(
+                id=entry.id,
+                kind=ChangeKind(entry.kind),
+                receipt_id=entry.receipt_id,
+                item_id=entry.item_id,
+                name=entry.name,
+                currency=entry.currency,
+                before=entry.before,
+                after=entry.after,
+                undone_by_id=entry.undone_by_id,
+            )
+            for entry in entries
+        ],
+        totals=batch.result.get("totals", []),
+    )
+
+
+def change_history(
+    db: Session, user: User, receipt_id: UUID | None, limit: int, offset: int
+) -> ChangeHistoryOutput:
+    filters: list[ColumnElement[bool]] = [ChangeBatch.owner_id == user.id]
+    if receipt_id is not None:
+        # Product exclusions count on the receipt when it contains that product.
+        products = (
+            select(ReceiptItem.name, Receipt.currency)
+            .join(Receipt, ReceiptItem.receipt_id == Receipt.id)
+            .where(Receipt.id == receipt_id)
+        )
+        filters.append(
+            ChangeBatch.id.in_(
+                select(ChangeEntry.batch_id).where(
+                    or_(
+                        ChangeEntry.receipt_id == receipt_id,
+                        and_(
+                            ChangeEntry.kind == ChangeKind.PRODUCT_EXCLUSION,
+                            tuple_(ChangeEntry.name, ChangeEntry.currency).in_(products),
+                        ),
+                    )
+                )
+            )
+        )
+    total = db.scalar(select(func.count()).select_from(ChangeBatch).where(*filters)) or 0
+    batches = [
+        (batch, client_name)
+        for batch, client_name in db.execute(
+            select(ChangeBatch, OAuthClient.name)
+            .outerjoin(OAuthClient, OAuthClient.id == ChangeBatch.client_id)
+            .where(*filters)
+            .order_by(ChangeBatch.created_at.desc(), ChangeBatch.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ]
+    entries = _history_entries(db, [batch.id for batch, _ in batches])
+    return ChangeHistoryOutput(
+        items=[
+            _history_output(batch, client_name, entries.get(batch.id, []))
+            for batch, client_name in batches
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def change_detail(db: Session, user: User, batch_id: UUID) -> ChangeBatchDetailOutput:
+    row = db.execute(
+        select(ChangeBatch, OAuthClient.name)
+        .outerjoin(OAuthClient, OAuthClient.id == ChangeBatch.client_id)
+        .where(ChangeBatch.id == batch_id, ChangeBatch.owner_id == user.id)
+    ).first()
+    if row is None:
+        raise HTTPException(404, "change_batch_not_found")
+    batch, client_name = row
+    entries = _history_entries(db, [batch.id]).get(batch.id, [])
+    return ChangeBatchDetailOutput(
+        **_history_output(batch, client_name, entries).model_dump(),
+        receipts=batch.result.get("receipts", []),
+        items=batch.result.get("items", []),
+    )
+
+
 @router.post("/changes", response_model=ChangeBatchOutput)
 def change_batch(user: Owner, db: Db, body: ChangeBatchInput) -> ChangeBatchOutput:
-    return apply_changes(db, user, body)
+    return apply_changes(db, Actor(user), body)
+
+
+@router.get("/changes", response_model=ChangeHistoryOutput)
+def changes(
+    user: Owner,
+    db: Db,
+    receipt_id: UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0, le=100000)] = 0,
+) -> ChangeHistoryOutput:
+    return change_history(db, user, receipt_id, limit, offset)
+
+
+@router.get("/changes/{batch_id}", response_model=ChangeBatchDetailOutput)
+def change(batch_id: UUID, user: Owner, db: Db) -> ChangeBatchDetailOutput:
+    return change_detail(db, user, batch_id)
+
+
+@router.post("/changes/{batch_id}/undo", response_model=ChangeBatchOutput)
+def undo(batch_id: UUID, user: Owner, db: Db, body: UndoInput) -> ChangeBatchOutput:
+    return undo_changes(db, Actor(user), batch_id, body)

@@ -23,7 +23,7 @@ function bodies(fetcher: ReturnType<typeof vi.fn<typeof fetch>>): Array<Record<s
 
 function mountDialog(client = new QueryClient()) {
   return mount(ChangePreviewDialog, {
-    props: { title: "Exclude selected", operations },
+    props: { title: "Exclude selected", body: { operations } },
     global: { plugins: [createAppI18n("en"), [VueQueryPlugin, { queryClient: client }]] },
   });
 }

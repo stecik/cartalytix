@@ -5,8 +5,9 @@ import { useI18n } from "vue-i18n";
 import { sourceName } from "../names";
 import { useRoute, useRouter } from "vue-router";
 import { ApiError, request } from "../api";
-import type { ChangeOperation, ReceiptDetail, ReceiptDiscount, User } from "../api";
+import type { ChangeHistoryPage, ChangeOperation, ReceiptDetail, ReceiptDiscount, User } from "../api";
 import AppDialog from "../components/AppDialog.vue";
+import ChangeHistoryList from "../components/ChangeHistoryList.vue";
 import ChangePreviewDialog from "../components/ChangePreviewDialog.vue";
 import SelectionBar from "../components/SelectionBar.vue";
 import AppIcon from "../components/AppIcon.vue";
@@ -29,6 +30,17 @@ const receiptId = computed(() => String(route.params.id ?? ""));
 const receipt = useQuery({
   queryKey: computed(() => ["receipts", "detail", receiptId.value]),
   queryFn: ({ signal }) => request<ReceiptDetail>(`/receipts/${encodeURIComponent(receiptId.value)}`, { signal }),
+});
+// The receipt shows its latest few changes; the change history page pages through all of them.
+const HISTORY_PREVIEW = 3;
+const MAX_HISTORY = 100;
+const historyLimit = ref(HISTORY_PREVIEW);
+watch(receiptId, () => { historyLimit.value = HISTORY_PREVIEW; });
+const history = useQuery({
+  queryKey: computed(() => ["changes", "receipt", receiptId.value, historyLimit.value]),
+  queryFn: ({ signal }) => request<ChangeHistoryPage>(`/changes?${new URLSearchParams({ receipt_id: receiptId.value, limit: String(historyLimit.value) }).toString()}`, { signal }),
+  // Keep the shown changes while more load, but never another receipt's.
+  placeholderData: (previous, previousQuery) => previousQuery?.queryKey[2] === receiptId.value ? previous : undefined,
 });
 const router = useRouter();
 const client = useQueryClient();
@@ -153,7 +165,7 @@ function date(value: string): string {
           <AppButton v-if="selectedItems.some((item) => !item.is_excluded)" type="button" size="sm" data-action="exclude-selected" @click="bulkExclude(true)">{{ t("excludeSelected") }}</AppButton>
           <AppButton v-if="selectedItems.some((item) => item.is_excluded)" type="button" size="sm" data-action="restore-selected" @click="bulkExclude(false)">{{ t("restoreSelected") }}</AppButton>
         </SelectionBar>
-        <ChangePreviewDialog v-if="bulkChange" :title="bulkChange.title" :operations="bulkChange.operations" @applied="clearSelection" @close="bulkChange = null" />
+        <ChangePreviewDialog v-if="bulkChange" :title="bulkChange.title" :body="{ operations: bulkChange.operations }" @applied="clearSelection" @close="bulkChange = null" />
         <div v-if="rendered" class="receipt-paper-wrap">
           <article class="receipt-paper" :aria-label="t('receiptViewRendered')">
             <header class="receipt-paper-header">
@@ -225,6 +237,14 @@ function date(value: string): string {
           <div><dt>{{ t("receiptTotal") }}</dt><dd>{{ money(receipt.data.value.total_amount) }}</dd></div>
         </dl>
         </template>
+        <section v-if="history.data.value?.total" class="receipt-history" :aria-label="t('changes')">
+          <div class="section-heading">
+            <h2>{{ t("changes") }}</h2>
+            <RouterLink class="text-link" to="/changes" :aria-label="t('allChanges')">{{ t("allChanges") }}<AppIcon name="arrow" /></RouterLink>
+          </div>
+          <ChangeHistoryList :batches="history.data.value.items" />
+          <AppButton v-if="history.data.value.items.length < history.data.value.total && historyLimit < MAX_HISTORY" type="button" variant="text" data-action="more-changes" :disabled="history.isFetching.value" @click="historyLimit = Math.min(historyLimit + 10, MAX_HISTORY)">{{ t("moreChanges") }}</AppButton>
+        </section>
       </template>
     </QueryState>
   </div>
@@ -280,5 +300,6 @@ function date(value: string): string {
 .receipt-paper-total strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .receipt-paper-footer { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 16px; font-size: 11px; color: var(--receipt-ink-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 @media (max-width: 390px) { .receipt-paper { padding: 32px 18px; font-size: 12px; } }
+.receipt-history { border-top: 1px solid var(--border); padding-top: 24px; margin-bottom: 32px; }
 .receipt-quality { background: var(--bg-warning); color: var(--warning); font-size: 13px; padding: 18px; margin-bottom: 24px; line-height: 1.7; }
 </style>

@@ -52,11 +52,31 @@ from cartalytix.category_schemas import (
     CategoryKeyInput,
     CategoryOutput,
 )
-from cartalytix.change_routes import apply_changes
-from cartalytix.change_schemas import MAX_CHANGES, Change, ChangeBatchInput, ChangeBatchOutput
+from cartalytix.change_routes import (
+    Actor,
+    apply_change,
+    apply_changes,
+    change_detail,
+    change_history,
+)
+from cartalytix.change_routes import undo_changes as undo_change_batch
+from cartalytix.change_schemas import (
+    MAX_CHANGES,
+    Change,
+    ChangeBatchDetailOutput,
+    ChangeBatchInput,
+    ChangeBatchOutput,
+    ChangeHistoryOutput,
+    ChangeKind,
+    ChangeSource,
+    ItemExclusionChange,
+    ItemIncludedQuantityChange,
+    ProductExclusionChange,
+    ReceiptExclusionChange,
+    UndoInput,
+)
 from cartalytix.credentials import TokenCipher
 from cartalytix.item_routes import item_detail, item_totals, items
-from cartalytix.item_routes import set_product_exclusion as product_exclusion_record
 from cartalytix.manual_receipt_routes import (
     create_manual_receipts,
     delete_manual_receipt,
@@ -75,16 +95,9 @@ from cartalytix.oauth import (
     McpUrls,
 )
 from cartalytix.receipt_routes import overview, receipt_detail, receipts
-from cartalytix.receipt_routes import set_receipt_exclusion as receipt_exclusion_record
-from cartalytix.receipt_routes import set_receipt_item_exclusion as receipt_item_exclusion_record
-from cartalytix.receipt_routes import (
-    set_receipt_item_included_quantity as receipt_item_included_quantity_record,
-)
 from cartalytix.schemas import (
     STATS_BUCKET_PATTERN,
     ExclusionFilter,
-    ExclusionInput,
-    IncludedQuantityInput,
     ItemDetailOutput,
     ItemKeyInput,
     ItemSort,
@@ -95,7 +108,6 @@ from cartalytix.schemas import (
     ManualReceiptsInput,
     ManualReceiptsOutput,
     OverviewOutput,
-    ProductExclusionInput,
     ReceiptDetailOutput,
     ReceiptSort,
     ReceiptsOutput,
@@ -121,6 +133,7 @@ TOOL_SCOPES = {
     "set_receipt_item_exclusion": EXCLUSIONS_WRITE_SCOPE,
     "set_receipt_item_included_quantity": EXCLUSIONS_WRITE_SCOPE,
     "apply_receipt_changes": EXCLUSIONS_WRITE_SCOPE,
+    "undo_changes": EXCLUSIONS_WRITE_SCOPE,
     "add_manual_receipts": RECEIPTS_WRITE_SCOPE,
     "update_manual_receipt": RECEIPTS_WRITE_SCOPE,
     "delete_manual_receipt": RECEIPTS_WRITE_SCOPE,
@@ -161,6 +174,8 @@ INSTRUCTIONS = (
     "set_receipt_item_exclusion leaves out one line (item id from get_receipt) on one receipt, "
     "set_receipt_item_included_quantity counts only part of a line's quantity, and "
     "apply_receipt_changes applies many such changes atomically after a dry_run preview. "
+    "Every applied change is recorded: list_change_history shows them and undo_changes "
+    "restores earlier values unless a later change conflicts. "
     "Receipt writes require cartalytix:receipts:write: add_manual_receipts records purchases the "
     "user reports (take merchant and provider from list_shops so they join that shop's receipts), "
     "update_manual_receipt replaces a manually added receipt with corrected content, and "
@@ -503,6 +518,17 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
             description=description, annotations=EXCLUSION_WRITE, meta=EXCLUSIONS_SECURITY
         )
 
+    def _actor(db: Session) -> Actor:
+        # MCP writes are recorded for the owner together with the acting client.
+        token = get_access_token()
+        user = _owner(db, scope=EXCLUSIONS_WRITE_SCOPE)
+        return Actor(user, ChangeSource.MCP, token.client_id if token is not None else None)
+
+    def _change(db: Session, change: Change) -> User:
+        actor = _actor(db)
+        apply_change(db, actor, change)
+        return actor.user
+
     @exclusion_tool(
         "Leave a whole receipt out of spending (excluded=true) or count it again (false). "
         "Needs cartalytix:exclusions:write."
@@ -510,12 +536,10 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
     def set_receipt_exclusion(receipt_id: UUID, excluded: bool = True) -> ReceiptDetailOutput:
         with Session(engine) as db:
             try:
-                return receipt_exclusion_record(
-                    receipt_id,
-                    ExclusionInput(excluded=excluded),
-                    _owner(db, scope=EXCLUSIONS_WRITE_SCOPE),
-                    db,
+                change = ReceiptExclusionChange(
+                    kind=ChangeKind.RECEIPT_EXCLUSION, receipt_id=receipt_id, excluded=excluded
                 )
+                return receipt_detail(receipt_id, _change(db, change), db)
             except HTTPException as exc:
                 raise ToolError(str(exc.detail)) from exc
 
@@ -531,11 +555,13 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
     ) -> ItemDetailOutput:
         with Session(engine) as db:
             try:
-                return product_exclusion_record(
-                    _owner(db, scope=EXCLUSIONS_WRITE_SCOPE),
-                    db,
-                    ProductExclusionInput(name=name, currency=currency, excluded=excluded),
+                change = ProductExclusionChange(
+                    kind=ChangeKind.PRODUCT_EXCLUSION,
+                    name=name,
+                    currency=currency,
+                    excluded=excluded,
                 )
+                return item_detail(_change(db, change), db, name=name, currency=currency)
             except HTTPException as exc:
                 raise ToolError(str(exc.detail)) from exc
 
@@ -549,13 +575,13 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
     ) -> ReceiptDetailOutput:
         with Session(engine) as db:
             try:
-                return receipt_item_exclusion_record(
-                    receipt_id,
-                    item_id,
-                    ExclusionInput(excluded=excluded),
-                    _owner(db, scope=EXCLUSIONS_WRITE_SCOPE),
-                    db,
+                change = ItemExclusionChange(
+                    kind=ChangeKind.ITEM_EXCLUSION,
+                    receipt_id=receipt_id,
+                    item_id=item_id,
+                    excluded=excluded,
                 )
+                return receipt_detail(receipt_id, _change(db, change), db)
             except HTTPException as exc:
                 raise ToolError(str(exc.detail)) from exc
 
@@ -574,13 +600,13 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
     ) -> ReceiptDetailOutput:
         with Session(engine) as db:
             try:
-                return receipt_item_included_quantity_record(
-                    receipt_id,
-                    item_id,
-                    IncludedQuantityInput(included_quantity=included_quantity),
-                    _owner(db, scope=EXCLUSIONS_WRITE_SCOPE),
-                    db,
+                change = ItemIncludedQuantityChange(
+                    kind=ChangeKind.ITEM_INCLUDED_QUANTITY,
+                    receipt_id=receipt_id,
+                    item_id=item_id,
+                    included_quantity=included_quantity,
                 )
+                return receipt_detail(receipt_id, _change(db, change), db)
             except HTTPException as exc:
                 raise ToolError(str(exc.detail)) from exc
 
@@ -591,7 +617,8 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
         "operations with expected_state from the dry run (rejected with changes_conflict if the "
         "data changed meanwhile) and an idempotency_key, so a retry never applies twice. Values "
         "are absolute, unchanged targets are reported with changed=false. Errors name the failing "
-        "operation index. Needs cartalytix:exclusions:write."
+        "operation index. Applied batches appear in list_change_history and can be undone. Needs "
+        "cartalytix:exclusions:write."
     )
     def apply_receipt_changes(
         operations: Annotated[list[Change], Field(min_length=1, max_length=MAX_CHANGES)],
@@ -603,12 +630,56 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
             try:
                 return apply_changes(
                     db,
-                    _owner(db, scope=EXCLUSIONS_WRITE_SCOPE),
+                    _actor(db),
                     ChangeBatchInput(
                         operations=operations,
                         dry_run=dry_run,
                         idempotency_key=idempotency_key,
                         expected_state=expected_state,
+                    ),
+                )
+            except HTTPException as exc:
+                raise ToolError(str(exc.detail)) from exc
+
+    @tool(
+        "History of exclusion and counted-quantity changes, newest first: each batch with its "
+        "source (user or mcp and the client), changed values before and after, per-currency "
+        "difference and the batch that undid an entry. Filter by receipt_id for one receipt."
+    )
+    def list_change_history(
+        receipt_id: UUID | None = None, limit: Limit = 25, offset: Offset = 0
+    ) -> ChangeHistoryOutput:
+        with Session(engine) as db:
+            return change_history(db, _owner(db), receipt_id, limit, offset)
+
+    @tool("One change batch from list_change_history with its per-receipt and per-line impact.")
+    def get_change_batch(batch_id: UUID) -> ChangeBatchDetailOutput:
+        with Session(engine) as db:
+            try:
+                return change_detail(db, _owner(db), batch_id)
+            except HTTPException as exc:
+                raise ToolError(str(exc.detail)) from exc
+
+    @exclusion_tool(
+        "Undo a change batch from list_change_history, or only its entry_ids, by restoring the "
+        "previous values as a new batch; run dry_run=true first to show the impact. Refused with "
+        "undo_conflict listing the entries a later change touched, or already_undone. Undoing "
+        "an undo batch redoes it. Needs cartalytix:exclusions:write."
+    )
+    def undo_changes(
+        batch_id: UUID,
+        entry_ids: Annotated[list[UUID] | None, Field(min_length=1, max_length=MAX_CHANGES)] = None,
+        dry_run: bool = False,
+        idempotency_key: Annotated[str | None, Field(min_length=1, max_length=64)] = None,
+    ) -> ChangeBatchOutput:
+        with Session(engine) as db:
+            try:
+                return undo_change_batch(
+                    db,
+                    _actor(db),
+                    batch_id,
+                    UndoInput(
+                        entry_ids=entry_ids, dry_run=dry_run, idempotency_key=idempotency_key
                     ),
                 )
             except HTTPException as exc:

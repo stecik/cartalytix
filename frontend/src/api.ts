@@ -178,6 +178,52 @@ export interface ChangeBatchOutput {
   totals: ChangeAmount[];
 }
 
+/** Restores the entries' previous values as a new batch; all not yet undone entries when `entry_ids` is omitted. */
+export interface UndoInput {
+  entry_ids?: string[];
+  dry_run?: boolean;
+  idempotency_key?: string;
+}
+
+/** `before`/`after` hold the excluded flag, or the counted quantity where null counts the whole line. */
+export interface ChangeHistoryEntry {
+  id: string;
+  kind: ChangeOperation["kind"];
+  receipt_id: string | null;
+  item_id: string | null;
+  /** Item or product name; the merchant for a receipt exclusion. */
+  name: string;
+  currency: string;
+  before: boolean | string | null;
+  after: boolean | string | null;
+  undone_by_id: string | null;
+}
+
+export interface ChangeHistoryBatch {
+  id: string;
+  created_at: string;
+  source: "user" | "mcp";
+  client_name: string | null;
+  undo_of_id: string | null;
+  entries: ChangeHistoryEntry[];
+  totals: ChangeAmount[];
+}
+
+export interface ChangeHistoryPage {
+  items: ChangeHistoryBatch[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** A later change touched the value an undo would restore; nothing was applied. */
+export interface UndoConflict {
+  entry_id: string;
+  name: string;
+  expected: boolean | string | null;
+  current: boolean | string | null;
+}
+
 export interface Overview {
   receipt_count: number;
   connection_count: number;
@@ -418,7 +464,7 @@ export interface McpGrant {
 }
 
 export class ApiError extends Error {
-  constructor(public readonly status: number, public readonly code?: string) {
+  constructor(public readonly status: number, public readonly code?: string, public readonly params: Record<string, unknown> = {}) {
     super(`HTTP ${status}`);
   }
 }
@@ -437,12 +483,17 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
     let code: string | undefined;
+    let params: Record<string, unknown> = {};
     if (typeof body === "object" && body !== null) {
       if ("error" in body && typeof body.error === "object" && body.error !== null
-        && "code" in body.error && typeof body.error.code === "string") code = body.error.code;
+        && "code" in body.error && typeof body.error.code === "string") {
+        code = body.error.code;
+        if ("params" in body.error && typeof body.error.params === "object" && body.error.params !== null)
+          params = body.error.params as Record<string, unknown>;
+      }
       else if ("detail" in body && typeof body.detail === "string") code = body.detail;
     }
-    throw new ApiError(response.status, code);
+    throw new ApiError(response.status, code, params);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
