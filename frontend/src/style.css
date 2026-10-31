@@ -397,6 +397,8 @@ textarea {
   justify-content: center;
 }
 .table-wrap {
+  /* Contains absolutely positioned labels too, or they widen the page beyond the scroller. */
+  position: relative;
   overflow-x: auto;
   margin-top: 17px;
 }
