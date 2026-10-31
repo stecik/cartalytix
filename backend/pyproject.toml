@@ -1,6 +1,6 @@
 [project]
 name = "cartalytix"
-version = "1.3.3"
+version = "1.4.0"
 description = "Private receipt collection API"
 requires-python = ">=3.15"
 dependencies = [
