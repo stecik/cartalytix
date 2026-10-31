@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useI18n } from "vue-i18n";
 import { sourceName } from "../names";
 import { useRoute, useRouter } from "vue-router";
 import { ApiError, request } from "../api";
-import type { ReceiptDetail, ReceiptDiscount, User } from "../api";
+import type { ChangeOperation, ReceiptDetail, ReceiptDiscount, User } from "../api";
 import AppDialog from "../components/AppDialog.vue";
+import ChangePreviewDialog from "../components/ChangePreviewDialog.vue";
+import SelectionBar from "../components/SelectionBar.vue";
 import AppIcon from "../components/AppIcon.vue";
 import ManualReceiptDialog from "../components/ManualReceiptDialog.vue";
 import ReceiptSource from "../components/ReceiptSource.vue";
@@ -80,6 +82,26 @@ const discounts = computed(() => {
   return grouped;
 });
 
+const selected = ref<string[]>([]);
+watch(receiptId, () => { selected.value = []; });
+const selectedItems = computed(() => {
+  const chosen = new Set(selected.value);
+  return receipt.data.value?.items.filter((item) => chosen.has(item.id)) ?? [];
+});
+// Operations are frozen when the dialog opens, so a refetch cannot change what the preview showed.
+const bulkChange = ref<{ title: string; operations: ChangeOperation[] } | null>(null);
+
+function bulkExclude(excluded: boolean): void {
+  bulkChange.value = {
+    title: t(excluded ? "excludeSelected" : "restoreSelected"),
+    operations: selectedItems.value.map((item) => ({ kind: "item_exclusion", receipt_id: receiptId.value, item_id: item.id, excluded })),
+  };
+}
+
+function clearSelection(): void {
+  selected.value = [];
+}
+
 function negated(value: string): string {
   return String(-Number(value));
 }
@@ -127,6 +149,11 @@ function date(value: string): string {
           <div class="dialog-actions"><AppButton type="button" data-action="cancel" :disabled="remove.isPending.value" @click="deleting = false">{{ t("cancel") }}</AppButton><AppButton variant="danger" type="button" :disabled="remove.isPending.value" @click="remove.mutate()">{{ t("deleteReceipt") }}</AppButton></div>
         </AppDialog>
         <SegmentedToggle v-model="receiptView" class="receipt-view-toggle" :options="views" :label="t('receiptDisplay')" />
+        <SelectionBar v-if="selectedItems.length" :summary="t('selectedLines', selectedItems.length)" @clear="clearSelection">
+          <AppButton v-if="selectedItems.some((item) => !item.is_excluded)" type="button" size="sm" data-action="exclude-selected" @click="bulkExclude(true)">{{ t("excludeSelected") }}</AppButton>
+          <AppButton v-if="selectedItems.some((item) => item.is_excluded)" type="button" size="sm" data-action="restore-selected" @click="bulkExclude(false)">{{ t("restoreSelected") }}</AppButton>
+        </SelectionBar>
+        <ChangePreviewDialog v-if="bulkChange" :title="bulkChange.title" :operations="bulkChange.operations" @applied="clearSelection" @close="bulkChange = null" />
         <div v-if="rendered" class="receipt-paper-wrap">
           <article class="receipt-paper" :aria-label="t('receiptViewRendered')">
             <header class="receipt-paper-header">
@@ -137,7 +164,7 @@ function date(value: string): string {
             <p v-if="!receipt.data.value.items.length" class="receipt-paper-empty">{{ t("noReceiptItems") }}</p>
             <ol v-else class="receipt-paper-items">
               <li v-for="item in receipt.data.value.items" :key="item.id" :class="{ 'excluded-row': item.exclusion_reason }">
-                <div class="receipt-paper-line"><span>{{ sourceName(item.name, t) }}</span><span>{{ money(item.original_amount ?? item.total_amount) }}</span></div>
+                <div class="receipt-paper-line"><span><input v-model="selected" type="checkbox" class="line-select" :value="item.id" :aria-label="t('selectItem', { name: sourceName(item.name, t) })">{{ sourceName(item.name, t) }}</span><span>{{ money(item.original_amount ?? item.total_amount) }}</span></div>
                 <div v-if="item.unit_price !== null && (item.is_weight || Number(item.quantity) !== 1)" class="receipt-paper-sub">{{ quantity(item.quantity, item.unit) }} × {{ money(item.unit_price, true) }}</div>
                 <div v-for="discount in discounts.get(item.id)" :key="discount.id" class="receipt-paper-line receipt-paper-sub"><span>{{ discount.name ? sourceName(discount.name, t) : t("discount") }}</span><span>{{ money(negated(discount.amount)) }}</span></div>
                 <div class="receipt-item-actions">
@@ -165,7 +192,7 @@ function date(value: string): string {
           <p v-if="!receipt.data.value.items.length" class="section-note">{{ t("noReceiptItems") }}</p>
           <ol v-else class="receipt-item-list">
             <li v-for="item in receipt.data.value.items" :key="item.id" :class="{ 'excluded-row': item.exclusion_reason }">
-              <div class="receipt-item-heading"><h3>{{ sourceName(item.name, t) }}</h3><strong>{{ money(item.total_amount) }}</strong></div>
+              <div class="receipt-item-heading"><input v-model="selected" type="checkbox" class="line-select" :value="item.id" :aria-label="t('selectItem', { name: sourceName(item.name, t) })"><h3>{{ sourceName(item.name, t) }}</h3><strong>{{ money(item.total_amount) }}</strong></div>
               <dl class="receipt-item-facts">
                 <div><dt>{{ t("quantity") }}</dt><dd>{{ quantity(item.quantity, item.unit) }}</dd></div>
                 <div v-if="item.unit_price !== null"><dt>{{ t("unitPrice") }}</dt><dd>{{ money(item.unit_price, true) }}</dd></div>
@@ -216,7 +243,10 @@ function date(value: string): string {
 .receipt-item-list { list-style: none; padding: 0; margin: 20px 0 0; }
 .receipt-item-list > li { padding: 24px 0; border-top: 1px solid var(--border); }
 .receipt-item-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 20px; }
-.receipt-item-heading h3 { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.receipt-item-heading h3 { flex: 1; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.line-select { flex-shrink: 0; width: 17px; height: 17px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.receipt-item-heading > .line-select { align-self: center; margin-right: -8px; }
+.receipt-paper-line .line-select { width: 15px; height: 15px; margin: 0 8px 0 0; vertical-align: -2px; }
 .receipt-item-heading > strong { white-space: nowrap; font-size: 15px; font-variant-numeric: tabular-nums; }
 .receipt-item-facts { display: flex; flex-wrap: wrap; gap: 14px 32px; font-size: 12px; margin: 18px 0 0; }
 .receipt-item-facts dt { color: var(--text-muted); margin-bottom: 6px; }

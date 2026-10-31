@@ -1,6 +1,7 @@
 from collections.abc import Generator
 from datetime import UTC, datetime
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
@@ -67,3 +68,8 @@ def administrator(user: ActiveUser) -> User:
 
 
 Admin = Annotated[User, Depends(administrator)]
+
+
+def lock_owner(db: Session, owner_id: UUID) -> None:
+    # Serializes an owner's writes across web/MCP workers.
+    db.execute(select(User.id).where(User.id == owner_id).with_for_update()).one()

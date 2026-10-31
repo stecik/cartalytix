@@ -29,7 +29,7 @@ from cartalytix.category_schemas import (
     CategoryRestoreInput,
     CategoryRestoreItemInput,
 )
-from cartalytix.dependencies import Db, Owner
+from cartalytix.dependencies import Db, Owner, lock_owner
 from cartalytix.item_routes import _money
 from cartalytix.models import (
     Category,
@@ -38,16 +38,10 @@ from cartalytix.models import (
     ProviderConnection,
     Receipt,
     ReceiptItem,
-    User,
 )
 from cartalytix.search import matches, name_matches
 
 router = APIRouter(prefix="/api/v1", tags=["categories"])
-
-
-def _lock_owner(db: Session, owner_id: UUID) -> None:
-    # Serializes first-time product inserts and replacements across web/MCP workers.
-    db.execute(select(User.id).where(User.id == owner_id).with_for_update()).one()
 
 
 def _category(db: Session, owner_id: UUID, category_id: UUID) -> Category:
@@ -136,7 +130,7 @@ def _save_category(db: Session, row: Category, body: CategoryInput) -> CategoryO
 
 @router.post("/categories", response_model=CategoryOutput, status_code=201)
 def create_category(user: Owner, db: Db, body: CategoryInput) -> CategoryOutput:
-    _lock_owner(db, user.id)
+    lock_owner(db, user.id)
     row = Category(owner_id=user.id)
     db.add(row)
     return _save_category(db, row, body)
@@ -144,7 +138,7 @@ def create_category(user: Owner, db: Db, body: CategoryInput) -> CategoryOutput:
 
 @router.patch("/categories/{category_id}", response_model=CategoryOutput)
 def update_category(category_id: UUID, user: Owner, db: Db, body: CategoryInput) -> CategoryOutput:
-    _lock_owner(db, user.id)
+    lock_owner(db, user.id)
     return _save_category(db, _category(db, user.id, category_id), body)
 
 
@@ -156,7 +150,7 @@ def delete_category(
     source: Literal["manual", "mcp"] = "manual",
     overwrite_manual: bool = False,
 ) -> None:
-    _lock_owner(db, user.id)
+    lock_owner(db, user.id)
     row = _category(db, user.id, category_id)
     products = select(CategoryMembership.product_id).where(CategoryMembership.category_id == row.id)
     if (
@@ -372,7 +366,7 @@ def _assign_category_items(
     source: Literal["manual", "mcp"] = "manual",
 ) -> CategoryChangeOutput:
     if not body.dry_run:
-        _lock_owner(db, user.id)
+        lock_owner(db, user.id)
     if body.category_id is not None:
         _category(db, user.id, body.category_id)
     existing = db.execute(
@@ -488,7 +482,7 @@ def restore_category_items(
     db: Db,
     body: CategoryRestoreInput,
 ) -> CategoryAssignmentOutput:
-    _lock_owner(db, user.id)
+    lock_owner(db, user.id)
     keys = [
         CategoryKeyInput(connection_id=item.connection_id, name=item.name, currency=item.currency)
         for item in body.items

@@ -9,8 +9,15 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import ColumnElement, exists, func, or_, select
 
 from cartalytix.accounting import accounting, product_excluded
+from cartalytix.change_routes import apply_change
+from cartalytix.change_schemas import (
+    ChangeKind,
+    ItemExclusionChange,
+    ItemIncludedQuantityChange,
+    ReceiptExclusionChange,
+)
 from cartalytix.dependencies import Db, Owner
-from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem, User
+from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem
 from cartalytix.schemas import (
     CurrencyTotal,
     DiscountOutput,
@@ -186,58 +193,14 @@ def receipt_detail(receipt_id: UUID, user: Owner, db: Db) -> ReceiptDetailOutput
 def set_receipt_exclusion(
     receipt_id: UUID, body: ExclusionInput, user: Owner, db: Db
 ) -> ReceiptDetailOutput:
-    receipt = db.scalar(
-        select(Receipt)
-        .join(ProviderConnection)
-        .where(Receipt.id == receipt_id, ProviderConnection.owner_id == user.id)
-        .with_for_update(of=Receipt)
+    apply_change(
+        db,
+        user,
+        ReceiptExclusionChange(
+            kind=ChangeKind.RECEIPT_EXCLUSION, receipt_id=receipt_id, excluded=body.excluded
+        ),
     )
-    if receipt is None:
-        raise HTTPException(404, "receipt_not_found")
-    receipt.is_excluded = body.excluded
-    db.commit()
     return receipt_detail(receipt_id, user, db)
-
-
-def included_quantity(item: ReceiptItem, value: Decimal | None) -> Decimal | None:
-    """Validated counted quantity of a line; the whole quantity is stored as NULL."""
-    if value is None or value == item.quantity:
-        return None
-    if item.quantity <= 0 or not 0 <= value <= item.quantity:
-        raise HTTPException(422, "included_quantity_out_of_range")
-    # Pieces split only into whole pieces; weighed or fractional lines take any part.
-    if (
-        not item.is_weight
-        and item.quantity == item.quantity.to_integral_value()
-        and value != value.to_integral_value()
-    ):
-        raise HTTPException(422, "included_quantity_not_whole")
-    return value
-
-
-def _locked_item(db: Db, user: User, receipt_id: UUID, item_id: UUID) -> ReceiptItem:
-    receipt = db.scalar(
-        select(Receipt)
-        .join(ProviderConnection)
-        .where(
-            Receipt.id == receipt_id,
-            ProviderConnection.owner_id == user.id,
-        )
-        .with_for_update(of=Receipt)
-    )
-    if receipt is None:
-        raise HTTPException(404, "receipt_not_found")
-    item = db.scalar(
-        select(ReceiptItem)
-        .where(
-            ReceiptItem.receipt_id == receipt_id,
-            ReceiptItem.id == item_id,
-        )
-        .with_for_update(of=ReceiptItem)
-    )
-    if item is None:
-        raise HTTPException(404, "receipt_item_not_found")
-    return item
 
 
 @router.patch(
@@ -246,9 +209,16 @@ def _locked_item(db: Db, user: User, receipt_id: UUID, item_id: UUID) -> Receipt
 def set_receipt_item_exclusion(
     receipt_id: UUID, item_id: UUID, body: ExclusionInput, user: Owner, db: Db
 ) -> ReceiptDetailOutput:
-    item = _locked_item(db, user, receipt_id, item_id)
-    item.is_excluded = body.excluded
-    db.commit()
+    apply_change(
+        db,
+        user,
+        ItemExclusionChange(
+            kind=ChangeKind.ITEM_EXCLUSION,
+            receipt_id=receipt_id,
+            item_id=item_id,
+            excluded=body.excluded,
+        ),
+    )
     return receipt_detail(receipt_id, user, db)
 
 
@@ -259,9 +229,16 @@ def set_receipt_item_exclusion(
 def set_receipt_item_included_quantity(
     receipt_id: UUID, item_id: UUID, body: IncludedQuantityInput, user: Owner, db: Db
 ) -> ReceiptDetailOutput:
-    item = _locked_item(db, user, receipt_id, item_id)
-    item.included_quantity = included_quantity(item, body.included_quantity)
-    db.commit()
+    apply_change(
+        db,
+        user,
+        ItemIncludedQuantityChange(
+            kind=ChangeKind.ITEM_INCLUDED_QUANTITY,
+            receipt_id=receipt_id,
+            item_id=item_id,
+            included_quantity=body.included_quantity,
+        ),
+    )
     return receipt_detail(receipt_id, user, db)
 
 

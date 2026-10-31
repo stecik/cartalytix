@@ -16,7 +16,10 @@ export type ItemSortField =
   | "average_price"
   | "last_purchased";
 
-/** Without `sort` headers are static; with `selected` rows toggle a checkbox instead of opening. */
+/**
+ * Without `sort` headers are static; with `selected` rows toggle a checkbox instead of opening,
+ * except in a ledger that manages exclusions, where rows still open and only the checkbox selects.
+ */
 const props = defineProps<{ items: ItemSummary[]; sort?: string; selected?: ReadonlySet<string>; manageExclusions?: boolean }>();
 const emit = defineEmits<{ sort: [field: ItemSortField]; toggle: [item: ItemSummary] }>();
 const { t, locale } = useI18n();
@@ -36,7 +39,7 @@ function detailRoute(item: ItemSummary) {
 function openItem(event: MouseEvent, item: ItemSummary): void {
   if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey
     || (event.target instanceof Element && event.target.closest("a, button, label"))) return;
-  if (props.selected) emit("toggle", item);
+  if (props.selected && !props.manageExclusions) emit("toggle", item);
   else void router.push(detailRoute(item));
 }
 

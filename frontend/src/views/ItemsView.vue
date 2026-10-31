@@ -10,9 +10,11 @@ import ExclusionFilter from "../components/ExclusionFilter.vue";
 import FilterBar from "../components/FilterBar.vue";
 import FilterField from "../components/FilterField.vue";
 import RangeInput from "../components/RangeInput.vue";
-import { request } from "../api";
-import type { Connection, ExclusionMode, ExclusionReason, ExclusionScope, ItemDetail, ItemExclusion, ItemExclusionPage, ItemPage, ReceiptDetail } from "../api";
+import { itemKey, request } from "../api";
+import type { ChangeOperation, Connection, ExclusionMode, ExclusionReason, ExclusionScope, ItemDetail, ItemExclusion, ItemExclusionPage, ItemPage, ItemSummary, ReceiptDetail } from "../api";
+import ChangePreviewDialog from "../components/ChangePreviewDialog.vue";
 import ItemLedger from "../components/ItemLedger.vue";
+import SelectionBar from "../components/SelectionBar.vue";
 import ExcludedItemsLedger from "../components/ExcludedItemsLedger.vue";
 import ExclusionStatus from "../components/ExclusionStatus.vue";
 import type { ItemSortField } from "../components/ItemLedger.vue";
@@ -118,6 +120,30 @@ watch([() => currentPage.value?.total, () => activeQuery.value.isPlaceholderData
     updateQuery({ offset: String(Math.floor(Math.max(0, total - 1) / limit) * limit || "") });
   }
 });
+// Selection covers only the visible page, so any page, filter or sort change starts over.
+const selected = ref<ReadonlySet<string>>(new Set());
+watch(apiPath, () => { selected.value = new Set(); });
+const selectedItems = computed(() => (items.data.value?.items ?? []).filter((item) => selected.value.has(itemKey(item))));
+const bulkChange = ref<{ title: string; operations: ChangeOperation[] } | null>(null);
+
+function toggle(item: ItemSummary): void {
+  const next = new Set(selected.value);
+  const key = itemKey(item);
+  if (!next.delete(key)) next.add(key);
+  selected.value = next;
+}
+
+function bulkExclude(excluded: boolean): void {
+  bulkChange.value = {
+    title: t(excluded ? "excludeProduct" : "restoreProduct"),
+    operations: selectedItems.value.map((item) => ({ kind: "product_exclusion", name: item.name, currency: item.currency, excluded })),
+  };
+}
+
+function clearSelection(): void {
+  selected.value = new Set();
+}
+
 const connections = useQuery({
   queryKey: ["connections"],
   queryFn: ({ signal }) => request<{ items: Connection[] }>("/connections", { signal }),
@@ -218,7 +244,13 @@ function restored(row: ItemExclusion, result: ReceiptDetail | ItemDetail | undef
           <h2>{{ t(exclusion === "excluded" ? "exclusionCount" : "itemCount", currentPage.total) }}</h2>
         </div>
         <ExcludedItemsLedger v-if="exclusion === 'excluded' && itemExclusions.data.value?.items.length" :rows="itemExclusions.data.value.items" :sort="sort" @sort="changeSort" @restored="restored" />
-        <ItemLedger v-else-if="exclusion !== 'excluded' && items.data.value?.items.length" :items="items.data.value.items" :sort="sort" manage-exclusions @sort="changeSort" />
+        <template v-else-if="exclusion !== 'excluded' && items.data.value?.items.length">
+          <SelectionBar v-if="selectedItems.length" :summary="t('selectedProducts', selectedItems.length)" @clear="clearSelection">
+            <AppButton v-if="selectedItems.some((item) => !item.is_excluded)" type="button" size="sm" data-action="exclude-selected" @click="bulkExclude(true)">{{ t("excludeProduct") }}</AppButton>
+            <AppButton v-if="selectedItems.some((item) => item.is_excluded)" type="button" size="sm" data-action="restore-selected" @click="bulkExclude(false)">{{ t("restoreProduct") }}</AppButton>
+          </SelectionBar>
+          <ItemLedger :items="items.data.value.items" :sort="sort" :selected="selected" manage-exclusions @sort="changeSort" @toggle="toggle" />
+        </template>
         <div v-else class="empty-state">
           <h3>{{ exclusion === "excluded" ? t("noMatchingExclusions") : filtered ? t("noMatchingItems") : t("noReceipts") }}</h3>
         </div>
@@ -245,6 +277,7 @@ function restored(row: ItemExclusion, result: ReceiptDetail | ItemDetail | undef
         </div>
       </section>
     </QueryState>
+    <ChangePreviewDialog v-if="bulkChange" :title="bulkChange.title" :operations="bulkChange.operations" @applied="clearSelection" @close="bulkChange = null" />
   </div>
 </template>
 

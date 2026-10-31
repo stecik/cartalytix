@@ -142,6 +142,45 @@ describe("receipt details", () => {
   });
 });
 
+describe("bulk line exclusion", () => {
+  it.each(["rendered", "detailed"] as const)("excludes selected lines through a previewed batch in the %s view", async (view) => {
+    const items = [
+      { ...receipt.items[0], is_excluded: false, exclusion_reason: null, included_amount: "26.00" },
+      { ...receipt.items[0], id: "item-2", name: "Pears", is_excluded: false, exclusion_reason: null, included_amount: "10.00" },
+      { ...receipt.items[0], id: "item-3", name: "Milk", is_excluded: false, exclusion_reason: null, included_amount: "5.00" },
+    ];
+    const batch = { batch_id: null, dry_run: true, replayed: false, state: "state-1", receipts: [], items: [],
+      changes: [], totals: [{ currency: "CZK", before_amount: "20.00", after_amount: "-16.00", difference: "-36.00" }] };
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) =>
+      String(input) === "/api/v1/changes" ? Response.json({ ...batch, changes: [{ changed: true }] }) : Response.json({ ...receipt, items }));
+    vi.stubGlobal("fetch", fetcher);
+    const router = await routerForReceipt();
+    const client = detailedClient();
+    client.setQueryData(["session"], { id: "user-1", receipt_view: view });
+    const wrapper = mount(ReceiptDetailView, { global: { plugins: [router, createAppI18n("en"), [VueQueryPlugin, { queryClient: client }]] } });
+    await flushPromises();
+    expect(wrapper.find(".selection-bar").exists()).toBe(false);
+    await wrapper.get('input[aria-label="Select <b>Apples</b>"]').setValue(true);
+    await wrapper.get('input[aria-label="Select Milk"]').setValue(true);
+    expect(wrapper.get(".selection-bar").text()).toContain("2 items selected");
+    expect(wrapper.find('[data-action="restore-selected"]').exists()).toBe(false);
+    await wrapper.get('[data-action="exclude-selected"]').trigger("click");
+    await flushPromises();
+    const changeCalls = () => fetcher.mock.calls.filter(([input]) => String(input) === "/api/v1/changes").map(([, init]) => JSON.parse(String(init?.body)));
+    expect(changeCalls()[0]).toEqual({ dry_run: true, operations: [
+      { kind: "item_exclusion", receipt_id: "receipt-1", item_id: "item-1", excluded: true },
+      { kind: "item_exclusion", receipt_id: "receipt-1", item_id: "item-3", excluded: true },
+    ] });
+    await wrapper.get('[data-action="apply-changes"]').trigger("click");
+    await flushPromises();
+    expect(changeCalls()[1]).toMatchObject({ dry_run: false, expected_state: "state-1" });
+    expect(wrapper.find(".selection-bar").exists()).toBe(false);
+    expect(wrapper.find('[data-action="apply-changes"]').exists()).toBe(false);
+    expect(wrapper.find('[data-exclusion="item"] button').exists()).toBe(true);
+    wrapper.unmount(); client.clear();
+  });
+});
+
 describe("partly counted items", () => {
   it("counts part of a line and shows the prorated amount", async () => {
     let counted: string | null = null;

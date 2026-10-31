@@ -9,14 +9,10 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy import delete, func, select
 
 from cartalytix.accounting import accounting
+from cartalytix.change_routes import included_quantity
 from cartalytix.dependencies import Db, Owner
 from cartalytix.models import Discount, ProviderConnection, Receipt, ReceiptItem, User
-from cartalytix.receipt_routes import (
-    MANUAL_PROVIDER,
-    MANUAL_SOURCE,
-    included_quantity,
-    receipt_output,
-)
+from cartalytix.receipt_routes import MANUAL_PROVIDER, MANUAL_SOURCE, receipt_output
 from cartalytix.schemas import (
     ManualReceiptInput,
     ManualReceiptsInput,

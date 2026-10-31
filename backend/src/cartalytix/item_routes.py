@@ -14,7 +14,6 @@ from sqlalchemy import (
     Uuid,
     and_,
     case,
-    delete,
     func,
     literal,
     null,
@@ -23,11 +22,11 @@ from sqlalchemy import (
     tuple_,
 )
 from sqlalchemy import cast as sql_cast
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.sql.selectable import CTE
 
 from cartalytix.accounting import accounting, item_included, product_excluded
+from cartalytix.change_routes import apply_change
+from cartalytix.change_schemas import ChangeKind, ProductExclusionChange
 from cartalytix.dependencies import Db, Owner
 from cartalytix.exclusion_schemas import (
     ExclusionOutput,
@@ -36,7 +35,7 @@ from cartalytix.exclusion_schemas import (
     ExclusionSort,
     ExclusionsOutput,
 )
-from cartalytix.models import ProductExclusion, ProviderConnection, Receipt, ReceiptItem
+from cartalytix.models import ProviderConnection, Receipt, ReceiptItem
 from cartalytix.schemas import (
     ExclusionFilter,
     ItemDetailOutput,
@@ -554,32 +553,14 @@ def item_detail(
 
 @router.patch("/exclusion", response_model=ItemDetailOutput)
 def set_product_exclusion(user: Owner, db: Db, body: ProductExclusionInput) -> ItemDetailOutput:
-    found = db.scalar(
-        select(ReceiptItem.id)
-        .join(Receipt)
-        .join(ProviderConnection)
-        .where(
-            ProviderConnection.owner_id == user.id,
-            ReceiptItem.name == body.name,
-            Receipt.currency == body.currency,
-        )
-        .limit(1)
+    apply_change(
+        db,
+        user,
+        ProductExclusionChange(
+            kind=ChangeKind.PRODUCT_EXCLUSION,
+            name=body.name,
+            currency=body.currency,
+            excluded=body.excluded,
+        ),
     )
-    if found is None:
-        raise HTTPException(404, "item_not_found")
-    key = [
-        ProductExclusion.owner_id == user.id,
-        ProductExclusion.name == body.name,
-        ProductExclusion.currency == body.currency,
-    ]
-    if body.excluded:
-        insert = postgres_insert if db.get_bind().dialect.name == "postgresql" else sqlite_insert
-        db.execute(
-            insert(ProductExclusion)
-            .values(owner_id=user.id, name=body.name, currency=body.currency)
-            .on_conflict_do_nothing(index_elements=["owner_id", "name", "currency"])
-        )
-    else:
-        db.execute(delete(ProductExclusion).where(*key))
-    db.commit()
     return item_detail(user, db, name=body.name, currency=body.currency)

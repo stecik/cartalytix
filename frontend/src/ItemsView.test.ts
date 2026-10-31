@@ -122,6 +122,41 @@ describe("items ledger", () => {
     wrapper.unmount(); client.clear();
   });
 
+  it("excludes selected products everywhere through a previewed batch", async () => {
+    const products = [{ ...item, is_excluded: false }, { ...item, name: "Mléko", is_excluded: true }, { ...item, name: "Chléb", is_excluded: false }];
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.startsWith("/api/v1/connections")) return Response.json({ items: [] });
+      if (url === "/api/v1/changes") return Response.json({ batch_id: null, dry_run: true, replayed: false, state: "state-1",
+        changes: [{ changed: true }], receipts: [], items: [], totals: [] });
+      return Response.json({ items: products, total: 3, limit: 30, offset: 0 });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const { router, wrapper, client } = await mountAt("/items");
+    const boxes = wrapper.findAll("tbody .select-cell input");
+    await boxes[0]?.setValue(true);
+    await boxes[1]?.setValue(true);
+    expect(router.currentRoute.value.path).toBe("/items");
+    expect(wrapper.get(".selection-bar").text()).toContain("2 products selected");
+    await wrapper.get('[data-action="exclude-selected"]').trigger("click");
+    await flushPromises();
+    const preview = fetcher.mock.calls.find(([input]) => String(input) === "/api/v1/changes");
+    expect(JSON.parse(String(preview?.[1]?.body))).toEqual({ dry_run: true, operations: [
+      { kind: "product_exclusion", name: "<b>Rohlík</b>", currency: "CZK", excluded: true },
+      { kind: "product_exclusion", name: "Mléko", currency: "CZK", excluded: true },
+    ] });
+    await wrapper.get('[data-action="cancel"]').trigger("click");
+    await wrapper.get('[data-action="restore-selected"]').trigger("click");
+    await flushPromises();
+    const restore = fetcher.mock.calls.filter(([input]) => String(input) === "/api/v1/changes").at(-1);
+    expect(JSON.parse(String(restore?.[1]?.body)).operations.map((operation: { excluded: boolean }) => operation.excluded)).toEqual([false, false]);
+    await wrapper.get('[data-action="cancel"]').trigger("click");
+    await router.replace({ query: { q: "x" } });
+    await flushPromises();
+    expect(wrapper.find(".selection-bar").exists()).toBe(false);
+    wrapper.unmount(); client.clear();
+  });
+
   it("toggles sorting from column headers", async () => {
     stubApi();
     const { router, wrapper, client } = await mountAt("/items");

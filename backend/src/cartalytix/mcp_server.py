@@ -52,6 +52,8 @@ from cartalytix.category_schemas import (
     CategoryKeyInput,
     CategoryOutput,
 )
+from cartalytix.change_routes import apply_changes
+from cartalytix.change_schemas import MAX_CHANGES, Change, ChangeBatchInput, ChangeBatchOutput
 from cartalytix.credentials import TokenCipher
 from cartalytix.item_routes import item_detail, item_totals, items
 from cartalytix.item_routes import set_product_exclusion as product_exclusion_record
@@ -118,6 +120,7 @@ TOOL_SCOPES = {
     "set_product_exclusion": EXCLUSIONS_WRITE_SCOPE,
     "set_receipt_item_exclusion": EXCLUSIONS_WRITE_SCOPE,
     "set_receipt_item_included_quantity": EXCLUSIONS_WRITE_SCOPE,
+    "apply_receipt_changes": EXCLUSIONS_WRITE_SCOPE,
     "add_manual_receipts": RECEIPTS_WRITE_SCOPE,
     "update_manual_receipt": RECEIPTS_WRITE_SCOPE,
     "delete_manual_receipt": RECEIPTS_WRITE_SCOPE,
@@ -156,7 +159,8 @@ INSTRUCTIONS = (
     "excluded=false: set_receipt_exclusion leaves out a whole receipt, set_product_exclusion "
     "leaves out a product (exact name and currency) on every current and future receipt, and "
     "set_receipt_item_exclusion leaves out one line (item id from get_receipt) on one receipt, "
-    "and set_receipt_item_included_quantity counts only part of a line's quantity. "
+    "set_receipt_item_included_quantity counts only part of a line's quantity, and "
+    "apply_receipt_changes applies many such changes atomically after a dry_run preview. "
     "Receipt writes require cartalytix:receipts:write: add_manual_receipts records purchases the "
     "user reports (take merchant and provider from list_shops so they join that shop's receipts), "
     "update_manual_receipt replaces a manually added receipt with corrected content, and "
@@ -576,6 +580,36 @@ def _register_tools(server: MCPServer, engine: Engine) -> None:
                     IncludedQuantityInput(included_quantity=included_quantity),
                     _owner(db, scope=EXCLUSIONS_WRITE_SCOPE),
                     db,
+                )
+            except HTTPException as exc:
+                raise ToolError(str(exc.detail)) from exc
+
+    @exclusion_tool(
+        f"Apply up to {MAX_CHANGES} exclusion and counted-quantity changes across receipts, lines "
+        "and products in one atomic batch: either all apply or none. Run dry_run=true first and "
+        "show the user the per-receipt and per-currency differences; then apply the same "
+        "operations with expected_state from the dry run (rejected with changes_conflict if the "
+        "data changed meanwhile) and an idempotency_key, so a retry never applies twice. Values "
+        "are absolute, unchanged targets are reported with changed=false. Errors name the failing "
+        "operation index. Needs cartalytix:exclusions:write."
+    )
+    def apply_receipt_changes(
+        operations: Annotated[list[Change], Field(min_length=1, max_length=MAX_CHANGES)],
+        dry_run: bool = False,
+        idempotency_key: Annotated[str | None, Field(min_length=1, max_length=64)] = None,
+        expected_state: Annotated[str | None, Field(min_length=64, max_length=64)] = None,
+    ) -> ChangeBatchOutput:
+        with Session(engine) as db:
+            try:
+                return apply_changes(
+                    db,
+                    _owner(db, scope=EXCLUSIONS_WRITE_SCOPE),
+                    ChangeBatchInput(
+                        operations=operations,
+                        dry_run=dry_run,
+                        idempotency_key=idempotency_key,
+                        expected_state=expected_state,
+                    ),
                 )
             except HTTPException as exc:
                 raise ToolError(str(exc.detail)) from exc

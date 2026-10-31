@@ -321,6 +321,22 @@ class CategoryMembership(Base):
     )
 
 
+class ChangeBatch(Base):
+    """One applied set of spending changes; a repeated idempotency key replays its result."""
+
+    __tablename__ = "change_batches"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "idempotency_key"),
+        Index("ix_change_batches_owner_created", "owner_id", "created_at"),
+    )
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    idempotency_key: Mapped[str | None] = mapped_column(String(64))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    result: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
 class ProductExclusion(Base):
     __tablename__ = "product_exclusions"
     __table_args__ = (UniqueConstraint("owner_id", "name", "currency"),)

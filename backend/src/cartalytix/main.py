@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager, nullcontext, suppress
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import version
 from secrets import token_urlsafe
-from typing import Protocol
+from typing import Any, Protocol
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -21,6 +21,7 @@ from cartalytix.admin_routes import bootstrap_admin
 from cartalytix.admin_routes import router as admin_router
 from cartalytix.bolt_routes import router as bolt_router
 from cartalytix.category_routes import router as category_router
+from cartalytix.change_routes import router as change_router
 from cartalytix.connection_routes import connection_outputs, next_sync
 from cartalytix.connection_routes import router as connection_router
 from cartalytix.dependencies import COOKIE_NAME, ActiveUser, Db, Owner, SessionUser
@@ -113,7 +114,9 @@ class RedisLoginLimiter:
         )
 
 
-def error_response(request: Request, status: int, code: str, message: str) -> JSONResponse:
+def error_response(
+    request: Request, status: int, code: str, message: str, params: dict[str, Any] | None = None
+) -> JSONResponse:
     locale = request.headers.get("Accept-Language", "en")
     return JSONResponse(
         status_code=status,
@@ -121,7 +124,7 @@ def error_response(request: Request, status: int, code: str, message: str) -> JS
             "error": {
                 "code": code,
                 "message": translate(message, locale),
-                "params": {},
+                "params": params or {},
             }
         },
         headers={"Cache-Control": "no-store"},
@@ -195,6 +198,7 @@ def create_app(
     app.include_router(search_router)
     app.include_router(manual_receipt_router)
     app.include_router(receipt_router)
+    app.include_router(change_router)
     app.include_router(item_router)
     app.include_router(category_router)
     app.include_router(oauth_router)
@@ -250,8 +254,12 @@ def create_app(
             "admin_protected": "Administrator accounts cannot be changed here",
             "user_not_found": "Account not found",
         }
-        code = str(exc.detail)
-        return error_response(request, exc.status_code, code, messages.get(code, "Request failed"))
+        # A dict detail carries its code with parameters, e.g. the failing batch operation.
+        params = dict(exc.detail) if isinstance(exc.detail, dict) else {}
+        code = str(params.pop("code", exc.detail))
+        return error_response(
+            request, exc.status_code, code, messages.get(code, "Request failed"), params
+        )
 
     @app.exception_handler(Exception)
     async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:

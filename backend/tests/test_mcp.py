@@ -79,6 +79,7 @@ TOOLS = {
     "set_product_exclusion",
     "set_receipt_item_exclusion",
     "set_receipt_item_included_quantity",
+    "apply_receipt_changes",
     "list_shops",
     "add_manual_receipts",
     "update_manual_receipt",
@@ -89,6 +90,7 @@ EXCLUSION_WRITES = {
     "set_product_exclusion",
     "set_receipt_item_exclusion",
     "set_receipt_item_included_quantity",
+    "apply_receipt_changes",
 }
 CATEGORY_WRITES = {"create_category", "update_category", "delete_category", "assign_category_items"}
 CATEGORY_WRITE_SCOPE = "cartalytix:categories:write"
@@ -1051,6 +1053,18 @@ def test_exclusion_writes_need_their_scope_and_are_reversible(
     assert "included_quantity_out_of_range" in str(too_many.get("content"))
     reset = result("set_receipt_item_included_quantity", line).get("structuredContent", {})
     assert reset.get("items", [])[0].get("included_quantity") is None
+    batch = {"operations": [{**line, "kind": "item_exclusion", "excluded": True}]}
+    preview = result("apply_receipt_changes", {**batch, "dry_run": True})
+    planned = preview.get("structuredContent", {})
+    assert planned.get("batch_id") is None
+    assert planned.get("totals", [])[0].get("difference") == f"-{whole}"
+    applied = result(
+        "apply_receipt_changes", {**batch, "expected_state": planned.get("state")}
+    ).get("structuredContent", {})
+    assert applied.get("batch_id") is not None
+    stale = result("apply_receipt_changes", {**batch, "expected_state": planned.get("state")})
+    assert "changes_conflict" in str(stale.get("content"))
+    result("set_receipt_item_exclusion", {**line, "excluded": False})
     assert result("set_product_exclusion", product).get("structuredContent", {}).get("is_excluded")
     with Session(engine) as db:
         assert db.scalar(select(ProductExclusion.name)) == "Rohlík"

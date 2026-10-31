@@ -121,6 +121,63 @@ export interface ReceiptDetail extends Receipt {
   discounts: ReceiptDiscount[];
 }
 
+export type ChangeOperation =
+  | { kind: "receipt_exclusion"; receipt_id: string; excluded: boolean }
+  | { kind: "item_exclusion"; receipt_id: string; item_id: string; excluded: boolean }
+  | { kind: "item_included_quantity"; receipt_id: string; item_id: string; included_quantity: string | null }
+  | { kind: "product_exclusion"; name: string; currency: string; excluded: boolean };
+
+/** A dry run never writes; its `state` passed back as `expected_state` rejects the write if the data changed since. */
+export interface ChangeBatchInput {
+  operations: ChangeOperation[];
+  dry_run?: boolean;
+  idempotency_key?: string;
+  expected_state?: string;
+}
+
+export interface ChangeAmount {
+  currency: string;
+  before_amount: string;
+  after_amount: string;
+  difference: string;
+}
+
+export interface ChangeResult {
+  index: number;
+  kind: ChangeOperation["kind"];
+  receipt_id: string | null;
+  item_id: string | null;
+  name: string;
+  currency: string;
+  before: boolean | string | null;
+  after: boolean | string | null;
+  changed: boolean;
+}
+
+export interface ChangeReceiptImpact extends ChangeAmount {
+  receipt_id: string;
+  merchant: string;
+  purchased_at: string;
+}
+
+export interface ChangeItemImpact extends ChangeAmount {
+  receipt_id: string;
+  item_id: string;
+  name: string;
+}
+
+/** Receipts, items and totals list only what counts differently after the batch. */
+export interface ChangeBatchOutput {
+  batch_id: string | null;
+  dry_run: boolean;
+  replayed: boolean;
+  state: string;
+  changes: ChangeResult[];
+  receipts: ChangeReceiptImpact[];
+  items: ChangeItemImpact[];
+  totals: ChangeAmount[];
+}
+
 export interface Overview {
   receipt_count: number;
   connection_count: number;
