@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import ColumnElement, exists, func, or_, select
+from sqlalchemy.sql.selectable import CTE
 
 from cartalytix.accounting import accounting, product_excluded
 from cartalytix.change_routes import Actor, apply_change
@@ -43,6 +44,9 @@ RECEIPT_ORDER = {
 # Manually added receipts share one hidden connection per owner and show their shop's provider.
 MANUAL_PROVIDER = "manual"
 MANUAL_SOURCE = "manual"
+LATEST_RECEIPTS = 5
+# Newest receipts allocated for the overview list before falling back to the whole history.
+LATEST_CANDIDATES = 20
 
 router = APIRouter(prefix="/api/v1", tags=["receipts"])
 
@@ -246,18 +250,15 @@ def set_receipt_item_included_quantity(
 def overview(user: Owner, db: Db) -> OverviewOutput:
     owner_filter = ProviderConnection.owner_id == user.id
     _, receipt_amounts = accounting(user.id)
-    receipt_count = (
-        db.scalar(
-            select(func.count())
-            .select_from(Receipt)
-            .join(
-                ProviderConnection,
-            )
-            .join(receipt_amounts, receipt_amounts.c.receipt_id == Receipt.id)
-            .where(owner_filter, receipt_amounts.c.is_included)
-        )
-        or 0
-    )
+    totals = db.execute(
+        select(Receipt.currency, func.count(), func.sum(receipt_amounts.c.included_amount))
+        .join(ProviderConnection)
+        .join(receipt_amounts, receipt_amounts.c.receipt_id == Receipt.id)
+        .where(owner_filter, receipt_amounts.c.is_included)
+        .group_by(Receipt.currency)
+        .order_by(Receipt.currency)
+    ).all()
+    receipt_count = sum(count for _currency, count, _amount in totals)
     connection_count = (
         db.scalar(
             select(func.count())
@@ -269,35 +270,42 @@ def overview(user: Owner, db: Db) -> OverviewOutput:
         )
         or 0
     )
-    totals = db.execute(
-        select(Receipt.currency, func.sum(receipt_amounts.c.included_amount))
-        .join(
-            ProviderConnection,
-        )
-        .join(receipt_amounts, receipt_amounts.c.receipt_id == Receipt.id)
-        .where(owner_filter, receipt_amounts.c.is_included)
-        .group_by(Receipt.currency)
-        .order_by(Receipt.currency)
-    )
-    latest = db.execute(
-        select(Receipt, ProviderConnection.provider, receipt_amounts.c.included_amount)
+    # The newest receipts are allocated on their own instead of the whole history; only when
+    # most of them count nothing does the full allocation fill the list.
+    candidates = (
+        select(Receipt.id)
         .join(ProviderConnection)
-        .join(receipt_amounts, receipt_amounts.c.receipt_id == Receipt.id)
-        .where(
-            owner_filter,
-            receipt_amounts.c.is_included,
-        )
+        .where(owner_filter, Receipt.is_excluded.is_(False))
         .order_by(Receipt.purchased_at.desc(), Receipt.id.desc())
-        .limit(5)
+        .limit(LATEST_CANDIDATES)
     )
+    latest = _latest(db, owner_filter, accounting(user.id, candidates)[1])
+    if len(latest) < min(LATEST_RECEIPTS, receipt_count):
+        latest = _latest(db, owner_filter, receipt_amounts)
     return OverviewOutput(
         receipt_count=receipt_count,
         connection_count=connection_count,
         totals=[
             CurrencyTotal(currency=currency, amount=format(amount, ".2f"))
-            for currency, amount in totals
+            for currency, _count, amount in totals
         ],
         latest_receipts=[
             receipt_output(receipt, provider, amount) for receipt, provider, amount in latest
         ],
     )
+
+
+def _latest(
+    db: Db, owner_filter: ColumnElement[bool], receipt_amounts: CTE
+) -> list[tuple[Receipt, str, Decimal]]:
+    return [
+        (receipt, provider, amount)
+        for receipt, provider, amount in db.execute(
+            select(Receipt, ProviderConnection.provider, receipt_amounts.c.included_amount)
+            .join(ProviderConnection)
+            .join(receipt_amounts, receipt_amounts.c.receipt_id == Receipt.id)
+            .where(owner_filter, receipt_amounts.c.is_included)
+            .order_by(Receipt.purchased_at.desc(), Receipt.id.desc())
+            .limit(LATEST_RECEIPTS)
+        )
+    ]

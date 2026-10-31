@@ -9,7 +9,19 @@ from typing import Annotated
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import ColumnElement, Integer, Select, String, and_, cast, func, select
+from sqlalchemy import (
+    ColumnElement,
+    Integer,
+    Select,
+    String,
+    and_,
+    case,
+    cast,
+    false,
+    func,
+    select,
+    true,
+)
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import CTE
 
@@ -146,11 +158,7 @@ def _range_filters(start: datetime | None, end: datetime | None) -> list[ColumnE
     return filters
 
 
-def _top_items(
-    filters: list[ColumnElement[bool]],
-    item_amounts: CTE,
-    order: ColumnElement[int] | ColumnElement[Decimal],
-) -> Select[str, int, Decimal]:
+def _top_items(filters: list[ColumnElement[bool]], item_amounts: CTE) -> Select[str, int, Decimal]:
     receipt_count = func.count(func.distinct(ReceiptItem.receipt_id))
     amount = func.sum(item_amounts.c.included_amount)
     return (
@@ -160,8 +168,6 @@ def _top_items(
         .join(item_amounts, ReceiptItem.id == item_amounts.c.id)
         .where(*filters, item_amounts.c.is_included)
         .group_by(ReceiptItem.name)
-        .order_by(order.desc(), ReceiptItem.name)
-        .limit(TOP_ITEMS)
     )
 
 
@@ -197,6 +203,14 @@ def _category_stats(
             category_id=category_id, name=name, purchase_count=count, amount=_money(total)
         )
         for category_id, name, count, total in rows
+    ]
+
+
+def _merchants(rows: Iterable[tuple[str, tuple[int, Decimal]]]) -> list[MerchantStats]:
+    ordered = sorted(rows, key=lambda row: (-row[1][1], row[0]))
+    return [
+        MerchantStats(merchant=merchant, amount=_money(amount), receipt_count=count)
+        for merchant, (count, amount) in ordered
     ]
 
 
@@ -237,54 +251,78 @@ def overview_stats(
         user.id,
         select(Receipt.id).where(*_range_filters(accounting_start, period_end)),
     )
-    selection_filters = [owner_filter, receipt_amounts.c.is_included, *_range_filters(start, end)]
     bucket_key, weekday, hour = _local_parts(db.get_bind().dialect.name, granularity)
-    amounts: dict[str, Decimal] = defaultdict(Decimal)
-    counts: Counter[str] = Counter()
-    by_merchant: dict[str, list[MerchantStats]] = defaultdict(list)
-    merchant_amount = func.sum(receipt_amounts.c.included_amount)
-    for row_currency, merchant, count, amount in db.execute(
-        select(Receipt.currency, Receipt.merchant, func.count(), merchant_amount)
+    previous_range = (
+        (_back(start, lookback), _back(min(end, now), lookback))
+        if start is not None and lookback is not None
+        else None
+    )
+    # One pass over the allocated receipts feeds every receipt-level figure; each statement would
+    # otherwise recompute the whole allocation.
+    in_selection = and_(true(), *_range_filters(start, end))
+    in_period = and_(true(), *_range_filters(period_start, period_end))
+    in_previous = and_(true(), *_range_filters(*previous_range)) if previous_range else false()
+    amount = receipt_amounts.c.included_amount
+    groups = db.execute(
+        select(
+            Receipt.currency,
+            Receipt.merchant,
+            bucket_key,
+            weekday,
+            hour,
+            func.sum(case((in_selection, 1), else_=0)),
+            func.sum(case((in_selection, amount), else_=0)),
+            func.sum(case((in_selection, receipt_amounts.c.included_discount_amount), else_=0)),
+            func.sum(case((in_period, 1), else_=0)),
+            func.sum(case((in_period, amount), else_=0)),
+            func.sum(case((in_previous, 1), else_=0)),
+            func.sum(case((in_previous, amount), else_=0)),
+        )
         .join(ProviderConnection)
         .join(receipt_amounts, Receipt.id == receipt_amounts.c.receipt_id)
-        .where(*selection_filters)
-        .group_by(Receipt.currency, Receipt.merchant)
-        .order_by(merchant_amount.desc(), Receipt.merchant)
-    ):
-        amounts[row_currency] += amount
-        counts[row_currency] += count
-        by_merchant[row_currency].append(
-            MerchantStats(merchant=merchant, amount=_money(amount), receipt_count=count)
-        )
-    currency = max(sorted(counts), key=counts.__getitem__) if counts else None
-    merchants = by_merchant[currency] if currency is not None else []
-
+        .where(owner_filter, receipt_amounts.c.is_included)
+        .group_by(Receipt.currency, Receipt.merchant, bucket_key, weekday, hour)
+    ).all()
+    amounts: dict[str, Decimal] = defaultdict(Decimal)
+    counts: Counter[str] = Counter()
+    discounts: dict[str, Decimal] = defaultdict(Decimal)
+    merchant_totals: dict[str, dict[str, tuple[int, Decimal]]] = defaultdict(dict)
     previous: dict[str, tuple[int, Decimal]] = {}
-    if start is not None and lookback is not None:
-        previous_range = _back(start, lookback), _back(min(end, now), lookback)
-        previous = {
-            row_currency: (count, amount)
-            for row_currency, count, amount in db.execute(
-                select(Receipt.currency, func.count(), func.sum(receipt_amounts.c.included_amount))
-                .join(ProviderConnection)
-                .join(receipt_amounts, Receipt.id == receipt_amounts.c.receipt_id)
-                .where(
-                    owner_filter, receipt_amounts.c.is_included, *_range_filters(*previous_range)
-                )
-                .group_by(Receipt.currency)
+    weekly_hours = [[0] * 24 for _day in range(7)]
+    for (
+        row_currency,
+        merchant,
+        _key,
+        day,
+        hour_of_day,
+        count,
+        total,
+        discount,
+        _period_count,
+        _period_total,
+        previous_count,
+        previous_total,
+    ) in groups:
+        if count:
+            amounts[row_currency] += Decimal(total)
+            counts[row_currency] += count
+            discounts[row_currency] += Decimal(discount)
+            merchant_count, merchant_total = merchant_totals[row_currency].get(
+                merchant, (0, Decimal(0))
             )
-        }
-    discounts: dict[str, Decimal] = {
-        row_currency: amount
-        for row_currency, amount in db.execute(
-            select(Receipt.currency, func.sum(receipt_amounts.c.included_discount_amount))
-            .select_from(Receipt)
-            .join(receipt_amounts, Receipt.id == receipt_amounts.c.receipt_id)
-            .join(ProviderConnection, Receipt.connection_id == ProviderConnection.id)
-            .where(*selection_filters)
-            .group_by(Receipt.currency)
-        )
-    }
+            merchant_totals[row_currency][merchant] = (
+                merchant_count + count,
+                merchant_total + Decimal(total),
+            )
+            weekly_hours[int(day)][int(hour_of_day)] += count
+        if previous_count:
+            known_count, known_total = previous.get(row_currency, (0, Decimal(0)))
+            previous[row_currency] = (
+                known_count + previous_count,
+                known_total + Decimal(previous_total),
+            )
+    currency = max(sorted(counts), key=counts.__getitem__) if counts else None
+    merchants = _merchants(merchant_totals[currency].items()) if currency is not None else []
     totals = [
         CurrencyStats(
             currency=code,
@@ -301,29 +339,18 @@ def overview_stats(
     ]
 
     # Chart buckets follow Prague wall time; the database groups, Python only fills gaps.
-    bucket_merchants: dict[str, list[MerchantStats]] = defaultdict(list)
+    bucket_totals: dict[str, dict[str, tuple[int, Decimal]]] = defaultdict(dict)
     bucket_amounts: dict[str, Decimal] = defaultdict(Decimal)
     bucket_counts: Counter[str] = Counter()
-    if currency is not None:
-        bucket_amount = func.sum(receipt_amounts.c.included_amount)
-        for key, merchant, count, amount in db.execute(
-            select(bucket_key, Receipt.merchant, func.count(), bucket_amount)
-            .join(ProviderConnection)
-            .join(receipt_amounts, Receipt.id == receipt_amounts.c.receipt_id)
-            .where(
-                owner_filter,
-                receipt_amounts.c.is_included,
-                Receipt.currency == currency,
-                *_range_filters(period_start, period_end),
-            )
-            .group_by(bucket_key, Receipt.merchant)
-            .order_by(bucket_key, bucket_amount.desc(), Receipt.merchant)
-        ):
-            bucket_merchants[key].append(
-                MerchantStats(merchant=merchant, amount=_money(amount), receipt_count=count)
-            )
-            bucket_amounts[key] += amount
-            bucket_counts[key] += count
+    for row in groups:
+        row_currency, merchant, key, count, total = (*row[:3], row[8], row[9])
+        if row_currency != currency or not count:
+            continue
+        merchant_count, merchant_total = bucket_totals[key].get(merchant, (0, Decimal(0)))
+        bucket_totals[key][merchant] = (merchant_count + count, merchant_total + Decimal(total))
+        bucket_amounts[key] += Decimal(total)
+        bucket_counts[key] += count
+    bucket_merchants = {key: _merchants(rows.items()) for key, rows in bucket_totals.items()}
     cursor = period_start
     if cursor is None and bucket_counts:
         cursor = _bucket_range(min(bucket_counts))[0]
@@ -337,7 +364,7 @@ def overview_stats(
                 key=key,
                 amount=_money(bucket_amounts[key]),
                 receipt_count=bucket_counts[key],
-                merchants=bucket_merchants[key],
+                merchants=bucket_merchants.get(key, []),
             )
         )
         cursor = (
@@ -346,33 +373,22 @@ def overview_stats(
             else _shift_months(cursor, 1)
         )
 
-    weekly_hours = [[0] * 24 for _day in range(7)]
-    for day, hour_of_day, count in db.execute(
-        select(weekday, hour, func.count())
-        .join(ProviderConnection)
-        .join(receipt_amounts, Receipt.id == receipt_amounts.c.receipt_id)
-        .where(*selection_filters)
-        .group_by(weekday, hour)
-    ):
-        weekly_hours[int(day)][int(hour_of_day)] = count
-
     frequent_items: list[ItemStats] = []
     top_spend_items: list[ItemStats] = []
     categories: list[CategoryStats] = []
     if currency is not None:
         item_filters = [owner_filter, *_range_filters(start, end), Receipt.currency == currency]
         categories = _category_stats(db, item_filters, item_amounts)
+        # Both rankings come from one pass over the allocation, ranked here.
+        products = [
+            (name, count, amount)
+            for name, count, amount in db.execute(_top_items(item_filters, item_amounts))
+        ]
         frequent_items = _item_stats(
-            db.execute(
-                _top_items(
-                    item_filters, item_amounts, func.count(func.distinct(ReceiptItem.receipt_id))
-                )
-            )
+            sorted(products, key=lambda row: (-row[1], row[0]))[:TOP_ITEMS]
         )
         top_spend_items = _item_stats(
-            db.execute(
-                _top_items(item_filters, item_amounts, func.sum(item_amounts.c.included_amount))
-            )
+            sorted(products, key=lambda row: (-row[2], row[0]))[:TOP_ITEMS]
         )
 
     return StatsOutput(

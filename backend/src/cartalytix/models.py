@@ -282,7 +282,7 @@ class Discount(Base):
     __tablename__ = "discounts"
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     receipt_id: Mapped[UUID] = mapped_column(ForeignKey("receipts.id"), index=True)
-    item_id: Mapped[UUID | None] = mapped_column(ForeignKey("receipt_items.id"))
+    item_id: Mapped[UUID | None] = mapped_column(ForeignKey("receipt_items.id"), index=True)
     name: Mapped[str] = mapped_column(Text)
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
 
