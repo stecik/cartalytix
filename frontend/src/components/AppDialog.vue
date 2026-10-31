@@ -59,9 +59,9 @@ function keyboard(event: KeyboardEvent): void {
 </template>
 
 <style>
-.app-dialog { width: min(460px, calc(100% - 32px)); max-height: calc(100dvh - 48px); overflow: auto; color: var(--text); background: var(--bg-surface); border: 1px solid var(--border-overlay); border-radius: 10px; padding: 0; box-shadow: 0 18px 80px var(--shadow-overlay); }
+.app-dialog { --dialog-padding: 26px; --dialog-bottom: var(--dialog-padding); width: min(var(--dialog-width, 460px), calc(100% - 32px)); max-height: calc(100dvh - 48px); overflow: auto; color: var(--text); background: var(--bg-surface); border: 1px solid var(--border-overlay); border-radius: 10px; padding: 0; box-shadow: 0 18px 80px var(--shadow-overlay); }
 .app-dialog::backdrop { background: var(--backdrop); }
-.dialog-content { padding: 26px; }
+.dialog-content { padding: var(--dialog-padding) var(--dialog-padding) var(--dialog-bottom); }
 .dialog-content > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .dialog-content h2 { font-size: 20px; font-weight: 600; letter-spacing: -.5px; }
 .dialog-content > p { color: var(--text-muted); font-size: 13px; line-height: 1.7; margin: 12px 0; overflow-wrap: anywhere; }
@@ -69,5 +69,11 @@ function keyboard(event: KeyboardEvent): void {
 .dialog-content .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 24px; }
 .dialog-content .pause-checkbox { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.6; margin-top: 20px; }
 .dialog-content input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); flex-shrink: 0; margin: 2px 0 0; }
-@media (max-width: 390px) { .dialog-content { padding: 20px; } }
+/* Phones get a bottom sheet whose actions stay reachable while a long form scrolls. */
+@media (max-width: 600px) {
+  .app-dialog { --dialog-bottom: calc(var(--dialog-padding) + env(safe-area-inset-bottom)); width: 100%; max-width: 100%; max-height: calc(100dvh - 24px); margin: auto 0 0; border-width: 1px 0 0; border-radius: 14px 14px 0 0; }
+  .dialog-content .dialog-actions { position: sticky; z-index: 1; bottom: 0; margin: 24px calc(-1 * var(--dialog-padding)) calc(-1 * var(--dialog-bottom)); padding: 12px var(--dialog-padding) var(--dialog-bottom); background: var(--bg-surface); border-top: 1px solid var(--border); }
+  .dialog-content .dialog-actions > * { flex: 1 1 0; }
+}
+@media (max-width: 390px) { .app-dialog { --dialog-padding: 20px; } }
 </style>

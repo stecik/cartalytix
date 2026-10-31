@@ -181,7 +181,7 @@ function submit(): void {
 </template>
 
 <style scoped>
-.manual-receipt-dialog { width: min(620px, calc(100% - 32px)); }
+.manual-receipt-dialog { --dialog-width: 620px; }
 .manual-when { display: grid; grid-template-columns: 1.4fr 1fr 0.8fr; gap: 12px; }
 .manual-items { border: 0; padding: 0; margin: 24px 0 0; min-width: 0; }
 .manual-items legend { font-size: 12px; font-weight: 550; margin-bottom: 10px; }
@@ -190,8 +190,10 @@ function submit(): void {
 textarea { width: 100%; padding: 10px 13px; font-family: monospace; font-size: 12px; resize: vertical; }
 input[type=file] { height: auto; padding: 10px 0; border: 0; background: transparent; }
 @media (max-width: 520px) {
-  .manual-when { grid-template-columns: 1fr 1fr; }
-  .manual-item { grid-template-columns: 1fr 1fr 36px; }
+  .app-select { display: block; }
+  .manual-when { grid-template-columns: 1fr 1fr; row-gap: 0; }
+  .manual-when > :first-child { grid-column: 1 / -1; }
+  .manual-item { grid-template-columns: 1fr 1fr 36px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
   .manual-item input:first-child { grid-column: 1 / -1; }
 }
 </style>
