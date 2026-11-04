@@ -3,5 +3,14 @@
         "backend": true,
         "experiments": true,
         "frontend": true
-    }
+    },
+    "workbench.colorCustomizations": {
+        "commandCenter.border": "#15202b99",
+        "commandCenter.foreground": "#15202b",
+        "titleBar.activeBackground": "#a1d2b3",
+        "titleBar.activeForeground": "#15202b",
+        "titleBar.inactiveBackground": "#a1d2b399",
+        "titleBar.inactiveForeground": "#15202b99"
+    },
+    "peacock.color": "#a1d2b3"
 }

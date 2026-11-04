@@ -7,12 +7,13 @@ import type { McpGrant, McpScope, User } from "../api";
 import { sessionOptions } from "../auth";
 import { useUserSettings } from "../settings";
 import { pwaInstallKey } from "../pwaInstall";
-import { PRESET_PERIODS } from "../stats";
+import { PRESET_PERIODS, availablePeriod, presetPeriods } from "../stats";
 import { SYNC_INTERVALS, syncIntervalOptions } from "../syncIntervals";
 import { isThemePreference, themePreference } from "../theme";
 import AppDialog from "../components/AppDialog.vue";
 import AppIcon from "../components/AppIcon.vue";
 import AppSelect from "../components/AppSelect.vue";
+import AppSwitch from "../components/AppSwitch.vue";
 import DiagnosticLogsDialog from "../components/DiagnosticLogsDialog.vue";
 import CredentialsDialog from "../components/CredentialsDialog.vue";
 import McpScopeSwitches from "../components/McpScopeSwitches.vue";
@@ -94,12 +95,22 @@ const themes = computed(() => [
   { value: "dark", label: t("themeDark") },
 ]);
 const dashboardPeriod = computed({
-  get: (): string => session.data.value?.dashboard_period ?? "12m",
+  get: (): string => availablePeriod(session.data.value),
   set: (value: string) => {
     const period = PRESET_PERIODS.find((preset) => preset === value);
     if (period) settings.mutate({ dashboard_period: period });
   },
 });
+// Days past the end of a shorter month fall on its last day.
+const CYCLE_DAYS = Array.from({ length: 31 }, (_, index) => index + 1);
+const cycleStartDay = computed({
+  get: (): string => String(session.data.value?.cycle_start_day ?? 1),
+  set: (value: string) => {
+    const day = CYCLE_DAYS.find((option) => String(option) === value);
+    if (day) settings.mutate({ cycle_start_day: day });
+  },
+});
+const cycleDayOptions = CYCLE_DAYS.map((value) => ({ value: String(value), label: String(value) }));
 // Eight distinguishable category colors plus one segment for the rest.
 const CATEGORY_SLICES = [3, 4, 5, 6, 7, 8, 9] as const;
 const categorySlices = computed({
@@ -135,7 +146,7 @@ const applySync = useMutation({
 });
 const categorySliceOptions = CATEGORY_SLICES.map((value) => ({ value: String(value), label: String(value) }));
 const dashboardPeriods = computed(() =>
-  PRESET_PERIODS.map((value) => ({ value, label: t(`period_${value}`) })),
+  presetPeriods(session.data.value).map((value) => ({ value, label: t(`period_${value}`, { day: session.data.value?.cycle_start_day ?? 1 }) })),
 );
 const views = computed(() => [
   { value: "rendered" as const, label: t("receiptViewRendered") },
@@ -177,6 +188,16 @@ const views = computed(() => [
         </div>
         <div class="settings-control">
           <AppSelect v-model="dashboardPeriod" class="settings-select" :options="dashboardPeriods" :label="t('dashboardPeriod')" />
+        </div>
+      </div>
+      <div v-if="session.data.value && !isAdmin" class="settings-row">
+        <div class="settings-copy">
+          <h3>{{ t("cycleStart") }}</h3>
+          <p>{{ t("cycleStartHint") }}</p>
+        </div>
+        <div class="settings-control settings-sync-control">
+          <AppSelect v-model="cycleStartDay" class="settings-select" :options="cycleDayOptions" :label="t('cycleStart')" />
+          <AppSwitch :model-value="session.data.value.cycle_weekend_shift" :label="t('cycleWeekendShift')" @update:model-value="settings.mutate({ cycle_weekend_shift: $event })">{{ t("cycleWeekendShift") }}</AppSwitch>
         </div>
       </div>
       <div v-if="!isAdmin" class="settings-row">

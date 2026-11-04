@@ -17,13 +17,14 @@ import RankedBars from "../components/RankedBars.vue";
 import type { RankedRow } from "../components/RankedBars.vue";
 import ReceiptLedger from "../components/ReceiptLedger.vue";
 import {
-  PRESET_PERIODS,
+  availablePeriod,
   formatLongDay,
   formatLongMonth,
   formatMoney,
   isoDay,
   numberLocale,
   percentChange,
+  presetPeriods,
 } from "../stats";
 
 const SpendingChart = defineAsyncComponent(
@@ -36,16 +37,15 @@ const CategoryBreakdown = defineAsyncComponent(
   () => import("../components/CategoryBreakdown.vue"),
 );
 
-const PERIODS: readonly StatsPeriod[] = [...PRESET_PERIODS, "custom"];
-
 const { t, locale } = useI18n();
 const session = useQuery(sessionOptions);
-const period = ref<StatsPeriod>(session.data.value?.dashboard_period ?? "12m");
+const periods = computed<readonly StatsPeriod[]>(() => [...presetPeriods(session.data.value), "custom"]);
+const period = ref<StatsPeriod>(availablePeriod(session.data.value));
 const dateFrom = ref("");
 const dateTo = ref("");
 const bucket = ref<string | null>(null);
 const periodOptions = computed(() =>
-  PERIODS.map((value) => ({ value, label: t(`period_${value}`) })),
+  periods.value.map((value) => ({ value, label: t(`period_${value}`, { day: session.data.value?.cycle_start_day ?? 1 }) })),
 );
 const rangeValid = computed(
   () => period.value !== "custom" || (!!dateFrom.value && !!dateTo.value && dateFrom.value <= dateTo.value),
@@ -172,7 +172,7 @@ const spendRows = computed<RankedRow[]>(() =>
 );
 
 function selectPeriod(value: string): void {
-  const next = PERIODS.find((option) => option === value);
+  const next = periods.value.find((option) => option === value);
   if (!next) return;
   if (next === "custom" && !dateFrom.value) {
     dateFrom.value = isoDay(-29);

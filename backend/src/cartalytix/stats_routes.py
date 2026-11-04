@@ -109,8 +109,36 @@ def _day_start(value: date) -> datetime:
     return datetime.combine(value, time(), PRAGUE)
 
 
+def _year_month(index: int) -> tuple[int, int]:
+    year, month = divmod(index, 12)
+    return year, month + 1
+
+
+def _cycle_start(year: int, month: int, day: int, weekend_shift: bool) -> date:
+    start = date(year, month, min(day, monthrange(year, month)[1]))
+    if weekend_shift and start.weekday() >= 5:
+        # Saturday and Sunday move back to Friday.
+        start -= timedelta(days=start.weekday() - 4)
+    return start
+
+
+def _cycle_range(today: date, day: int, weekend_shift: bool) -> tuple[date, date]:
+    """Start of the cycle containing today and of the one before it."""
+    index = today.year * 12 + today.month - 1
+    starts = [
+        _cycle_start(*_year_month(index + offset), day, weekend_shift) for offset in (-2, -1, 0, 1)
+    ]
+    # A shifted start may fall into the previous month, so the next month's start can be current.
+    current = max(index for index, start in enumerate(starts) if start <= today)
+    return starts[current], starts[current - 1]
+
+
 def _period_range(
-    period: StatsPeriod, now: datetime, date_from: date | None, date_to: date | None
+    period: StatsPeriod,
+    now: datetime,
+    date_from: date | None,
+    date_to: date | None,
+    cycle: tuple[int, bool],
 ) -> tuple[datetime | None, datetime, Lookback | None]:
     """Half-open [start, end) of the period and how far back its comparison window lies."""
     tomorrow = _day_start(now.date() + timedelta(days=1))
@@ -128,6 +156,11 @@ def _period_range(
             return tomorrow - timedelta(days=90), tomorrow, (0, 90)
         case StatsPeriod.LAST_12_MONTHS:
             return _shift_months(next_month, -12), next_month, (12, 0)
+        case StatsPeriod.CYCLE:
+            start, previous = _cycle_range(now.date(), *cycle)
+            # A month back, corrected by the days weekend shifts or short months move the start.
+            correction = (_shift_months(_day_start(start), -1).date() - previous).days
+            return _day_start(start), tomorrow, (1, correction)
         case StatsPeriod.CUSTOM:
             if date_from is None or date_to is None or date_from > date_to:
                 raise HTTPException(422, "invalid_date_range")
@@ -231,7 +264,9 @@ def overview_stats(
     date_to: date | None = None,
 ) -> StatsOutput:
     now = datetime.now(PRAGUE)
-    period_start, period_end, lookback = _period_range(period, now, date_from, date_to)
+    period_start, period_end, lookback = _period_range(
+        period, now, date_from, date_to, (user.cycle_start_day, user.cycle_weekend_shift)
+    )
     granularity = (
         StatsGranularity.DAY
         if period_start is not None and (period_end - period_start).days <= DAILY_MAX_DAYS

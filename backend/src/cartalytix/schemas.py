@@ -35,6 +35,8 @@ class StatsPeriod(StrEnum):
     LAST_30_DAYS = "30d"
     LAST_90_DAYS = "90d"
     LAST_12_MONTHS = "12m"
+    # Month starting on the user's cycle start day.
+    CYCLE = "cycle"
     ALL = "all"
     CUSTOM = "custom"
 
@@ -48,6 +50,8 @@ class UserOutput(BaseModel):
     theme: Theme
     dashboard_period: StatsPeriod
     dashboard_category_slices: int
+    cycle_start_day: int
+    cycle_weekend_shift: bool
     default_sync_interval_minutes: int | None
     is_admin: bool
     must_change_password: bool
@@ -101,6 +105,9 @@ class UserSettingsInput(BaseModel):
     dashboard_period: StatsPeriod | None = None
     # Eight distinguishable category colors plus one segment for the rest.
     dashboard_category_slices: int | None = Field(default=None, ge=3, le=9)
+    # Days past the end of a shorter month fall on its last day.
+    cycle_start_day: int | None = Field(default=None, ge=1, le=31)
+    cycle_weekend_shift: bool | None = None
     # An explicit null selects manual synchronization only.
     default_sync_interval_minutes: int | None = Field(default=None, ge=60, le=10080)
 

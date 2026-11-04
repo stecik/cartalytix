@@ -7,7 +7,7 @@ import { sessionOptions } from "./auth";
 import { createAppI18n } from "./i18n";
 import ChangeCredentialsView from "./views/ChangeCredentialsView.vue";
 
-const admin: User = { id: "a", email: "admin@example.com", locale: "en", receipt_view: "rendered", theme: "system", dashboard_period: "12m", dashboard_category_slices: 9, default_sync_interval_minutes: 360, is_admin: true, must_change_password: true };
+const admin: User = { id: "a", email: "admin@example.com", locale: "en", receipt_view: "rendered", theme: "system", dashboard_period: "12m", dashboard_category_slices: 9, cycle_start_day: 1, cycle_weekend_shift: false, default_sync_interval_minutes: 360, is_admin: true, must_change_password: true };
 
 async function render(user: User, fetch: typeof globalThis.fetch) {
   vi.stubGlobal("fetch", fetch);

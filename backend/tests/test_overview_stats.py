@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from hashlib import sha256
 from typing import Any
@@ -20,7 +20,9 @@ from cartalytix.models import (
     ProviderConnection,
     Receipt,
     ReceiptItem,
+    User,
 )
+from cartalytix.stats_routes import _cycle_range
 
 PRAGUE = ZoneInfo("Europe/Prague")
 URL = "/api/v1/overview/stats"
@@ -312,3 +314,36 @@ def test_stats_query_count_is_bounded(client: TestClient, engine: Engine) -> Non
     assert client.get(URL).status_code == 200
     assert len(queries) == small
     event.remove(engine, "before_cursor_execute", track)
+
+
+def test_cycle_range_clamps_and_shifts_weekend_starts() -> None:
+    assert _cycle_range(date(2026, 11, 4), 15, False) == (date(2026, 10, 15), date(2026, 9, 15))
+    assert _cycle_range(date(2026, 11, 15), 15, False) == (date(2026, 11, 15), date(2026, 10, 15))
+    assert _cycle_range(date(2026, 3, 1), 31, False) == (date(2026, 2, 28), date(2026, 1, 31))
+    # 2026-11-15 is a Sunday, so that cycle starts on Friday the 13th.
+    assert _cycle_range(date(2026, 11, 13), 15, True) == (date(2026, 11, 13), date(2026, 10, 15))
+    # 2026-08-01 is a Saturday: the August cycle starts in July.
+    assert _cycle_range(date(2026, 7, 31), 1, True) == (date(2026, 7, 31), date(2026, 7, 1))
+
+
+def test_cycle_period_follows_user_start_day(client: TestClient, engine: Engine) -> None:
+    now = datetime.now(PRAGUE)
+    day = now.day if now.day <= 28 else 1
+    with Session(engine) as db:
+        user = db.scalar(select(User).where(User.email == "owner@example.com"))
+        assert user is not None
+        user.cycle_start_day = day
+        db.commit()
+    # SQLite keeps wall time without the zone, so receipts are stored in UTC.
+    start = now.replace(day=day, hour=0, minute=0, second=0, microsecond=0)
+    add_receipt(engine, "cycle", (start + timedelta(minutes=1)).astimezone(UTC), "40.00")
+    year, month = (now.year, now.month - 1) if now.month > 1 else (now.year - 1, 12)
+    add_receipt(engine, "before", (start - timedelta(minutes=1)).astimezone(UTC), "999.00")
+    add_receipt(engine, "previous", start.replace(year=year, month=month).astimezone(UTC), "30.00")
+    login(client)
+
+    stats = client.get(f"{URL}?period=cycle").json()
+    assert stats.get("granularity") == "day"
+    czk = totals(stats).get("CZK", {})
+    assert czk.get("amount") == "140.25"
+    assert czk.get("previous_amount") == "30.00"

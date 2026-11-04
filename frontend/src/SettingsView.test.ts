@@ -53,7 +53,7 @@ describe("settings PWA installation", () => {
 
 describe("settings sign-in details", () => {
   it("changes only the email with the current password and reports API errors", async () => {
-    const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, default_sync_interval_minutes: 360, is_admin: false, must_change_password: false };
+    const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, cycle_start_day: 1, cycle_weekend_shift: false, default_sync_interval_minutes: 360, is_admin: false, must_change_password: false };
     const api = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ items: [] }));
     const { wrapper, client } = render(false, user, api);
     try {
@@ -78,7 +78,7 @@ describe("settings sign-in details", () => {
   });
 
   it("requires a strong, confirmed new password", async () => {
-    const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, default_sync_interval_minutes: 360, is_admin: true, must_change_password: false };
+    const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, cycle_start_day: 1, cycle_weekend_shift: false, default_sync_interval_minutes: 360, is_admin: true, must_change_password: false };
     const api = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ items: [] }));
     const { wrapper, client } = render(false, user, api);
     try {
@@ -98,7 +98,7 @@ describe("settings sign-in details", () => {
 
 describe("settings appearance", () => {
   it.each([false, true])("saves a theme immediately and rolls it back on API failure=%s", async (fail) => {
-    const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, default_sync_interval_minutes: 360, is_admin: false, must_change_password: false };
+    const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, cycle_start_day: 1, cycle_weekend_shift: false, default_sync_interval_minutes: 360, is_admin: false, must_change_password: false };
     setTheme("light");
     const { wrapper, client } = render(false, user);
     let finish: (value: Response) => void = () => undefined;
@@ -181,7 +181,7 @@ describe("settings connected AI apps", () => {
 });
 
 describe("settings diagnostic download", () => {
-  const owner: User = { id: "owner", email: "owner@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, default_sync_interval_minutes: 360, is_admin: false, must_change_password: false };
+  const owner: User = { id: "owner", email: "owner@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, cycle_start_day: 1, cycle_weekend_shift: false, default_sync_interval_minutes: 360, is_admin: false, must_change_password: false };
   it("downloads selected periods and independent diagnostic groups", async () => {
     const api = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ items: [] }));
     const { wrapper, client } = render(false, owner, api);
@@ -245,7 +245,7 @@ describe("settings diagnostic download", () => {
 
 describe("settings default synchronization", () => {
   it("saves manual-only as null and applies the default to all connections after confirmation", async () => {
-    const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, default_sync_interval_minutes: 360, is_admin: false, must_change_password: false };
+    const user: User = { id: "test", email: "test@example.com", locale: "en", receipt_view: "rendered", theme: "light", dashboard_period: "12m", dashboard_category_slices: 9, cycle_start_day: 1, cycle_weekend_shift: false, default_sync_interval_minutes: 360, is_admin: false, must_change_password: false };
     const api = vi.fn<typeof fetch>().mockImplementation((input, init) => Promise.resolve(
       String(input).endsWith("/apply-default-sync") ? new Response(null, { status: 204 })
         : init?.method === "PATCH" ? Response.json({ ...user, default_sync_interval_minutes: null })

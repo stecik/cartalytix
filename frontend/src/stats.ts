@@ -1,6 +1,19 @@
-import type { PresetPeriod } from "./api";
+import type { PresetPeriod, User } from "./api";
 
-export const PRESET_PERIODS: readonly PresetPeriod[] = ["today", "month", "year", "30d", "90d", "12m", "all"];
+export const PRESET_PERIODS: readonly PresetPeriod[] = ["today", "month", "cycle", "year", "30d", "90d", "12m", "all"];
+
+type CycleSettings = Pick<User, "cycle_start_day" | "cycle_weekend_shift">;
+
+// An unshifted cycle starting on the 1st is the calendar month, so it is offered only when it differs.
+export function presetPeriods(user: CycleSettings | null | undefined): readonly PresetPeriod[] {
+  const cycle = !!user && (user.cycle_start_day > 1 || user.cycle_weekend_shift);
+  return cycle ? PRESET_PERIODS : PRESET_PERIODS.filter((period) => period !== "cycle");
+}
+
+export function availablePeriod(user: (CycleSettings & Pick<User, "dashboard_period">) | null | undefined): PresetPeriod {
+  const period = user?.dashboard_period ?? "12m";
+  return presetPeriods(user).includes(period) ? period : "month";
+}
 
 export function numberLocale(locale: string): string {
   return locale === "cs" ? "cs-CZ" : "en-GB";

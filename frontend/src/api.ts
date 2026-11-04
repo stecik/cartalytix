@@ -8,6 +8,8 @@ export interface User {
   theme: ThemePreference;
   dashboard_period: PresetPeriod;
   dashboard_category_slices: number;
+  cycle_start_day: number;
+  cycle_weekend_shift: boolean;
   default_sync_interval_minutes: number | null;
   is_admin: boolean;
   must_change_password: boolean;
@@ -337,7 +339,7 @@ export interface Suggestion {
   receipt_count: number;
 }
 
-export type PresetPeriod = "today" | "month" | "year" | "30d" | "90d" | "12m" | "all";
+export type PresetPeriod = "today" | "month" | "cycle" | "year" | "30d" | "90d" | "12m" | "all";
 export type StatsPeriod = PresetPeriod | "custom";
 export type StatsGranularity = "day" | "month";
 

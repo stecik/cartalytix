@@ -397,6 +397,10 @@ def create_app(
             user.dashboard_period = payload.dashboard_period
         if payload.dashboard_category_slices is not None:
             user.dashboard_category_slices = payload.dashboard_category_slices
+        if payload.cycle_start_day is not None:
+            user.cycle_start_day = payload.cycle_start_day
+        if payload.cycle_weekend_shift is not None:
+            user.cycle_weekend_shift = payload.cycle_weekend_shift
         if "default_sync_interval_minutes" in payload.model_fields_set:
             user.default_sync_interval_minutes = payload.default_sync_interval_minutes
         db.commit()

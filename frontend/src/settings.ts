@@ -5,7 +5,7 @@ import type { User } from "./api";
 import { sessionOptions } from "./auth";
 import { setTheme, themePreference } from "./theme";
 
-export type UserSettings = Partial<Pick<User, "locale" | "receipt_view" | "theme" | "dashboard_period" | "dashboard_category_slices" | "default_sync_interval_minutes">>;
+export type UserSettings = Partial<Pick<User, "locale" | "receipt_view" | "theme" | "dashboard_period" | "dashboard_category_slices" | "cycle_start_day" | "cycle_weekend_shift" | "default_sync_interval_minutes">>;
 
 export function useUserSettings() {
   const client = useQueryClient();

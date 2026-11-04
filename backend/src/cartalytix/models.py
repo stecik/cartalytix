@@ -54,6 +54,12 @@ class User(Base):
     dashboard_period: Mapped[str] = mapped_column(String(16), default="12m", server_default="12m")
     # Segments of the dashboard category charts, the last one folding the remaining categories.
     dashboard_category_slices: Mapped[int] = mapped_column(Integer, default=9, server_default="9")
+    # Day of month the overview "cycle" period starts on, e.g. a payday.
+    cycle_start_day: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # A cycle starting on a weekend starts on the preceding Friday instead.
+    cycle_weekend_shift: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     # Interval given to new connections; NULL means manual synchronization only.
     default_sync_interval_minutes: Mapped[int | None] = mapped_column(
         Integer, default=360, server_default="360"
