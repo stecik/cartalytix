@@ -119,8 +119,37 @@ def login(client: TestClient) -> None:
     cookie = response.headers.get("set-cookie", "")
     assert "HttpOnly" in cookie
     assert "SameSite=lax" in cookie
-    assert "Max-Age=86400" in cookie
+    # Not remembered: the cookie ends with the browser session.
+    assert "Max-Age" not in cookie
     assert response.headers.get("cache-control") == "no-store"
+
+
+def test_remembered_session_slides_expiry(client: TestClient, engine: Engine) -> None:
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "owner@example.com", "password": "Correct-horse-battery", "remember": True},
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 200
+    assert "Max-Age=2592000" in response.headers.get("set-cookie", "")
+    # Fresh session: activity within the slide interval does not write or reissue the cookie.
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 200
+    assert "set-cookie" not in response.headers
+    stale = datetime.now(UTC) + timedelta(days=2)
+    with Session(engine) as db:
+        stored = db.scalar(select(UserSession))
+        assert stored is not None
+        assert stored.remember
+        stored.expires_at = stale
+        db.commit()
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 200
+    assert "Max-Age=2592000" in response.headers.get("set-cookie", "")
+    with Session(engine) as db:
+        expires_at = db.scalar(select(UserSession.expires_at))
+    assert expires_at is not None
+    assert expires_at.replace(tzinfo=UTC) > stale + timedelta(days=27)
 
 
 def test_session_requires_password_and_origin(client: TestClient, engine: Engine) -> None:

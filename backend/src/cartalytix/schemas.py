@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, field_va
 class LoginInput(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=1024)
+    remember: bool = False
 
 
 class Locale(StrEnum):

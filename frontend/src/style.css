@@ -732,6 +732,20 @@ form input {
   line-height: 1.6;
   margin-top: 11px;
 }
+form .remember-me {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 0;
+  font-weight: 500;
+  cursor: pointer;
+}
+form .remember-me input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--accent);
+}
 .login-submit {
   width: 100%;
   justify-content: space-between;

@@ -6,7 +6,7 @@ import ReceiptsView from "./views/ReceiptsView.vue";
 import { createAppI18n } from "./i18n";
 
 const receipt = { id: "receipt-1", connection_id: "account-1", provider: "lidl", external_id: "external-1",
-  purchased_at: "2026-10-17T10:00:00Z", merchant: "Lidl Praha", total_amount: "20.00", currency: "CZK" };
+  purchased_at: "2026-10-17T10:00:00Z", merchant: "Lidl Praha", total_amount: "20.00", currency: "CZK", is_manual: false };
 
 function stubApi(items: unknown[] = [receipt], total = items.length) {
   const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) =>

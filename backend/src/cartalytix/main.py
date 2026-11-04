@@ -24,7 +24,14 @@ from cartalytix.category_routes import router as category_router
 from cartalytix.change_routes import router as change_router
 from cartalytix.connection_routes import connection_outputs, next_sync
 from cartalytix.connection_routes import router as connection_router
-from cartalytix.dependencies import COOKIE_NAME, ActiveUser, Db, Owner, SessionUser
+from cartalytix.dependencies import (
+    COOKIE_NAME,
+    ActiveUser,
+    Db,
+    Owner,
+    SessionUser,
+    set_session_cookie,
+)
 from cartalytix.diagnostics import HTTP_ERROR_CODES, capture_error
 from cartalytix.diagnostics_routes import router as diagnostics_router
 from cartalytix.foodora_routes import router as foodora_router
@@ -314,7 +321,12 @@ def create_app(
         if user.is_disabled:
             raise HTTPException(403, "account_disabled")
         token = token_urlsafe(32)
-        expires = datetime.now(UTC) + timedelta(hours=config.session_hours)
+        lifetime = (
+            timedelta(days=config.remember_days)
+            if payload.remember
+            else timedelta(hours=config.session_hours)
+        )
+        expires = datetime.now(UTC) + lifetime
         old_token = request.cookies.get(COOKIE_NAME)
         if old_token:
             db.execute(delete(UserSession).where(UserSession.token_hash == token_hash(old_token)))
@@ -323,17 +335,16 @@ def create_app(
                 UserSession.owner_id == user.id, UserSession.expires_at <= datetime.now(UTC)
             )
         )
-        db.add(UserSession(token_hash=token_hash(token), owner_id=user.id, expires_at=expires))
-        db.commit()
-        response.set_cookie(
-            COOKIE_NAME,
-            token,
-            max_age=config.session_hours * 3600,
-            httponly=True,
-            secure=config.cookie_secure,
-            samesite="lax",
-            path="/",
+        db.add(
+            UserSession(
+                token_hash=token_hash(token),
+                owner_id=user.id,
+                expires_at=expires,
+                remember=payload.remember,
+            )
         )
+        db.commit()
+        set_session_cookie(response, token, config, lifetime if payload.remember else None)
         return user
 
     @app.get("/api/v1/auth/me", response_model=UserOutput)
@@ -423,9 +434,7 @@ def create_app(
                 select(ProviderConnection.provider, func.count()).group_by(
                     ProviderConnection.provider
                 )
-            )
-            .tuples()
-            .all()
+            ).all()
         )
         return ProvidersOutput(
             items=[

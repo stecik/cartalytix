@@ -11,7 +11,7 @@ describe("account session", () => {
       );
     vi.stubGlobal("fetch", fetcher);
     const client = new QueryClient();
-    await authenticate(client, "owner@example.com", "secret");
+    await authenticate(client, "owner@example.com", "secret", true);
     expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/auth/login",
       expect.objectContaining({
@@ -21,6 +21,7 @@ describe("account session", () => {
         body: JSON.stringify({
           email: "owner@example.com",
           password: "secret",
+          remember: true,
         }),
       }),
     );

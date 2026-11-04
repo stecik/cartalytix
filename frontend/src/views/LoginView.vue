@@ -14,8 +14,9 @@ const router = useRouter();
 const route = useRoute();
 const email = ref("");
 const password = ref("");
+const remember = ref(false);
 const login = useMutation({
-  mutationFn: () => authenticate(client, email.value.trim(), password.value),
+  mutationFn: () => authenticate(client, email.value.trim(), password.value, remember.value),
   onSuccess: async () => {
     password.value = "";
     await router.replace(returnPath(route.query.redirect));
@@ -89,6 +90,14 @@ const errorKey = computed(() => {
             :disabled="login.isPending.value"
           />
           <p class="field-note">{{ t("accountNote") }}</p>
+          <label class="remember-me">
+            <input
+              v-model="remember"
+              type="checkbox"
+              name="remember"
+              :disabled="login.isPending.value"
+            />{{ t("rememberMe") }}
+          </label>
           <p v-if="login.isError.value" role="alert" class="form-alert">
             {{ t(errorKey) }}
           </p>

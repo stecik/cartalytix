@@ -79,6 +79,8 @@ class UserSession(Base):
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # Remembered sessions slide their expiry forward on activity.
+    remember: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
 
 
 class OAuthClient(Base):

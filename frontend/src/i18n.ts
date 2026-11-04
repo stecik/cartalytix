@@ -75,6 +75,7 @@ const en = {
   welcome: "Welcome back.",
   signInIntro: "Sign in to your Cartalytix account.",
   accountNote: "Use your app account, not your store login.",
+  rememberMe: "Remember me",
   privateWorkspace: "Your private shopping workspace",
   loginDescription:
     "Receipts and connected store accounts, together in one place.",
@@ -741,6 +742,7 @@ const cs: Catalog = {
   welcome: "Vítejte zpět.",
   signInIntro: "Přihlaste se ke svému účtu Cartalytix.",
   accountNote: "Použijte účet aplikace, nikoli přihlášení do obchodu.",
+  rememberMe: "Zapamatovat si mě",
   privateWorkspace: "Váš soukromý přehled nákupů",
   loginDescription: "Účtenky a připojené účty obchodů na jednom místě.",
   closedRegistration: "Účty zakládá váš správce.",

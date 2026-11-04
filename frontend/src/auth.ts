@@ -24,10 +24,11 @@ export async function authenticate(
   client: QueryClient,
   email: string,
   password: string,
+  remember = false,
 ): Promise<User> {
   const user = await request<User>("/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, remember }),
   });
   client.clear();
   client.setQueryData(sessionOptions.queryKey, user);

@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     trusted_proxy_hosts: list[str] = []
     cookie_secure: bool = True
     session_hours: int = Field(default=24, ge=1, le=168)
+    # A remembered sign-in expires after this many days without activity.
+    remember_days: int = Field(default=30, ge=1, le=365)
     login_attempts: int = Field(default=10, ge=1, le=100)
     login_window_seconds: int = Field(default=900, ge=60)
     token_key_file: str | None = None
