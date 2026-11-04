@@ -200,7 +200,7 @@ function restored(row: ItemExclusion, result: ReceiptDetail | ItemDetail | undef
 
 <template>
   <div class="view-content">
-    <PageHeader :eyebrow="t('workspace')" :title="t('items')" :intro="t('itemsIntro')" />
+    <PageHeader :title="t('items')" :intro="t('itemsIntro')" />
     <div class="item-display-controls">
       <ExclusionFilter :model-value="exclusion" @update:model-value="changeExclusion" />
       <AppSelect v-if="exclusion === 'excluded'" class="exclusion-scope" :model-value="exclusionScope" :options="scopeOptions" :label="t('exclusionScope')" @update:model-value="updateQuery({ exclusion_scope: $event === 'all' ? '' : $event })" />

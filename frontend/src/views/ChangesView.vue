@@ -37,7 +37,7 @@ function changePage(value: number): void {
 
 <template>
   <div class="view-content">
-    <PageHeader :eyebrow="t('workspace')" :title="t('changes')" :intro="t('changeHistoryIntro')" />
+    <PageHeader :title="t('changes')" :intro="t('changeHistoryIntro')" />
     <QueryState :pending="history.isPending.value" :failed="history.isError.value" @retry="history.refetch()">
       <section v-if="history.data.value" class="ledger-section">
         <div class="section-heading">

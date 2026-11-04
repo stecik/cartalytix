@@ -116,7 +116,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onOutside));
 .app-select-trigger[aria-expanded="true"] { outline: 0; border-color: var(--focus-strong); box-shadow: 0 0 0 2px var(--focus-ring); }
 .app-select-trigger svg { width: 14px; height: 14px; color: var(--text-muted); transition: transform 0.16s; }
 .app-select-trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
-.compact .app-select-trigger { min-height: 34px; gap: 6px; padding: 0 10px 0 14px; border-color: var(--border-overlay); border-radius: 999px; font-size: 12px; }
+.compact .app-select-trigger { min-height: 34px; gap: 6px; padding: 0 10px 0 14px; border-color: var(--border-overlay); font-size: 12px; }
 .app-select-list { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: max(100%, 150px); margin: 0; padding: 4px; list-style: none; background: var(--bg-raised); border: 1px solid var(--border-overlay); border-radius: 10px; box-shadow: 0 12px 32px var(--shadow-overlay); outline: 0; }
 .compact .app-select-list { left: auto; right: 0; }
 .app-select-list li { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--accent); cursor: pointer; white-space: nowrap; }

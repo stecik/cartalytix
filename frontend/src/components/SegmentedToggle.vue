@@ -17,8 +17,8 @@ const name = useId();
 </template>
 
 <style scoped>
-.view-toggle { display: flex; width: max-content; max-width: 100%; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-subtle); }
-.view-toggle label { position: relative; padding: 8px 18px; border-radius: 999px; font-size: 13px; color: var(--text-muted); cursor: pointer; white-space: nowrap; transition: background 0.16s, color 0.16s, box-shadow 0.16s; }
+.view-toggle { display: flex; width: max-content; max-width: 100%; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-subtle); }
+.view-toggle label { position: relative; padding: 8px 18px; border-radius: 4px; font-size: 13px; color: var(--text-muted); cursor: pointer; white-space: nowrap; transition: background 0.16s, color 0.16s, box-shadow 0.16s; }
 .view-toggle label:hover { color: var(--accent); }
 .view-toggle label.selected { background: var(--bg-raised); color: var(--accent); font-weight: 600; box-shadow: 0 1px 4px var(--shadow-soft); }
 .view-toggle label:has(:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }

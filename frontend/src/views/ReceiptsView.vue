@@ -134,7 +134,7 @@ function changePage(value: number): void {
 
 <template>
   <div class="view-content">
-    <PageHeader :eyebrow="t('workspace')" :title="t('receipts')" :intro="t('receiptIntro')">
+    <PageHeader :title="t('receipts')" :intro="t('receiptIntro')">
       <div class="receipts-actions">
         <AppButton type="button" variant="primary" @click="adding = true">{{ t("addReceipt") }}</AppButton>
         <RouterLink class="text-link" to="/changes">{{ t("changes") }}<AppIcon name="arrow" /></RouterLink>

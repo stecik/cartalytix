@@ -172,7 +172,7 @@ function changePage(value: number): void {
 
 <template>
   <div class="view-content">
-    <PageHeader :eyebrow="t('workspace')" :title="t('calculator')" :intro="t('calculatorIntro')" />
+    <PageHeader :title="t('calculator')" :intro="t('calculatorIntro')" />
     <FilterBar :filtered="filtered" @reset="resetFilters">
       <template #search><ReceiptSearch v-model="search" kind="item" :placeholder="t('searchItems')" @select="applySearch" /></template>
       <FilterField :label="t('dateFrom')">

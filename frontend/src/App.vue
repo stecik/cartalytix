@@ -134,7 +134,6 @@ watch(
       <RouterLink to="/" class="wordmark">
 <span class="brand-mark"><AppIcon name="mark" /></span>{{ t("brand") }}
 </RouterLink>
-      <span class="sidebar-label">{{ t("workspace") }}</span>
       <nav :aria-label="t('navigation')" class="desktop-nav">
         <RouterLink
           v-for="link in links"

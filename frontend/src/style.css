@@ -140,17 +140,11 @@ textarea {
   width: 27px;
   height: 27px;
 }
-.sidebar-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 1.8px;
-  color: var(--text-subtle);
-  margin: 66px 13px 18px;
-}
 .desktop-nav {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin-top: 66px;
 }
 .desktop-nav a {
   display: flex;

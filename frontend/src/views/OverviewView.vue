@@ -190,7 +190,7 @@ function selectDate(edge: "from" | "to", value: string): void {
 
 <template>
   <div class="view-content">
-    <PageHeader :eyebrow="t('workspace')" :title="t('overview')" :intro="t('overviewIntro')">
+    <PageHeader :title="t('overview')" :intro="t('overviewIntro')">
       <template #aside>
         <div class="period-controls">
           <template v-if="period === 'custom'">

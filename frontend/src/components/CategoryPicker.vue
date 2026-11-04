@@ -132,7 +132,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .category-picker { display: inline-block; max-width: 100%; }
-.category-picker-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; max-width: 220px; min-height: 34px; padding: 0 11px; border: 1px solid var(--border-overlay); border-radius: 999px; background: var(--bg-raised); color: var(--accent); font-size: 12px; text-align: left; }
+.category-picker-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; max-width: 220px; min-height: 34px; padding: 0 11px; border: 1px solid var(--border-overlay); border-radius: 6px; background: var(--bg-raised); color: var(--accent); font-size: 12px; text-align: left; }
 .category-picker-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .category-picker-trigger svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--text-muted); }
 .category-picker-trigger:hover { border-color: var(--control-hover); }

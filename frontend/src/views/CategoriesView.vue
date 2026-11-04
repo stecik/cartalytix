@@ -174,7 +174,7 @@ async function undoAssignment(): Promise<void> {
 
 <template>
   <div class="view-content categories-workspace">
-    <PageHeader :eyebrow="t('workspace')" :title="t('categories')" :intro="t('categoriesIntro')" />
+    <PageHeader :title="t('categories')" :intro="t('categoriesIntro')" />
     <div class="category-layout">
       <aside class="category-manager" :aria-label="t('manageCategories')">
         <div class="section-heading">
