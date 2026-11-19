@@ -18,6 +18,14 @@ def page(model: dict[str, object], errors: dict[str, str] | None = None) -> str:
     )
 
 
+def token_payload() -> dict[str, object]:
+    return {
+        "access_token": "header.eyJzdWIiOiJhY2NvdW50LWEifQ.signature",
+        "refresh_token": "private-refresh",
+        "expires_in": 1200,
+    }
+
+
 def test_password_mfa_and_code_exchange_handoff_token_only_once() -> None:
     state = ""
     grants: list[str] = []
@@ -44,13 +52,16 @@ def test_password_mfa_and_code_exchange_handoff_token_only_once() -> None:
         assert request.url.path == "/connect/token"
         grants.append(values.get("grant_type", [""])[0])
         assert values.get("code") == ["once"] and values.get("code_verifier")
-        return httpx.Response(200, json={"refresh_token": "private-refresh"})
+        return httpx.Response(200, json=token_payload())
 
     with httpx.Client(transport=httpx.MockTransport(provider)) as http:
         login = HttpLogin(http=http)
         assert login.begin().step == "password"
         assert login.credentials("owner@example.com", "private-password").step == "otp"
-        assert login.verify("123456").step == "completed"
+        status = login.verify("123456")
+        assert status.step == "completed" and status.tokens is not None
+        assert status.tokens.get("subject") == "account-a"
+        assert "private" not in repr(status)
         assert login.take_refresh_token() == "private-refresh"
         with pytest.raises(LoginError, match="token_already_consumed"):
             login.take_refresh_token()
@@ -148,3 +159,41 @@ def test_callback_state_and_post_redirects_are_checked(status: int) -> None:
         with pytest.raises(LoginError, match="callback_invalid|credential_redirect_rejected"):
             login.credentials("owner@example.com", "private-password")
     assert calls == ["/connect/authorize", "/Account/Login"]
+
+
+@pytest.mark.parametrize(
+    "payload,error",
+    [
+        ({"refresh_token": "private-refresh"}, "token_response_invalid"),
+        (
+            {
+                "access_token": "private-access",
+                "refresh_token": "private-refresh",
+                "expires_in": True,
+            },
+            "token_response_invalid",
+        ),
+        (
+            {
+                "access_token": "private-access",
+                "refresh_token": "private-refresh",
+                "expires_in": 1200,
+            },
+            "account_identity_unavailable",
+        ),
+    ],
+)
+def test_initial_token_response_must_supply_valid_tokens_and_account(
+    payload: dict[str, object],
+    error: str,
+) -> None:
+    def provider(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    with httpx.Client(transport=httpx.MockTransport(provider)) as http:
+        login = HttpLogin(http=http)
+        callback = f"com.lidlplus.app://callback?code=once&state={login._state}"
+        with pytest.raises(LoginError, match=f"^{error}$"):
+            login._finish(callback)
+        with pytest.raises(LoginError, match="token_already_consumed"):
+            login.take_refresh_token()

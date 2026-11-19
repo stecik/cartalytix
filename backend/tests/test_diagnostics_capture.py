@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 from test_api import application, login
 from test_api import client as client
 from test_api import engine as engine
-from test_lidl_login_sessions import FakeLogin
 from test_lidl_routes import HEADERS
 from test_lidl_routes import authorized as authorized
 from test_lidl_routes import create as create_lidl
@@ -27,7 +26,6 @@ from test_wolt_adapter import LINK
 from cartalytix.dependencies import Owner
 from cartalytix.models import DiagnosticEvent, ProviderConnection, RawDocument, SyncRun, User
 from cartalytix.providers.lidl.client import TokenData, exchange_refresh
-from cartalytix.providers.lidl.login_sessions import LoginSessions
 from cartalytix.providers.shoptet.client import ShoptetError
 from cartalytix.providers.wolt.client import WoltClient, WoltError
 from cartalytix.settings import Settings
@@ -216,7 +214,7 @@ def test_deleting_account_also_deletes_its_diagnostics(engine: Engine) -> None:
         (200, '{"refresh_token":"private-refresh"}', "invalid_provider_response"),
     ],
 )
-def test_lidl_login_refresh_failure_exports_safe_provider_reason(
+def test_lidl_authorization_refresh_failure_exports_safe_provider_reason(
     authorized: TestClient,
     engine: Engine,
     monkeypatch: pytest.MonkeyPatch,
@@ -224,8 +222,6 @@ def test_lidl_login_refresh_failure_exports_safe_provider_reason(
     body: str,
     reason: str | None,
 ) -> None:
-    app = application(authorized)
-    app.state.lidl_logins = LoginSessions(factory=lambda: FakeLogin(otp=False))
     identifier = create_lidl(authorized)
     with httpx.Client(
         transport=httpx.MockTransport(lambda _: httpx.Response(status, text=body))
@@ -236,8 +232,8 @@ def test_lidl_login_refresh_failure_exports_safe_provider_reason(
 
         monkeypatch.setattr("cartalytix.lidl_routes.exchange_refresh", exchange)
         response = authorized.post(
-            f"/api/v1/providers/lidl/connections/{identifier}/login",
-            json={"email": "owner@example.com", "password": "private-password"},
+            f"/api/v1/providers/lidl/connections/{identifier}/authorize",
+            json={"refresh_token": "private-refresh"},
             headers=HEADERS,
         )
     assert response.status_code == 422

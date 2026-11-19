@@ -1,5 +1,6 @@
 """Lidl account linking: refresh handoff and in-app login with OTP verification."""
 
+import json
 from typing import cast
 from uuid import UUID
 
@@ -77,7 +78,7 @@ def _store_authorization(
             raise HTTPException(422, "account_identity_unavailable")
         if old_subject is not None and old_subject != subject:
             raise HTTPException(409, "account_mismatch")
-        encrypted = cipher.encrypt(tokens.get("refresh_token", ""))
+        encrypted = cipher.encrypt(json.dumps(tokens))
     except CredentialError:
         raise HTTPException(503, "credentials_unavailable") from None
     except LidlError as error:
@@ -109,8 +110,26 @@ def _login_output(
     outcome: LoginOutcome, identifier: UUID, request: Request, owner_id: UUID, db: Session
 ) -> LidlLoginOutput:
     if outcome.step == "completed" and outcome.refresh_token:
-        connection = _store_authorization(
-            identifier, outcome.refresh_token, request, owner_id, db, outcome.email
+        tokens = outcome.tokens
+        subject = tokens.get("subject") if tokens is not None else None
+        if not subject:
+            raise HTTPException(422, "account_identity_unavailable")
+        engine = cast(Engine, request.app.state.engine)
+        old_subject = account_guard(engine, identifier, owner_id, PROVIDER)
+        try:
+            encrypted = TokenCipher(request.app.state.settings).encrypt(json.dumps(tokens))
+        except CredentialError:
+            raise HTTPException(503, "credentials_unavailable") from None
+        connection = persist_credentials(
+            engine,
+            db,
+            identifier,
+            owner_id,
+            PROVIDER,
+            old_subject,
+            subject,
+            encrypted,
+            outcome.email,
         )
         return LidlLoginOutput(step="completed", connection=connection)
     method = (outcome.method or "").casefold()

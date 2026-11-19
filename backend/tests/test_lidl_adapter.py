@@ -1,5 +1,6 @@
 """Lidl network boundary regressions using synthetic token responses."""
 
+import json
 from decimal import Decimal
 from typing import Any
 
@@ -22,7 +23,9 @@ def test_rotation_persisted_before_get_and_observed_list_request() -> None:
             assert request.url == "https://accounts.lidl.com/connect/token"
             assert b"grant_type=refresh_token" in request.content
             return httpx.Response(200, json=token())
-        assert saved == ["rotated"]
+        assert len(saved) == 1
+        assert json.loads(saved[0]).get("refresh_token") == "rotated"
+        assert json.loads(saved[0]).get("access_token") == "access"
         assert len(progress) == 2
         assert request.url.path == "/api/v2/CZ/tickets"
         assert request.url.params.get("pageNumber") == "2"
@@ -159,3 +162,65 @@ def test_original_json_and_decimal_prices_survive_http_decode() -> None:
         result = LidlClient("old", lambda _: None, http=http, delay=0).detail("one")
     assert result.get("unitPrice") == Decimal("999999999999.999999")
     assert getattr(result, "raw", None) == raw
+
+
+def test_cached_access_survives_new_clients_and_rotation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [1000.0]
+    monkeypatch.setattr("cartalytix.providers.lidl.client.time.time", lambda: now[0])
+    credentials = json.dumps(
+        {"access_token": "fresh-access", "refresh_token": "fresh-refresh", "expires_at": 2200.0}
+    )
+    saved: list[str] = []
+    refreshes: list[str] = []
+
+    def provider(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            refreshes.append(request.content.decode())
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "new-access",
+                    "refresh_token": "new-refresh",
+                    "expires_in": 1200,
+                },
+            )
+        expected = "fresh-access" if now[0] == 1000 else "new-access"
+        assert request.headers.get("Authorization") == f"Bearer {expected}"
+        return httpx.Response(200, json={"tickets": [], "totalCount": 0})
+
+    with httpx.Client(transport=httpx.MockTransport(provider)) as http:
+        for _ in range(2):
+            client = LidlClient(credentials, saved.append, http=http, delay=0)
+            assert client.page(1).get("tickets") == []
+            client.close()
+        assert not refreshes and not saved
+        now[0] = 2201.0
+        client = LidlClient(credentials, saved.append, http=http, delay=0)
+        assert client.page(1).get("tickets") == []
+        client.close()
+        stored = json.loads(saved[-1])
+        assert stored.get("refresh_token") == "new-refresh"
+        assert stored.get("access_token") == "new-access"
+        assert stored.get("expires_at") == 3401.0
+        next_client = LidlClient(saved[-1], saved.append, http=http, delay=0)
+        assert next_client.page(1).get("tickets") == []
+    assert len(refreshes) == 1
+    assert "refresh_token=fresh-refresh" in refreshes[0]
+    assert len(saved) == 1
+
+
+@pytest.mark.parametrize(
+    "credentials",
+    [
+        "{broken",
+        "{}",
+        '{"refresh_token":"private-refresh","expires_at":2200}',
+        '{"access_token":"private-access","refresh_token":"private-refresh","expires_at":true}',
+        '{"access_token":"private-access","refresh_token":"private-refresh","expires_at":"NaN"}',
+    ],
+)
+def test_malformed_cached_credentials_fail_closed(credentials: str) -> None:
+    with pytest.raises(LidlError, match="^auth_required$"):
+        LidlClient(credentials, lambda _: None)

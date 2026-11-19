@@ -5,14 +5,14 @@ import hashlib
 import hmac
 import json
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any, Literal
 from urllib.parse import parse_qs, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 
-from .client import AUTH, CLIENT_ID
+from .client import AUTH, CLIENT_ID, TokenData, parse_tokens
 
 CALLBACK = "com.lidlplus.app://callback"
 
@@ -25,6 +25,7 @@ class LoginError(RuntimeError):
 class Status:
     step: Literal["password", "otp", "completed"]
     method: str | None = None
+    tokens: TokenData | None = field(default=None, repr=False)
 
 
 class LoginPage(HTMLParser):
@@ -338,14 +339,13 @@ class HttpLogin:
         if response.status_code != 200:
             raise LoginError("token_exchange_failed")
         try:
-            payload = response.json()
-            refresh = payload.get("refresh_token")
-            if not isinstance(refresh, str) or not refresh:
-                raise ValueError
-        except ValueError, AttributeError:
+            tokens = parse_tokens(response.json())
+        except ValueError, TypeError, OverflowError:
             raise LoginError("token_response_invalid") from None
-        # The backend owns validation and rotation after the once-only handoff.
-        self._refresh = refresh
+        subject = tokens.get("subject")
+        if not subject or len(subject) > 256:
+            raise LoginError("account_identity_unavailable")
+        self._refresh = tokens.get("refresh_token", "")
         self._phase = "completed"
         self._page = None
-        return Status("completed")
+        return Status("completed", tokens=tokens)

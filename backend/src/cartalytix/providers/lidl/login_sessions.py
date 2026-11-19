@@ -8,6 +8,7 @@ from threading import Lock
 from typing import Literal, Protocol
 from uuid import UUID
 
+from .client import TokenData
 from .login import LidlLogin
 from .login_protocol import LoginError, Status
 
@@ -27,6 +28,7 @@ class LoginOutcome:
     method: str | None = None
     refresh_token: str | None = None
     email: str | None = None
+    tokens: TokenData | None = None
 
 
 @dataclass(repr=False)
@@ -137,7 +139,9 @@ class LoginSessions:
                 raise LoginError("login_flow_incomplete")
             token = session.client.take_refresh_token()
             self._discard(identifier, session)
-            return LoginOutcome("completed", refresh_token=token, email=session.email)
+            return LoginOutcome(
+                "completed", refresh_token=token, email=session.email, tokens=status.tokens
+            )
         except LoginError:
             self._discard(identifier, session)
             raise

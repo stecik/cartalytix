@@ -5,7 +5,7 @@ from urllib.parse import parse_qs
 
 import httpx
 import pytest
-from test_lidl_login_protocol import page
+from test_lidl_login_protocol import page, token_payload
 
 from cartalytix.providers.lidl.device import BrowserSession, bootstrap_browser
 from cartalytix.providers.lidl.login import LidlLogin
@@ -74,7 +74,7 @@ def test_browser_session_reaches_http_credentials_with_same_identity(
             )
         if request.url.path == "/connect/token":
             assert data["code"] == ["once"] and data.get("code_verifier")
-            return httpx.Response(200, json={"refresh_token": "private-refresh"})
+            return httpx.Response(200, json=token_payload())
         assert data["DeviceId"] == ["private-form-device"]
         assert data["Password"] == ["private-password"]
         assert data["ReCaptchaToken"] == ["private-captcha-1"]

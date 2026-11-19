@@ -57,6 +57,36 @@ def _response_subject(payload: dict[str, Any]) -> str | None:
     return None
 
 
+def parse_tokens(payload: object, refresh_token: str = "") -> TokenData:
+    """Validate tokens returned directly by Lidl's HTTPS token endpoint."""
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid token payload")
+    access = payload.get("access_token")
+    rotated = payload.get("refresh_token", refresh_token)
+    expires = payload.get("expires_in")
+    if not isinstance(access, str) or not access:
+        raise ValueError("Missing access token")
+    if (
+        not isinstance(rotated, str)
+        or not rotated
+        or isinstance(expires, bool)
+        or not isinstance(expires, str | int | float)
+    ):
+        raise ValueError("Invalid refresh token or expiry")
+    lifetime = float(expires)
+    if not math.isfinite(lifetime) or lifetime <= 0:
+        raise ValueError("Invalid token lifetime")
+    result: TokenData = {
+        "access_token": access,
+        "refresh_token": rotated,
+        "expires_at": time.time() + lifetime,
+    }
+    subject = _response_subject(payload)
+    if subject is not None:
+        result["subject"] = subject
+    return result
+
+
 def exchange_refresh(
     refresh_token: str,
     *,
@@ -91,19 +121,7 @@ def exchange_refresh(
                 "auth_required", diagnostic=auth_diagnostic("refresh", response=response)
             )
         try:
-            payload = response.json()
-            if not isinstance(payload, dict):
-                raise ValueError
-            access = payload.get("access_token")
-            rotated = payload.get("refresh_token", refresh_token)
-            expires = payload.get("expires_in")
-            if not isinstance(access, str) or not access:
-                raise ValueError
-            if not isinstance(rotated, str) or not rotated or isinstance(expires, bool):
-                raise ValueError
-            lifetime = float(expires)
-            if not math.isfinite(lifetime) or lifetime <= 0:
-                raise ValueError
+            return parse_tokens(response.json(), refresh_token)
         except ValueError, TypeError, OverflowError:
             raise LidlError(
                 "auth_required",
@@ -112,15 +130,6 @@ def exchange_refresh(
                     "reason": "invalid_provider_response",
                 },
             ) from None
-        result: TokenData = {
-            "access_token": access,
-            "refresh_token": rotated,
-            "expires_at": time.time() + lifetime,
-        }
-        subject = _response_subject(payload)
-        if subject is not None:
-            result["subject"] = subject
-        return result
     finally:
         if owned:
             transport.close()
@@ -159,6 +168,28 @@ class LidlClient:
             raise ValueError("Invalid request delay")
         self._refresh_token = refresh_token
         self._tokens: TokenData | None = None
+        if refresh_token.startswith("{"):
+            try:
+                cached = json.loads(refresh_token)
+                if not isinstance(cached, dict):
+                    raise ValueError
+                access, refresh = cached.get("access_token"), cached.get("refresh_token")
+                expires = cached.get("expires_at")
+                if not isinstance(access, str) or not access:
+                    raise ValueError
+                if not isinstance(refresh, str) or not refresh or isinstance(expires, bool):
+                    raise ValueError
+                expiry = float(expires)
+                if not math.isfinite(expiry) or expiry <= 0:
+                    raise ValueError
+                self._tokens = {
+                    "access_token": access,
+                    "refresh_token": refresh,
+                    "expires_at": expiry,
+                }
+                self._refresh_token = refresh
+            except ValueError, TypeError, OverflowError:
+                raise LidlError("auth_required") from None
         self._save_refresh = save_refresh
         self._owns_http = http is None
         self._http = http if http is not None else httpx.Client(timeout=30, follow_redirects=False)
@@ -178,7 +209,7 @@ class LidlClient:
         self._auth_failed = True
         updated = exchange_refresh(self._refresh_token, http=self._http, heartbeat=self._heartbeat)
         try:
-            self._save_refresh(updated.get("refresh_token", ""))
+            self._save_refresh(json.dumps(updated))
         except Exception:
             raise LidlError("auth_required") from None
         self._refresh_token = updated.get("refresh_token", "")

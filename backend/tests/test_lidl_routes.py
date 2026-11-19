@@ -1,5 +1,6 @@
 """Authenticated Lidl routes; synthetic credentials and isolated test database only."""
 
+import json
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -145,7 +146,9 @@ def test_authorize_encrypts_rotated_refresh_without_exposing_tokens(
         assert encrypted is not None
         assert b"rotated-private" not in encrypted
         assert (
-            TokenCipher(application(authorized).state.settings).decrypt(encrypted)
+            json.loads(TokenCipher(application(authorized).state.settings).decrypt(encrypted)).get(
+                "refresh_token"
+            )
             == "rotated-private"
         )
 

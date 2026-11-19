@@ -21,12 +21,32 @@ class FakeLogin:
         assert email == "owner@example.com" and password == "private-password"
         if self.fail:
             raise LoginError("login_request_uncertain")
-        return Status("otp", "Email") if self.otp else Status("completed")
+        return (
+            Status("otp", "Email")
+            if self.otp
+            else Status(
+                "completed",
+                tokens={
+                    "access_token": "private-access",
+                    "refresh_token": "private-refresh",
+                    "expires_at": 9999999999,
+                    "subject": "account-a",
+                },
+            )
+        )
 
     def verify(self, code: str) -> Status:
         self.posts += 1
         assert code == "123456"
-        return Status("completed")
+        return Status(
+            "completed",
+            tokens={
+                "access_token": "private-access",
+                "refresh_token": "private-refresh",
+                "expires_at": 9999999999,
+                "subject": "account-a",
+            },
+        )
 
     def take_refresh_token(self) -> str:
         return "private-refresh"
@@ -48,6 +68,8 @@ def test_mfa_is_bound_to_owner_and_connection_and_consumed_once() -> None:
     assert not login.closed
     completed = sessions.verify(owner, connection, outcome.flow_id, "123456")
     assert completed.step == "completed" and completed.refresh_token == "private-refresh"
+    assert completed.tokens is not None and completed.tokens.get("subject") == "account-a"
+    assert "private" not in repr(completed)
     assert login.closed
     with pytest.raises(LoginError, match="login_expired"):
         sessions.verify(owner, connection, outcome.flow_id, "123456")

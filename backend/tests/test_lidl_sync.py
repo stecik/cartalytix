@@ -1,5 +1,6 @@
 """Durable receipt synchronization regressions; only synthetic provider data."""
 
+import json
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -588,5 +589,8 @@ def test_refresh_connection_failure_recovers_on_next_scheduled_sync(
         assert stored is not None and stored.status == "completed"
         assert linked is not None and linked.status == "connected"
         assert linked.encrypted_refresh_token is not None
-        assert TokenCipher(config).decrypt(linked.encrypted_refresh_token) == "rotated"
+        stored = TokenCipher(config).decrypt(linked.encrypted_refresh_token)
+        assert (
+            json.loads(stored).get("refresh_token") if provider == "lidl" else stored
+        ) == "rotated"
     assert len(refreshes) == 1 and "refresh_token=old" in refreshes[0]
