@@ -28,6 +28,7 @@ from cartalytix.models import (
     User,
 )
 from cartalytix.providers.lidl.client import LidlClient
+from cartalytix.providers.wolt.client import WoltClient
 from cartalytix.settings import Settings
 from cartalytix.sync import (
     SyncError,
@@ -524,3 +525,68 @@ def test_original_response_bytes_are_archived_before_normalization(
         assert stored is not None and stored.status == "completed"
         document = db.scalar(select(RawDocument).where(RawDocument.external_id == "one"))
         assert document is not None and document.payload == raw
+
+
+@pytest.mark.parametrize("provider", ["lidl", "wolt"])
+@pytest.mark.parametrize("failure", [httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout])
+def test_refresh_connection_failure_recovers_on_next_scheduled_sync(
+    database: tuple[Engine, Settings, UUID, UUID],
+    provider: str,
+    failure: type[httpx.RequestError],
+) -> None:
+    engine, config, owner, connection = database
+    with Session(engine) as db, db.begin():
+        linked = db.get(ProviderConnection, connection)
+        assert linked is not None
+        linked.provider = provider
+        linked.sync_interval_minutes = 60
+        linked.next_sync_at = datetime.now(UTC) - timedelta(minutes=1)
+    unavailable = True
+    refreshes: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            if unavailable:
+                raise failure("private connection details", request=request)
+            refreshes.append(request.content.decode())
+            return httpx.Response(
+                200,
+                json={"access_token": "access", "refresh_token": "rotated", "expires_in": 3600},
+            )
+        return httpx.Response(200, json={"tickets": [], "totalCount": 0, "orders": []})
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as http:
+
+        def factory(
+            refresh_token: str,
+            save_refresh: Callable[[str], None],
+            *,
+            heartbeat: Callable[[], None] | None = None,
+        ) -> LidlClient | WoltClient:
+            client_type = LidlClient if provider == "lidl" else WoltClient
+            return client_type(refresh_token, save_refresh, http=http, delay=0, heartbeat=heartbeat)
+
+        first = enqueue_sync(engine, connection, owner)
+        run_sync(engine, first.id, config, client_factory=factory)
+        with Session(engine) as db:
+            stored = db.get(SyncRun, first.id)
+            linked = db.get(ProviderConnection, connection)
+            assert stored is not None and stored.error_code == "provider_unavailable"
+            assert linked is not None and linked.status == "error"
+            assert linked.encrypted_refresh_token is not None
+            assert TokenCipher(config).decrypt(linked.encrypted_refresh_token) == "old"
+        unavailable = False
+        assert schedule_due(engine) == 1
+        with Session(engine) as db:
+            scheduled = db.scalar(select(SyncRun).where(SyncRun.status == "pending"))
+            assert scheduled is not None
+            scheduled_id = scheduled.id
+        run_sync(engine, scheduled_id, config, client_factory=factory)
+    with Session(engine) as db:
+        stored = db.get(SyncRun, scheduled_id)
+        linked = db.get(ProviderConnection, connection)
+        assert stored is not None and stored.status == "completed"
+        assert linked is not None and linked.status == "connected"
+        assert linked.encrypted_refresh_token is not None
+        assert TokenCipher(config).decrypt(linked.encrypted_refresh_token) == "rotated"
+    assert len(refreshes) == 1 and "refresh_token=old" in refreshes[0]

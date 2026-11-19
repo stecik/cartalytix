@@ -159,17 +159,29 @@ def test_refresh_rejection_keeps_safe_diagnostic_without_retry() -> None:
     assert calls == 1
 
 
-def test_refresh_transport_failure_keeps_only_exception_kind() -> None:
+@pytest.mark.parametrize(
+    "failure,code",
+    [
+        (httpx.ConnectError, "provider_unavailable"),
+        (httpx.ConnectTimeout, "provider_unavailable"),
+        (httpx.PoolTimeout, "provider_unavailable"),
+        (httpx.ReadTimeout, "auth_required"),
+        (httpx.WriteError, "auth_required"),
+    ],
+)
+def test_refresh_transport_failure_keeps_only_exception_kind(
+    failure: type[httpx.RequestError], code: str
+) -> None:
     def handle(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectTimeout("secret refresh token", request=request)
+        raise failure("secret refresh token", request=request)
 
     with (
         httpx.Client(transport=httpx.MockTransport(handle)) as http,
         pytest.raises(WoltError) as error,
     ):
         WoltClient("r1", lambda _: None, http=http, delay=0).renew()
-    assert error.value.code == "auth_required"
-    assert error.value.diagnostic == {"phase": "refresh", "transport": "ConnectTimeout"}
+    assert error.value.code == code
+    assert error.value.diagnostic == {"phase": "refresh", "transport": failure.__name__}
 
 
 def test_save_refresh_failure_keeps_safe_diagnostic_without_retry() -> None:

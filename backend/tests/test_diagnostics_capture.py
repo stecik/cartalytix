@@ -1,9 +1,11 @@
 """Technical diagnostics omit exception messages, credentials and request values."""
 
+import io
 import json
 from collections.abc import Callable
 from typing import Never, cast
 from uuid import UUID
+from zipfile import ZipFile
 
 import httpx
 import pytest
@@ -14,14 +16,18 @@ from sqlalchemy.orm import Session
 from test_api import application, login
 from test_api import client as client
 from test_api import engine as engine
+from test_lidl_login_sessions import FakeLogin
 from test_lidl_routes import HEADERS
 from test_lidl_routes import authorized as authorized
+from test_lidl_routes import create as create_lidl
 from test_lidl_sync import Provider, detail
 from test_lidl_sync import database as database
 from test_wolt_adapter import LINK
 
 from cartalytix.dependencies import Owner
 from cartalytix.models import DiagnosticEvent, ProviderConnection, RawDocument, SyncRun, User
+from cartalytix.providers.lidl.client import TokenData, exchange_refresh
+from cartalytix.providers.lidl.login_sessions import LoginSessions
 from cartalytix.providers.shoptet.client import ShoptetError
 from cartalytix.providers.wolt.client import WoltClient, WoltError
 from cartalytix.settings import Settings
@@ -200,3 +206,60 @@ def test_deleting_account_also_deletes_its_diagnostics(engine: Engine) -> None:
         assert (
             db.scalar(select(DiagnosticEvent).where(DiagnosticEvent.owner_id == owner_id)) is None
         )
+
+
+@pytest.mark.parametrize(
+    "status,body,reason",
+    [
+        (400, '{"error":"invalid_grant","refresh_token":"private-refresh"}', "invalid_grant"),
+        (403, "private-provider-body", None),
+        (200, '{"refresh_token":"private-refresh"}', "invalid_provider_response"),
+    ],
+)
+def test_lidl_login_refresh_failure_exports_safe_provider_reason(
+    authorized: TestClient,
+    engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    body: str,
+    reason: str | None,
+) -> None:
+    app = application(authorized)
+    app.state.lidl_logins = LoginSessions(factory=lambda: FakeLogin(otp=False))
+    identifier = create_lidl(authorized)
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(status, text=body))
+    ) as http:
+
+        def exchange(refresh_token: str) -> TokenData:
+            return exchange_refresh(refresh_token, http=http)
+
+        monkeypatch.setattr("cartalytix.lidl_routes.exchange_refresh", exchange)
+        response = authorized.post(
+            f"/api/v1/providers/lidl/connections/{identifier}/login",
+            json={"email": "owner@example.com", "password": "private-password"},
+            headers=HEADERS,
+        )
+    assert response.status_code == 422
+    assert response.json().get("error", {}).get("code") == "auth_required"
+    assert "private" not in response.text
+    expected: dict[str, str | int] = {"phase": "refresh", "status": status}
+    if reason is not None:
+        expected["reason"] = reason
+    with Session(engine) as db:
+        event = db.scalar(select(DiagnosticEvent))
+        assert event is not None and event.owner_id is not None
+        assert (event.component, event.code) == ("api", "auth_required")
+        assert event.context.get("provider") == "lidl"
+        assert event.context.get("connection_id") == identifier
+        assert event.context.get("auth") == expected
+        assert "private" not in json.dumps(event.context)
+    bundle = authorized.get("/api/v1/diagnostics/download?technical=true&imports=false")
+    assert bundle.status_code == 200
+    with ZipFile(io.BytesIO(bundle.content)) as archive:
+        raw = archive.read("technical-errors.json")
+        events = json.loads(raw).get("events", [])
+        assert len(events) == 1
+        assert events[0].get("context", {}).get("auth") == expected
+        assert events[0].get("context", {}).get("provider") == "lidl"
+        assert b"private" not in raw

@@ -60,7 +60,7 @@ def capture_error(
         context["status"] = status
     if diagnostic := safe_auth_diagnostic(auth):
         context["auth"] = diagnostic
-        if provider in {"wolt", "nejkafe", "fermato"}:
+        if provider in {"lidl", "wolt", "nejkafe", "fermato"}:
             context["provider"] = provider
         if connection_id is not None:
             context["connection_id"] = str(connection_id)

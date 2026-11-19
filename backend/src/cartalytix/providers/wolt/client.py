@@ -164,6 +164,11 @@ class WoltClient:
                 headers=HEADERS,
                 follow_redirects=False,
             )
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as error:
+            # No token request was sent; the next scheduled sync can safely try again.
+            raise WoltError(
+                "provider_unavailable", diagnostic=auth_diagnostic("refresh", error=error)
+            ) from None
         except httpx.HTTPError as error:
             raise WoltError(
                 "auth_required", diagnostic=auth_diagnostic("refresh", error=error)

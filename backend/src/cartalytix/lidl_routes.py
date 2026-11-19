@@ -16,6 +16,7 @@ from cartalytix.connection_routes import (
 )
 from cartalytix.credentials import CredentialError, TokenCipher
 from cartalytix.dependencies import Db, Owner
+from cartalytix.diagnostics import capture_error
 from cartalytix.providers.lidl.client import LidlError, exchange_refresh
 from cartalytix.providers.lidl.login_protocol import LoginError
 from cartalytix.providers.lidl.login_sessions import LoginOutcome, LoginSessions
@@ -80,6 +81,17 @@ def _store_authorization(
     except CredentialError:
         raise HTTPException(503, "credentials_unavailable") from None
     except LidlError as error:
+        if error.diagnostic:
+            capture_error(
+                engine,
+                owner_id,
+                "api",
+                error.code,
+                error=error,
+                auth=error.diagnostic,
+                provider=PROVIDER,
+                connection_id=identifier,
+            )
         raise HTTPException(422, error.code) from None
     return persist_credentials(
         engine, db, identifier, owner_id, PROVIDER, old_subject, subject, encrypted, label

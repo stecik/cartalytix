@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 import httpx
 
-from cartalytix.providers.common import ProviderError, ProviderPayload
+from cartalytix.providers.common import ProviderError, ProviderPayload, auth_diagnostic
 
 AUTH = "https://accounts.lidl.com"
 TICKETS = "https://tickets.lidlplus.com/api"
@@ -77,10 +77,19 @@ def exchange_refresh(
                 auth=(CLIENT_ID, "secret"),
                 follow_redirects=False,
             )
-        except httpx.HTTPError:
-            raise LidlError("auth_required") from None
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as error:
+            # No token request was sent; the next scheduled sync can safely try again.
+            raise LidlError(
+                "provider_unavailable", diagnostic=auth_diagnostic("refresh", error=error)
+            ) from None
+        except httpx.HTTPError as error:
+            raise LidlError(
+                "auth_required", diagnostic=auth_diagnostic("refresh", error=error)
+            ) from None
         if response.status_code != 200:
-            raise LidlError("auth_required")
+            raise LidlError(
+                "auth_required", diagnostic=auth_diagnostic("refresh", response=response)
+            )
         try:
             payload = response.json()
             if not isinstance(payload, dict):
@@ -96,7 +105,13 @@ def exchange_refresh(
             if not math.isfinite(lifetime) or lifetime <= 0:
                 raise ValueError
         except ValueError, TypeError, OverflowError:
-            raise LidlError("auth_required") from None
+            raise LidlError(
+                "auth_required",
+                diagnostic={
+                    **auth_diagnostic("refresh", response=response),
+                    "reason": "invalid_provider_response",
+                },
+            ) from None
         result: TokenData = {
             "access_token": access,
             "refresh_token": rotated,
