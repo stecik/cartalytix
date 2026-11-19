@@ -95,10 +95,19 @@ def next_sync(interval: int | None) -> datetime | None:
     return datetime.now(UTC) + timedelta(minutes=interval) if interval is not None else None
 
 
-def account_guard(engine: Engine, identifier: UUID, owner_id: UUID, provider: str) -> str | None:
+def account_guard(
+    engine: Engine,
+    identifier: UUID,
+    owner_id: UUID,
+    provider: str,
+    *,
+    login_revision: int | None = None,
+) -> str | None:
     """Return the bound account; history without a binding can never be re-linked safely."""
     with Session(engine) as snapshot:
         connection = owned_connection(snapshot, identifier, owner_id, provider)
+        if login_revision is not None and connection.login_revision != login_revision:
+            raise HTTPException(409, "login_expired")
         old_subject = connection.account_subject or None
         if (
             old_subject is None
@@ -121,6 +130,8 @@ def persist_credentials(
     subject: str,
     encrypted: bytes,
     label: str | None = None,
+    *,
+    login_revision: int | None = None,
 ) -> ConnectionOutput:
     """Caller holds the connection advisory lock through network login and persistence."""
     if not subject or len(subject) > 256:
@@ -129,6 +140,10 @@ def persist_credentials(
         raise HTTPException(409, "account_mismatch")
     with Session(engine, expire_on_commit=False) as persistence, persistence.begin():
         connection = owned_connection(persistence, identifier, owner_id, provider)
+        if login_revision is not None:
+            if connection.login_revision != login_revision:
+                raise HTTPException(409, "login_expired")
+            connection.login_revision += 1
         connection.encrypted_refresh_token = encrypted
         connection.account_subject = subject
         if label:
@@ -143,8 +158,10 @@ def persist_credentials(
 
 @router.post("", response_model=ConnectionOutput, status_code=201)
 def create_connection(
-    provider: ProviderCode, payload: ConnectionInput, owner: Owner, db: Db
+    provider: ProviderCode, payload: ConnectionInput, request: Request, owner: Owner, db: Db
 ) -> ConnectionOutput:
+    if provider == ProviderCode.ALBERT and not request.app.state.settings.albert_configured:
+        raise HTTPException(503, "credentials_unavailable")
     # Serialize the owner cap across concurrent requests, without lazy relationships.
     db.scalar(select(User).where(User.id == owner.id).with_for_update())
     count = (
@@ -235,6 +252,8 @@ def _manage_connection(
             db.commit()
             return None
         if action == "disconnect":
+            if provider == ProviderCode.ALBERT:
+                connection.login_revision += 1
             connection.encrypted_refresh_token = None
             # Keep the identity binding while its purchase history remains stored.
             connection.status = "disconnected"

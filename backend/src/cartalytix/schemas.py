@@ -175,6 +175,7 @@ class ProviderCode(StrEnum):
     KAUFLAND = "kaufland"
     FOODORA = "foodora"
     GLOBUS = "globus"
+    ALBERT = "albert"
 
 
 class FoodoraAuthorizeInput(BaseModel):
@@ -248,6 +249,25 @@ class LidlLoginInput(BaseModel):
     model_config = {"extra": "forbid"}
     email: EmailStr
     password: SecretStr = Field(min_length=1, max_length=1024)
+
+
+class AlbertLoginInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    phone: str = Field(pattern=r"^\+420[0-9]{9}$")
+
+
+class AlbertVerificationInput(BaseModel):
+    model_config = {"extra": "forbid"}
+    flow_id: SecretStr = Field(min_length=1, max_length=4096)
+    code: SecretStr = Field(min_length=6, max_length=6)
+
+    @field_validator("code")
+    @classmethod
+    def require_digits(cls, value: SecretStr) -> SecretStr:
+        code = value.get_secret_value()
+        if not code.isascii() or not code.isdigit():
+            raise ValueError("Invalid verification code")
+        return value
 
 
 class BoltLoginInput(BaseModel):
@@ -678,6 +698,7 @@ class ProviderOutput(BaseModel):
     code: str
     name: str
     status: Literal["available", "not_implemented"] = "not_implemented"
+    can_connect: bool = True
     connection_count: int = 0
 
 

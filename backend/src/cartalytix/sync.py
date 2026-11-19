@@ -28,6 +28,9 @@ from cartalytix.models import (
     ReceiptItem,
     SyncRun,
 )
+from cartalytix.providers.albert.client import AlbertClient
+from cartalytix.providers.albert.normalization import PARSER_VERSION as ALBERT_PARSER_VERSION
+from cartalytix.providers.albert.normalization import validate_receipt as validate_albert_receipt
 from cartalytix.providers.bolt.client import BoltClient
 from cartalytix.providers.bolt.normalization import PARSER_VERSION as BOLT_PARSER_VERSION
 from cartalytix.providers.bolt.normalization import validate_order as validate_bolt_order
@@ -160,6 +163,16 @@ PROVIDERS: dict[str, ProviderSpec] = {
         id_key="purchase_id",
         detail_id=lambda detail: detail.get("order_id"),
         normalize=validate_wolt_order,
+    ),
+    "albert": ProviderSpec(
+        merchant="Albert",
+        parser_version=ALBERT_PARSER_VERSION,
+        client=AlbertClient,
+        list_key="receipts",
+        total_key="totalCount",
+        id_key="receiptNumber",
+        detail_id=lambda detail: detail.get("receiptNumber"),
+        normalize=validate_albert_receipt,
     ),
     "kaufland": ProviderSpec(
         merchant="Kaufland",

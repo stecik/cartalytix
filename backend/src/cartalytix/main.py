@@ -19,6 +19,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from cartalytix.admin_routes import bootstrap_admin
 from cartalytix.admin_routes import router as admin_router
+from cartalytix.albert_routes import router as albert_router
 from cartalytix.bolt_routes import router as bolt_router
 from cartalytix.category_routes import router as category_router
 from cartalytix.change_routes import router as change_router
@@ -196,6 +197,7 @@ def create_app(
     app.include_router(lidl_router)
     app.include_router(mixit_router)
     app.include_router(bolt_router)
+    app.include_router(albert_router)
     app.include_router(wolt_router)
     app.include_router(kaufland_router)
     app.include_router(globus_router)
@@ -444,6 +446,9 @@ def create_app(
                     status="available"
                     if code in ProviderCode and config.token_key_file
                     else "not_implemented",
+                    can_connect=code in ProviderCode
+                    and bool(config.token_key_file)
+                    and (code != "albert" or config.albert_configured),
                     connection_count=counts.get(code, 0),
                 )
                 for code, name in PROVIDERS

@@ -153,6 +153,7 @@ class ProviderConnection(Base):
     name: Mapped[str] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(32), default="not_connected")
     encrypted_refresh_token: Mapped[bytes | None] = mapped_column(LargeBinary)
+    login_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     account_subject: Mapped[str | None] = mapped_column(String(256))
     account_label: Mapped[str | None] = mapped_column(String(254))
     sync_interval_minutes: Mapped[int | None] = mapped_column(Integer)

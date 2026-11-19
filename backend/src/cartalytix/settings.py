@@ -27,11 +27,37 @@ class Settings(BaseSettings):
     login_window_seconds: int = Field(default=900, ge=60)
     token_key_file: str | None = None
     bootstrap_password: SecretStr | None = None
+    albert_client_username: SecretStr | None = None
+    albert_client_password: SecretStr | None = None
+    albert_verification_salt: SecretStr | None = None
+    albert_login_salt: SecretStr | None = None
     # Sync runs that imported receipts are kept forever; the rest only this many days.
     sync_run_empty_retention_days: int = Field(default=14, ge=1)
     sync_run_failed_retention_days: int = Field(default=90, ge=1)
     # Public origin of this instance; enables the MCP connector. Never derived from Host headers.
     public_url: AnyHttpUrl | None = None
+
+    @property
+    def albert_configured(self) -> bool:
+        return all(
+            (
+                self.albert_client_username,
+                self.albert_client_password,
+                self.albert_verification_salt,
+                self.albert_login_salt,
+            )
+        )
+
+    @field_validator(
+        "albert_client_username",
+        "albert_client_password",
+        "albert_verification_salt",
+        "albert_login_salt",
+        mode="before",
+    )
+    @classmethod
+    def optional_albert_secret(cls, value: object) -> object:
+        return None if value == "" else value
 
     @field_validator("public_url", mode="before")
     @classmethod

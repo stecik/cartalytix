@@ -62,8 +62,13 @@ const offered = computed(() => searching.value
   ? unconnected.value.filter((provider) => matches(label(provider), search.value))
   : [...unconnected.value].sort((left, right) => right.connection_count - left.connection_count).slice(0, POPULAR_LIMIT));
 const upcoming = computed(() => sorted.value.filter((provider) => provider.status !== "available" && matches(label(provider), search.value)));
-const addTitles: Record<string, string> = { lidl: "addLidlAccount", mixit: "addMixitAccount", fermato: "addFermatoAccount", nejkafe: "addNejkafeAccount", bolt: "addBoltAccount", wolt: "addWoltAccount", kaufland: "addKauflandAccount", globus: "addGlobusAccount", foodora: "addFoodoraAccount" };
-function openAdd(provider: string): void { name.value = ""; createConnection.reset(); adding.value = provider; }
+const addTitles: Record<string, string> = { lidl: "addLidlAccount", mixit: "addMixitAccount", fermato: "addFermatoAccount", nejkafe: "addNejkafeAccount", bolt: "addBoltAccount", albert: "addAlbertAccount", wolt: "addWoltAccount", kaufland: "addKauflandAccount", globus: "addGlobusAccount", foodora: "addFoodoraAccount" };
+function openAdd(provider: Provider): void {
+  if (provider.can_connect === false) return;
+  name.value = "";
+  createConnection.reset();
+  adding.value = provider.code;
+}
 const createConnection = useMutation({
   mutationFn: (provider: string) => request<Connection>(`/providers/${provider}/connections`, {
     method: "POST", body: JSON.stringify({ name: name.value.trim() }),
@@ -85,12 +90,16 @@ const createConnection = useMutation({
       <AppCard v-for="provider in connected" :key="provider.code" class="connected-store" :aria-labelledby="`store-${provider.code}`">
         <template #header>
           <img v-if="providerLogos[provider.code]" :src="providerLogos[provider.code]" class="provider-logo" width="38" height="38" alt="" />
-          <div class="store-copy"><h2 :id="`store-${provider.code}`">{{ label(provider) }}</h2><p>{{ t('accountCount', accounts(provider.code).length) }}</p></div>
-          <AppButton v-if="addTitles[provider.code]" size="sm" class="add-account" @click="openAdd(provider.code)"><AppIcon name="plus" />{{ t("addAccount") }}</AppButton>
+          <div class="store-copy">
+            <h2 :id="`store-${provider.code}`">{{ label(provider) }}</h2>
+            <p>{{ t('accountCount', accounts(provider.code).length) }}</p>
+            <p v-if="provider.code === 'albert' && provider.can_connect === false">{{ t("albertCredentialsUnavailable") }}</p>
+          </div>
+          <AppButton v-if="addTitles[provider.code]" size="sm" class="add-account" :disabled="provider.can_connect === false" @click="openAdd(provider)"><AppIcon name="plus" />{{ t("addAccount") }}</AppButton>
         </template>
         <ul class="account-list">
           <li v-for="connection in accounts(provider.code)" :key="connection.id">
-            <ConnectionAccount v-if="addTitles[connection.provider]" :connection="connection" :initial-linking="connection.id === createdId" />
+            <ConnectionAccount v-if="addTitles[connection.provider]" :connection="connection" :initial-linking="connection.id === createdId" :can-connect="provider.can_connect !== false" />
           </li>
         </ul>
       </AppCard>
@@ -102,8 +111,11 @@ const createConnection = useMutation({
         <ul v-if="offered.length" class="store-options">
           <li v-for="provider in offered" :key="provider.code" class="store-option">
             <img v-if="providerLogos[provider.code]" :src="providerLogos[provider.code]" width="38" height="30" alt="" />
-            <span>{{ label(provider) }}</span>
-            <AppButton v-if="addTitles[provider.code]" size="sm" class="add-account" @click="openAdd(provider.code)"><AppIcon name="plus" />{{ t("addAccount") }}</AppButton>
+            <div class="store-copy">
+              <span>{{ label(provider) }}</span>
+              <p v-if="provider.code === 'albert' && provider.can_connect === false">{{ t("albertCredentialsUnavailable") }}</p>
+            </div>
+            <AppButton v-if="addTitles[provider.code]" size="sm" class="add-account" :disabled="provider.can_connect === false" @click="openAdd(provider)"><AppIcon name="plus" />{{ t("addAccount") }}</AppButton>
           </li>
         </ul>
         <p v-else-if="searching && !upcoming.length" class="section-note" role="status">{{ t("noStoresFound") }}</p>
@@ -153,7 +165,7 @@ const createConnection = useMutation({
 .store-options { list-style: none; margin: 8px 0 0; padding: 0; }
 .store-option { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--border); font-size: 13px; }
 .store-option img { object-fit: contain; flex-shrink: 0; }
-.store-option span { flex: 1; min-width: 0; font-weight: 500; }
+.store-option .store-copy span { font-weight: 500; }
 .store-picker .section-note { margin-top: 14px; }
 .upcoming-stores { margin-top: 32px; padding: 20px 22px 6px; border: 1px dashed var(--border-card); border-radius: 12px; }
 .upcoming-stores h2 { font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 12px; }

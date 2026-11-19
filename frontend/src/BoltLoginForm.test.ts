@@ -1,13 +1,13 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import BoltLoginForm from "./components/BoltLoginForm.vue";
+import SmsLoginForm from "./components/SmsLoginForm.vue";
 import { createAppI18n } from "./i18n";
 
 afterEach(() => vi.unstubAllGlobals());
 
 function render() {
-  return mount(BoltLoginForm, {
-    props: { connectionId: "account-1" },
+  return mount(SmsLoginForm, {
+    props: { connectionId: "account-1", provider: "bolt" },
     global: { plugins: [createAppI18n("en")] },
   });
 }

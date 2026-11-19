@@ -399,6 +399,7 @@ export interface Provider {
   code: string;
   name: string;
   status: string;
+  can_connect?: boolean;
   connection_count: number;
 }
 

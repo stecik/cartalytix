@@ -20,7 +20,7 @@ function render(items: object[] = [], providers: object[] = defaultProviders) {
     const path = String(input);
     if (path.endsWith("/providers")) return Response.json({ items: providers });
     if (init?.method === "POST" && path.endsWith("/connections")) {
-      return Response.json({ ...account, ...JSON.parse(String(init.body)), status: "not_connected" }, { status: 201 });
+      return Response.json({ ...account, ...JSON.parse(String(init.body)), provider: path.split("/").at(-2), status: "not_connected" }, { status: 201 });
     }
     return Response.json({ items });
   });
@@ -32,6 +32,123 @@ function render(items: object[] = [], providers: object[] = defaultProviders) {
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
+describe("Albert connections", () => {
+  const providers = [{ code: "albert", name: "Albert", status: "available", connection_count: 0 }];
+  const loginEndpoint = "/api/v1/providers/albert/connections/account-1/login";
+  const phoneInput = 'input[type="tel"]';
+  const codeInput = 'input[autocomplete="one-time-code"]';
+
+  async function openLogin() {
+    const session = render([{ ...account, provider: "albert", status: "not_connected" }], providers);
+    await flushPromises();
+    await session.wrapper.get(".account-toggle").trigger("click");
+    const connect = session.wrapper.findAll("button").find((button) => button.text() === "Connect account");
+    await connect!.trigger("click");
+    return session;
+  }
+
+  it("disables adding an Albert account when sign-in is unconfigured", async () => {
+    const { wrapper, fetcher, client } = render([], [{ ...providers[0], can_connect: false }]);
+    await flushPromises();
+    const addAccount = wrapper.get<HTMLButtonElement>(".store-option .add-account");
+    expect(addAccount.element.disabled).toBe(true);
+    expect(wrapper.get(".store-option").text()).toContain("Albert sign-in is unavailable");
+    await addAccount.trigger("click");
+    expect(wrapper.find("dialog").exists()).toBe(false);
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    wrapper.unmount();
+    client.clear();
+  });
+
+  it("keeps existing Albert accounts manageable while sign-in is unconfigured", async () => {
+    const { wrapper, client } = render([{ ...account, provider: "albert", status: "not_connected" }], [
+      { ...providers[0], can_connect: false },
+    ]);
+    await flushPromises();
+    expect(wrapper.get(".connected-store h2").text()).toBe("Albert");
+    expect(wrapper.get<HTMLButtonElement>(".connected-store .add-account").element.disabled).toBe(true);
+    await wrapper.get(".account-toggle").trigger("click");
+    const connect = wrapper.get<HTMLButtonElement>(".reconnect-note button");
+    expect(connect.element.disabled).toBe(true);
+    await connect.trigger("click");
+    expect(wrapper.find(phoneInput).exists()).toBe(false);
+    await wrapper.get('[role="tab"][data-tab="manage"]').trigger("click");
+    expect(wrapper.get<HTMLInputElement>('input[id="name-account-1"]').element.value).toBe("Family");
+    expect(wrapper.get<HTMLButtonElement>('button[data-action="clear-data"]').element.disabled).toBe(false);
+    wrapper.unmount();
+    client.clear();
+  });
+
+  it("creates an Albert account and links it with a six-digit SMS code", async () => {
+    const { wrapper, fetcher, client } = render([], providers);
+    await flushPromises();
+    await wrapper.get(".store-option .add-account").trigger("click");
+    expect(wrapper.get("dialog").text()).toContain("Add Albert account");
+    await wrapper.get('input[name="connection-name"]').setValue("Weekly groceries");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/providers/albert/connections", expect.objectContaining({
+      method: "POST", body: JSON.stringify({ name: "Weekly groceries" }),
+    }));
+    expect(wrapper.text()).toContain("encrypted refresh token");
+    expect(wrapper.get<HTMLInputElement>(phoneInput).element.value).toBe("+420");
+    await wrapper.get(phoneInput).setValue("+420 777 123 456");
+    fetcher.mockResolvedValueOnce(Response.json({ flow_id: "opaque-flow" }));
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(fetcher).toHaveBeenLastCalledWith(loginEndpoint, expect.objectContaining({
+      method: "POST", body: JSON.stringify({ phone: "+420777123456" }),
+    }));
+    const otp = wrapper.get<HTMLInputElement>(codeInput);
+    expect(otp.attributes("inputmode")).toBe("numeric");
+    expect(otp.attributes("maxlength")).toBe("6");
+    fetcher.mockResolvedValueOnce(Response.json({ ...account, provider: "albert", name: "Weekly groceries" }));
+    await otp.setValue("012345");
+    await wrapper.get("form").trigger("submit");
+    expect(otp.element.value).toBe("");
+    await flushPromises();
+    expect(fetcher).toHaveBeenLastCalledWith(`${loginEndpoint}/verify`, expect.objectContaining({
+      method: "POST", body: JSON.stringify({ flow_id: "opaque-flow", code: "012345" }),
+    }));
+    expect(wrapper.find(codeInput).exists()).toBe(false);
+    expect(wrapper.get(".account-status").text()).toBe("Connected");
+    expect(JSON.stringify(client.getQueriesData({}))).not.toContain("opaque-flow");
+    expect(client.getMutationCache().getAll()).toHaveLength(1);
+    wrapper.unmount();
+    client.clear();
+  });
+
+  it("rejects invalid input locally, clears rejected codes, and restarts expired verification", async () => {
+    const { wrapper, fetcher, client } = await openLogin();
+    await wrapper.get(phoneInput).setValue("+420777123456");
+    fetcher.mockResolvedValueOnce(Response.json({ flow_id: "opaque-flow" }));
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    const otp = wrapper.get<HTMLInputElement>(codeInput);
+    await otp.setValue("12x456");
+    expect(otp.element.checkValidity()).toBe(false);
+    const callsBeforeInvalid = fetcher.mock.calls.length;
+    await wrapper.get("form").trigger("submit");
+    expect(fetcher).toHaveBeenCalledTimes(callsBeforeInvalid);
+    fetcher.mockResolvedValueOnce(Response.json({ error: { code: "otp_rejected", message: "private provider detail" } }, { status: 409 }));
+    await otp.setValue("111111");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(otp.element.value).toBe("");
+    expect(wrapper.get('[role="alert"]').text()).toBe("Albert rejected the verification code. Check it or request a new one.");
+    expect(wrapper.text()).not.toContain("private provider detail");
+    fetcher.mockResolvedValueOnce(Response.json({ error: { code: "login_expired" } }, { status: 409 }));
+    await otp.setValue("222222");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toBe("The verification expired. Request a new code.");
+    expect(wrapper.find(codeInput).exists()).toBe(false);
+    expect(wrapper.get<HTMLInputElement>(phoneInput).element.value).toBe("+420777123456");
+    expect(client.getMutationCache().getAll()).toHaveLength(0);
+    wrapper.unmount();
+    client.clear();
+  });
+});
 describe("Lidl connections", () => {
   it("creates a named account with the default scheduling and leaves other stores unavailable", async () => {
     const { wrapper, fetcher, client } = render();

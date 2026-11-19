@@ -10,7 +10,7 @@ import QueryState from "./QueryState.vue";
 import LidlLoginForm from "./LidlLoginForm.vue";
 import MixitLoginForm from "./MixitLoginForm.vue";
 import ShoptetLoginForm from "./ShoptetLoginForm.vue";
-import BoltLoginForm from "./BoltLoginForm.vue";
+import SmsLoginForm from "./SmsLoginForm.vue";
 import WoltLoginForm from "./WoltLoginForm.vue";
 import GlobusLoginForm from "./GlobusLoginForm.vue";
 import FoodoraTokenForm from "./FoodoraTokenForm.vue";
@@ -23,7 +23,7 @@ import IconButton from "./IconButton.vue";
 import { syncIntervalOptions } from "../syncIntervals";
 import AppButton from "./AppButton.vue";
 
-const props = withDefaults(defineProps<{ connection: Connection; initialLinking?: boolean }>(), { initialLinking: false });
+const props = withDefaults(defineProps<{ connection: Connection; initialLinking?: boolean; canConnect?: boolean }>(), { initialLinking: false, canConnect: true });
 const { t, locale } = useI18n();
 const client = useQueryClient();
 const expanded = ref(props.initialLinking);
@@ -33,7 +33,8 @@ const tabOptions = computed(() => [
   { value: "history" as const, label: t("history") },
   { value: "manage" as const, label: t("manageConnection") },
 ]);
-const linking = ref(props.initialLinking);
+const linking = ref(props.initialLinking && props.canConnect);
+watch(() => props.canConnect, (available) => { if (!available) linking.value = false; });
 const name = ref(props.connection.name);
 const session = useQuery(sessionOptions);
 const interval = ref(props.connection.sync_interval_minutes ?? session.data.value?.default_sync_interval_minutes ?? 360);
@@ -106,7 +107,11 @@ const history = useQuery({
 function ask(action: "clear-data" | "remove"): void {
   manage.reset(); pauseSync.value = true; confirm.value = action; notice.value = "";
 }
-function connect(): void { linking.value = true; notice.value = ""; }
+function connect(): void {
+  if (!props.canConnect) return;
+  linking.value = true;
+  notice.value = "";
+}
 function date(value: string | null): string {
   if (!value) return t("neverSynced");
   const parsed = new Date(value);
@@ -153,14 +158,14 @@ const actionError = computed(() => {
       <p v-if="notice" class="account-notice" role="status">{{ t(notice) }}</p>
       <MixitLoginForm v-if="linking && connection.provider === 'mixit'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <ShoptetLoginForm v-else-if="linking && SHOPTET_SHOPS.includes(connection.provider)" :provider="connection.provider" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
-      <BoltLoginForm v-else-if="linking && connection.provider === 'bolt'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
+      <SmsLoginForm v-else-if="linking && (connection.provider === 'bolt' || connection.provider === 'albert')" :provider="connection.provider" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <WoltLoginForm v-else-if="linking && connection.provider === 'wolt'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <GlobusLoginForm v-else-if="linking && connection.provider === 'globus'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <FoodoraTokenForm v-else-if="linking && connection.provider === 'foodora'" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <LidlLoginForm v-else-if="linking && connection.provider === 'kaufland'" provider="kaufland" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <LidlLoginForm v-else-if="linking" :connection-id="connection.id" @connected="linked" @cancel="linking = false" />
       <section v-show="tab === 'sync'" :id="`panel-${connection.id}-sync`" role="tabpanel" :aria-labelledby="`panel-${connection.id}-tab-sync`" tabindex="0">
-        <div v-if="!linkedAccount && !linking" class="reconnect-note"><p>{{ t(connection.status === 'not_connected' ? 'connectToImport' : 'reconnectToImport') }}</p><AppButton size="sm" :disabled="active || busy" @click="connect">{{ t(connection.status === 'not_connected' ? 'linkAccount' : 'reconnectAccount') }}</AppButton></div>
+        <div v-if="!linkedAccount && !linking" class="reconnect-note"><p>{{ t(connection.status === 'not_connected' ? 'connectToImport' : 'reconnectToImport') }}</p><AppButton size="sm" :disabled="!canConnect || active || busy" @click="connect">{{ t(connection.status === 'not_connected' ? 'linkAccount' : 'reconnectAccount') }}</AppButton></div>
         <div class="account-setting">
           <div><strong>{{ t('automaticSync') }}</strong><p>{{ t('automaticSyncHelp') }}</p></div>
           <AppSwitch :model-value="connection.sync_interval_minutes !== null" :disabled="!linkedAccount || active || busy || linking" :label="t('automaticSync')" @update:model-value="save.mutate({ sync_interval_minutes: $event ? interval : null })"><span>{{ t(connection.sync_interval_minutes === null ? 'off' : 'on') }}</span></AppSwitch>
@@ -194,7 +199,7 @@ const actionError = computed(() => {
       </section>
       <section v-if="tab === 'manage'" :id="`panel-${connection.id}-manage`" role="tabpanel" :aria-labelledby="`panel-${connection.id}-tab-manage`" tabindex="0">
         <form class="rename-form" @submit.prevent="save.mutate({ name: name.trim() })"><label :for="`name-${connection.id}`">{{ t('connectionName') }}</label><div><input :id="`name-${connection.id}`" v-model="name" maxlength="120" :disabled="busy" /><AppButton size="sm" type="submit" :disabled="name.trim() === connection.name || busy">{{ t('save') }}</AppButton></div></form>
-        <div class="account-setting"><div><strong>{{ t('storeAuthorization') }}</strong><p>{{ t('reconnectHelp') }}</p></div><AppButton v-if="!linking" size="sm" :disabled="active || busy" @click="connect">{{ t(['not_connected', 'disconnected'].includes(connection.status) ? 'linkAccount' : 'reconnectAccount') }}</AppButton></div>
+        <div class="account-setting"><div><strong>{{ t('storeAuthorization') }}</strong><p>{{ t('reconnectHelp') }}</p></div><AppButton v-if="!linking" size="sm" :disabled="!canConnect || active || busy" @click="connect">{{ t(['not_connected', 'disconnected'].includes(connection.status) ? 'linkAccount' : 'reconnectAccount') }}</AppButton></div>
         <div class="account-setting"><div><strong>{{ t('disconnectAccount') }}</strong><p>{{ t('disconnectHelp') }}</p></div><AppButton size="sm" data-action="disconnect" :disabled="managementDisabled || ['not_connected', 'disconnected'].includes(connection.status)" @click="manage.mutate('disconnect')">{{ t('disconnect') }}</AppButton></div>
         <div class="account-setting"><div><strong>{{ t('deleteConnectionData') }}</strong><p>{{ t('clearDataHelp') }}</p></div><AppButton size="sm" class="danger-text" data-action="clear-data" :disabled="managementDisabled" @click="ask('clear-data')">{{ t('deleteData') }}</AppButton></div>
         <p v-if="running" class="section-note">{{ t('waitForSync') }}</p>
