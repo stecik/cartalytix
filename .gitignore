@@ -1,5 +1,8 @@
 .env
 .secrets/
+*.key
+*.pem
+credentials.json
 work/
 .env.*
 !.env.example

@@ -66,6 +66,24 @@ def test_bootstrap_admin_only_on_empty_database(monkeypatch: pytest.MonkeyPatch)
         database.dispose()
 
 
+@pytest.mark.parametrize("password", [None, "", "too-weak"])
+def test_empty_database_requires_bootstrap_password(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch, password: str | None
+) -> None:
+    if password is None:
+        monkeypatch.delenv("CARTALYTIX_BOOTSTRAP_PASSWORD", raising=False)
+    else:
+        monkeypatch.setenv("CARTALYTIX_BOOTSTRAP_PASSWORD", password)
+
+    settings = Settings(environment="test")
+    app = create_app(settings, engine=engine, limiter=UnlimitedLimiter())
+    with pytest.raises(RuntimeError, match="CARTALYTIX_BOOTSTRAP_PASSWORD"), TestClient(app):
+        pass
+
+    with Session(engine) as db:
+        assert db.scalar(select(User.id).limit(1)) is None
+
+
 def test_bootstrap_admin_skips_existing_accounts(client: TestClient, engine: Engine) -> None:
     bootstrap_admin(engine, None)
     with Session(engine) as db:
